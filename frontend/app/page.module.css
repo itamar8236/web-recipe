@@ -17,6 +17,16 @@
   font-size: 20px;
 }
 
+.favToggle {
+  align-self: flex-start;
+}
+
+.favOn {
+  background: var(--accent-soft);
+  border-color: #d62f4b;
+  color: #b0203b;
+}
+
 .grid {
   list-style: none;
   margin: 0;

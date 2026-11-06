@@ -1,4 +1,16 @@
+.wrap {
+  position: relative;
+  height: 100%;
+}
+
+.heart {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 8px;
+}
+
 .card {
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -17,6 +29,7 @@
 }
 
 .name {
+  padding-inline-end: 44px;
   font-size: 21px;
 }
 

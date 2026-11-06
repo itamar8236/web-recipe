@@ -19,6 +19,7 @@ function seed() {
         id: 1,
         folderId: 1,
         link: '',
+        favorite: true,
         en: {
           name: 'Shakshuka',
           ingredients: ['4 eggs', '4 ripe tomatoes, chopped', '1 onion, diced', '2 cloves garlic', '1 tsp paprika', 'Olive oil and salt'],
@@ -35,6 +36,7 @@ function seed() {
         folderId: 2,
         // Example of an imported recipe: later this will be the original video link.
         link: 'https://claude.ai',
+        favorite: false,
         en: {
           name: 'Lemon Chicken',
           ingredients: ['1 kg chicken thighs', '2 lemons', '4 cloves garlic', '2 tbsp olive oil', 'Thyme, salt and pepper'],
@@ -50,6 +52,7 @@ function seed() {
         id: 3,
         folderId: 3,
         link: '',
+        favorite: false,
         en: {
           name: 'Chocolate Mug Cake',
           ingredients: ['4 tbsp flour', '2 tbsp cocoa', '3 tbsp sugar', '3 tbsp milk', '2 tbsp oil'],
@@ -128,9 +131,15 @@ export async function saveRecipe(id, data) {
     Object.assign(existing, fields);
     return { ...existing };
   }
-  const recipe = { id: newId(), link: '', ...fields };
+  const recipe = { id: newId(), link: '', favorite: false, ...fields };
   db.recipes.push(recipe);
   return { ...recipe };
+}
+
+export async function toggleFavorite(id) {
+  const recipe = db.recipes.find((r) => r.id === id);
+  if (recipe) recipe.favorite = !recipe.favorite;
+  return recipe ? recipe.favorite : false;
 }
 
 export async function deleteRecipe(id) {

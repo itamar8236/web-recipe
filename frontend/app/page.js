@@ -13,6 +13,7 @@ export default function HomePage() {
   const [folders, setFolders] = useState(null);
   const [recipes, setRecipes] = useState([]);
   const [selected, setSelected] = useState('all');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const load = useCallback(async () => {
     const [loadedFolders, loadedRecipes] = await Promise.all([api.getFolders(), api.getRecipes()]);
@@ -28,6 +29,7 @@ export default function HomePage() {
   if (!folders) return <p>{t.loading}</p>;
 
   const visible = recipes.filter((r) => {
+    if (favoritesOnly && !r.favorite) return false;
     if (selected === 'all') return true;
     return r.folderId === (selected === 'none' ? null : selected);
   });
@@ -64,16 +66,32 @@ export default function HomePage() {
           + {t.addRecipe}
         </Link>
 
+        <button
+          type="button"
+          className={`button secondary ${styles.favToggle} ${favoritesOnly ? styles.favOn : ''}`}
+          aria-pressed={favoritesOnly}
+          onClick={() => setFavoritesOnly(!favoritesOnly)}
+        >
+          {favoritesOnly ? '♥' : '♡'} {t.favoritesOnly}
+        </button>
+
         {visible.length === 0 ? (
           <div className={styles.empty}>
-            <p className={styles.emptyTitle}>{t.emptyRecipes}</p>
-            <p>{t.emptyHint}</p>
+            <p className={styles.emptyTitle}>{favoritesOnly ? t.emptyFavorites : t.emptyRecipes}</p>
+            <p>{favoritesOnly ? t.emptyFavoritesHint : t.emptyHint}</p>
           </div>
         ) : (
           <ul className={styles.grid}>
             {visible.map((recipe) => (
               <li key={recipe.id}>
-                <RecipeCard recipe={recipe} folderName={selected === 'all' ? folderName(recipe.folderId) : null} />
+                <RecipeCard
+                  recipe={recipe}
+                  folderName={selected === 'all' ? folderName(recipe.folderId) : null}
+                  onToggleFavorite={async () => {
+                    await api.toggleFavorite(recipe.id);
+                    await load();
+                  }}
+                />
               </li>
             ))}
           </ul>

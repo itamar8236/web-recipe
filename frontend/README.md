@@ -61,7 +61,9 @@ Built now: Home, Recipe view, Edit. The rest are planned.
 1. **Login** (planned): described above.
 2. **Home**: folders as pills on phones and a side list on desktop, with recipe counts;
    recipes of the selected folder as cards. Create, rename, and delete folders inline
-   (deleting keeps the recipes, in "No folder"). Big "Add recipe" button. (Nesting,
+   (deleting keeps the recipes, in "No folder"). Big "Add recipe" button. Each card has a
+   heart to mark a favorite, and a "Favorites only" toggle filters the list (combined with
+   the selected folder). (Nesting,
    moving, and reordering folders are planned.)
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
 4. **Import**: URL field (YouTube or Facebook; others show "not supported yet"), a folder
@@ -70,8 +72,8 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    - several candidates → show them side by side (stacked on phones) with the model name
      and time taken; failed models show their error. The user taps "Use this one",
      can edit, then saves.
-5. **Recipe view**: name, source link (opens the video), ingredients, steps. Edit and
-   Delete buttons (delete asks for confirmation).
+5. **Recipe view**: name, source link (opens the video), ingredients, steps. Heart, Edit
+   and Delete buttons (delete asks for confirmation).
 6. **Edit**: name, ingredients, and steps (one per line) for one language at a time,
    with a switch to edit the other one, plus a folder picker. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other

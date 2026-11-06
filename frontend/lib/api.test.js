@@ -41,6 +41,20 @@ describe('recipes', () => {
     expect(manual.link).toBe('');
   });
 
+  it('toggles favorite, and edits keep it', async () => {
+    expect((await api.getRecipe(2)).favorite).toBe(false);
+    await api.toggleFavorite(2);
+    await api.saveRecipe(2, { folderId: 2, en: content('Lemon Chicken'), he: content('') });
+    expect((await api.getRecipe(2)).favorite).toBe(true);
+    await api.toggleFavorite(2);
+    expect((await api.getRecipe(2)).favorite).toBe(false);
+  });
+
+  it('new recipes are not favorites', async () => {
+    const saved = await api.saveRecipe(null, { folderId: null, en: content('Toast'), he: content('') });
+    expect(saved.favorite).toBe(false);
+  });
+
   it('deletes a recipe', async () => {
     await api.deleteRecipe(1);
     expect(await api.getRecipe(1)).toBeNull();

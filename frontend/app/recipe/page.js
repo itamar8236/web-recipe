@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/components/Language';
+import HeartButton from '@/components/HeartButton';
 import { pickLanguage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
@@ -86,6 +87,13 @@ function RecipeView() {
       </section>
 
       <div className={styles.actions}>
+        <HeartButton
+          active={recipe.favorite}
+          onClick={async () => {
+            await api.toggleFavorite(recipe.id);
+            setRecipe(await api.getRecipe(recipe.id));
+          }}
+        />
         <Link href={`/recipe/edit?id=${recipe.id}`} className="button">{t.edit}</Link>
         <button type="button" className="button danger" onClick={remove}>{t.delete}</button>
       </div>
