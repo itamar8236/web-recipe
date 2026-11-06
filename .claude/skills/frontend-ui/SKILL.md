@@ -1,31 +1,27 @@
 ---
 name: frontend-ui
-description: Guidance for building or changing UI in web-recipe's frontend/ (pages, components, styling, forms). Use for any frontend visual or interaction work.
+description: Guidance for building or changing UI in web-recipe's frontend/ (Next.js static export, plain JS, CSS Modules, English/Hebrew RTL). Use for any frontend visual or interaction work.
 ---
 
 # Frontend UI work in web-recipe
 
-Stack: see "Tech stack" in the root `CLAUDE.md`. Follow existing patterns in `frontend/`
-before inventing new ones.
+Read `frontend/README.md` first (screens, UX rules, bilingual, API client). Match existing
+components before inventing new ones. The app must stay extremely simple to use.
 
-## Before you build
-- Find an existing component or page that does something similar and match its
-  structure, naming and styling approach.
-- Reuse shared components and design tokens (colors, spacing, fonts) instead of
-  hard-coding values. If a token is missing, add it in one shared place.
-
-## While building
-- Data comes from the backend only through the frontend's API client module, never
-  ad-hoc `fetch` calls inside components.
-- Every screen that loads data handles four states: loading, empty, error, success.
-- Forms: label every input, validate on the client for UX, and still expect the
-  backend to reject bad input. Disable submit while a request is in flight.
-- Layout must work from phone width (~360px) to desktop. No horizontal scroll.
-- Accessibility: semantic HTML (`button`, `nav`, `main`, headings in order),
-  visible focus styles, alt text on recipe images, sufficient color contrast.
-- Keep components small; move logic that isn't about rendering into hooks or helpers.
+## Rules
+- Plain JavaScript and CSS Modules. No TypeScript, UI kits, or CSS frameworks.
+- Static export: no server components that fetch, no API routes, no dynamic route
+  segments. Pass ids as query params (`/recipe?id=12`) and fetch on the client.
+- Data only through `lib/api.js`; never `fetch` inside components.
+- Visible text only from `lib/i18n.js`, in both English and Hebrew.
+- Use CSS logical properties (`margin-inline-start`, `text-align: start`) so Hebrew RTL
+  works; colors and spacing come from the CSS variables in `styles/globals.css`.
+- Every data screen handles loading, empty, error, and success. Disable submit buttons
+  while a request runs (video import can take up to a minute: show progress text).
+- Mobile first: ~360px up, no horizontal scroll, tap targets ≥ 44px.
+- Accessibility: semantic HTML, labeled inputs, visible focus, good contrast.
 
 ## Before you finish
-- Run the app and look at the change in a browser at mobile and desktop widths.
-- Run frontend lint and tests (commands in `CLAUDE.md` → Commands).
-- For visible changes, attach a screenshot to the PR description.
+- Run `npm run lint` and `npm test` in `frontend/`.
+- Check the change in a browser at phone and desktop widths, in English and Hebrew.
+- Attach screenshots to the PR for visible changes.

@@ -5,7 +5,7 @@ description: Branch, commit, push and open a PR following this repo's convention
 
 # Git workflow for web-recipe
 
-Follow the rules in the root `CLAUDE.md` (section "Git workflow"). Summary:
+All work lands in `main` through a Pull Request. This skill is the full workflow.
 
 ## 1. Start a task
 ```bash
@@ -13,6 +13,7 @@ git checkout main
 git pull origin main
 git checkout -b <type>/<short-kebab-description>
 ```
+Branch name: lowercase, hyphens, ≤ 5 words (e.g. `feat/recipe-import`, `fix/rtl-ingredients`).
 Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `style`.
 Never work directly on `main`.
 
@@ -24,11 +25,14 @@ Never work directly on `main`.
 
   <why, if not obvious>
   ```
-  Scopes: `frontend`, `backend`, `db`, `config`, `deps`, or a feature area.
+  Scopes: `frontend`, `backend`, `db`, `llm`, `config`, `deps`, `agents`, or a feature area
+  (`recipes`, `folders`, `import`).
 - One logical change per commit.
+- AI agents end the message with a `Co-Authored-By:` trailer naming the model used.
 
 ## 3. Before pushing
-- Run lint and tests for each app you touched (commands in `CLAUDE.md` → Commands).
+- Run lint and tests for each app you touched (`CLAUDE.md` → Commands); never push
+  failing checks.
 - Update `CLAUDE.md` if stack, commands, or conventions changed.
 
 ## 4. Push and open a PR
@@ -45,6 +49,8 @@ PR title = Conventional Commit format. Body:
 ## How to test
 ## Notes / follow-ups
 ```
+Add screenshots for visible UI changes and `Closes #N` for linked issues. Keep PRs
+small and focused; the branch is deleted after the owner merges.
 
 Never force-push to shared branches, never push to `main`, never merge your own PR
 without the owner's approval.
