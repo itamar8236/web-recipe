@@ -38,6 +38,9 @@ same PR.
 - **Simple first.** Smallest working solution. No speculative abstractions, options,
   or dependencies. Working code beats clever code.
 - **Ask when unsure.** If a requirement is ambiguous, ask the owner instead of guessing.
+- **Flag contradictions.** If a prompt seems to contradict an `.md` file (this file, a
+  README, or a skill), stop and ask whoever gave the prompt which one is right: change
+  the request, or update the doc.
 - **Owner** = the human who owns the repo and approves PRs.
 
 ## Tech stack
