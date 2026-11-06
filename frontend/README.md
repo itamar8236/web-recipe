@@ -59,8 +59,8 @@ frontend/
 Built now: Home, Recipe view, Edit. The rest are planned.
 
 1. **Login** (planned): described above.
-2. **Home**: folders as one sideways-scrolling row of pills on phones and a side list on
-   desktop, with recipe counts;
+2. **Home**: folders with recipe counts. On phones only, they are one row of pills that
+   scrolls sideways; on desktop, a side list with no scrolling;
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
    Only an empty folder can be deleted (Delete is disabled with a hint otherwise). Big "Add recipe" button. Each card has a
    heart to mark a favorite, and a "Favorites only" toggle filters the list (combined with
