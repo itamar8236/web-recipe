@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/components/Language';
-import { LANGUAGES, languageLabels } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from '../recipe.module.css';
 
@@ -32,9 +31,6 @@ function RecipeForm() {
   const [folders, setFolders] = useState([]);
   const [folderId, setFolderId] = useState(params.get('folder') ? Number(params.get('folder')) : null);
   const [form, setForm] = useState({ en: blank, he: blank });
-  const [chosenTab, setTab] = useState(null);
-  // Until a tab is picked, edit the language the UI is currently in.
-  const tab = chosenTab ?? lang;
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -57,7 +53,7 @@ function RecipeForm() {
   if (!ready) return <p>{t.loading}</p>;
 
   function update(field, value) {
-    setForm({ ...form, [tab]: { ...form[tab], [field]: value } });
+    setForm({ ...form, [lang]: { ...form[lang], [field]: value } });
   }
 
   async function submit(event) {
@@ -77,45 +73,33 @@ function RecipeForm() {
     }
   }
 
-  const current = form[tab];
-  const dir = tab === 'he' ? 'rtl' : 'ltr';
+  // The form edits only the app's current language; the other language is kept as is.
+  const current = form[lang];
 
   return (
     <form className={`${styles.recipe} ${styles.form}`} onSubmit={submit}>
-      <h1>{id === null ? t.newRecipe : t.editRecipe}</h1>
-
-      <div className={styles.tabs} role="group" aria-label={t.language}>
-        {LANGUAGES.map((code) => (
-          <button
-            key={code}
-            type="button"
-            lang={code}
-            className={code === tab ? styles.active : ''}
-            aria-pressed={code === tab}
-            onClick={() => setTab(code)}
-          >
-            {languageLabels[code]}
-          </button>
-        ))}
+      <div>
+        <h1>{id === null ? t.newRecipe : t.editRecipe}</h1>
+        <p className={`hint ${styles.subtitle}`}>{t.writingIn}</p>
       </div>
 
       <div>
         <label className="label" htmlFor="name">{t.recipeName}</label>
-        <input id="name" className="field" lang={tab} dir={dir} value={current.name} onChange={(e) => update('name', e.target.value)} />
+        <input id="name" className="field" value={current.name} onChange={(e) => update('name', e.target.value)} />
       </div>
 
       <div>
         <label className="label" htmlFor="ingredients">
           {t.ingredients} <span className="hint">({t.ingredientsHint})</span>
         </label>
-        <textarea id="ingredients" className="field" lang={tab} dir={dir} value={current.ingredients} onChange={(e) => update('ingredients', e.target.value)} />
+        <textarea id="ingredients" className="field" value={current.ingredients} onChange={(e) => update('ingredients', e.target.value)} />
       </div>
 
       <div>
         <label className="label" htmlFor="steps">
           {t.instructions} <span className="hint">({t.instructionsHint})</span>
         </label>
-        <textarea id="steps" className="field" lang={tab} dir={dir} value={current.steps} onChange={(e) => update('steps', e.target.value)} />
+        <textarea id="steps" className="field" value={current.steps} onChange={(e) => update('steps', e.target.value)} />
       </div>
 
       <div>

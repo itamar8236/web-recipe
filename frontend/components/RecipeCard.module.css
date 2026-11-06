@@ -18,14 +18,15 @@
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+  border-inline-start: 5px solid var(--accent);
   box-shadow: var(--shadow);
   text-decoration: none;
-  transition: transform 0.12s ease, border-color 0.12s ease;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .card:hover {
   transform: translateY(-2px);
-  border-color: var(--accent);
+  box-shadow: 0 8px 22px rgba(80, 55, 30, 0.14);
 }
 
 .name {
