@@ -17,6 +17,7 @@
 }
 
 .brand {
+  color: var(--accent-dark);
   font-size: 20px;
   font-weight: 700;
   text-decoration: none;
@@ -39,6 +40,14 @@
   background: transparent;
   font-weight: 600;
   cursor: pointer;
+}
+
+.locked {
+  opacity: 0.5;
+}
+
+.toggle button:disabled {
+  cursor: not-allowed;
 }
 
 .toggle button.active {

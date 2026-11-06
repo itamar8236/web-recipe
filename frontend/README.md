@@ -30,7 +30,7 @@ frontend/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       ├── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
 │       └── import/page.js # (planned) Paste a video link, compare, save (/recipe/import)
-├── components/            # Shell, Header, Language (context), FolderBar, RecipeCard
+├── components/            # Shell, Header, Language (context), FolderBar, RecipeCard, HeartButton, ConfirmDialog
 ├── lib/
 │   ├── api.js             # The only data layer (in-memory for now; later the only fetch())
 │   ├── api.test.js        # Vitest tests for api.js and i18n helpers
@@ -60,8 +60,8 @@ Built now: Home, Recipe view, Edit. The rest are planned.
 
 1. **Login** (planned): described above.
 2. **Home**: folders as pills on phones and a side list on desktop, with recipe counts;
-   recipes of the selected folder as cards. Create, rename, and delete folders inline
-   (deleting keeps the recipes, in "No folder"). Big "Add recipe" button. Each card has a
+   recipes of the selected folder as cards. Create, rename, and delete folders inline.
+   Only an empty folder can be deleted (Delete is disabled with a hint otherwise). Big "Add recipe" button. Each card has a
    heart to mark a favorite, and a "Favorites only" toggle filters the list (combined with
    the selected folder). (Nesting,
    moving, and reordering folders are planned.)
@@ -74,8 +74,9 @@ Built now: Home, Recipe view, Edit. The rest are planned.
      can edit, then saves.
 5. **Recipe view**: name, source link (opens the video), ingredients, steps. Heart, Edit
    and Delete buttons (delete asks for confirmation).
-6. **Edit**: name, ingredients, and steps (one per line) for one language at a time,
-   with a switch to edit the other one, plus a folder picker. A name in at least one
+6. **Edit**: name, ingredients, and steps (one per line) in the app's current language,
+   plus a folder picker. A short note explains that to write the other language you
+   save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other
    language with a "not written yet" note; later the backend will translate it.
 7. **Users** (admin only): list of users, a form to add one (username, optional email),
@@ -87,12 +88,15 @@ Built now: Home, Recipe view, Edit. The rest are planned.
   (icons only alongside text).
 - Mobile first: works from ~360px up, no horizontal scroll, large tap targets (≥ 44px).
 - Every data screen handles loading, empty, error, and success states.
-- Destructive actions ask for confirmation.
+- Destructive actions ask for confirmation with `components/ConfirmDialog` (an in-page
+  dialog). Don't use `window.confirm()`: some browsers and in-app views block it and it
+  silently returns false.
 
 ## Bilingual (English / Hebrew)
 
 - A language toggle in the header switches both the UI strings and the recipe content
-  shown. Remember the choice in `localStorage`.
+  shown. Remember the choice in `localStorage`. The toggle is disabled on the add/edit
+  page (until Save or Cancel), and the form writes the recipe in that language only.
 - Hebrew sets `<html lang="he" dir="rtl">`. Use CSS logical properties
   (`margin-inline-start`, `padding-inline`, `text-align: start`) so layouts flip correctly.
 - UI strings live only in `lib/i18n.js`; never hard-code visible text in components.

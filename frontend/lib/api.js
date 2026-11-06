@@ -102,12 +102,10 @@ export async function renameFolder(id, name) {
   if (folder) folder.name = trimmed;
 }
 
-// Recipes in a deleted folder are kept and become folder-less.
+// Only empty folders can be deleted, so recipes are never lost or moved by accident.
 export async function deleteFolder(id) {
+  if (db.recipes.some((r) => r.folderId === id)) throw new Error('Folder is not empty');
   db.folders = db.folders.filter((f) => f.id !== id);
-  db.recipes.forEach((recipe) => {
-    if (recipe.folderId === id) recipe.folderId = null;
-  });
 }
 
 export async function getRecipes() {

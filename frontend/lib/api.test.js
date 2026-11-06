@@ -73,10 +73,16 @@ describe('folders', () => {
     await expect(api.createFolder('   ')).rejects.toThrow();
   });
 
-  it('keeps recipes of a deleted folder, without a folder', async () => {
+  it('refuses to delete a folder that still has recipes', async () => {
+    await expect(api.deleteFolder(1)).rejects.toThrow();
+    expect((await api.getFolders()).some((f) => f.id === 1)).toBe(true);
+    expect((await api.getRecipe(1)).folderId).toBe(1);
+  });
+
+  it('deletes an empty folder', async () => {
+    await api.deleteRecipe(1);
     await api.deleteFolder(1);
     expect((await api.getFolders()).some((f) => f.id === 1)).toBe(false);
-    expect((await api.getRecipe(1)).folderId).toBeNull();
   });
 });
 

@@ -1,0 +1,31 @@
+.dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 24px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 20px 50px rgba(40, 25, 10, 0.25);
+}
+
+.dialog::backdrop {
+  background: rgba(43, 38, 34, 0.45);
+}
+
+.message {
+  margin: 0 0 20px;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.actions .confirm,
+.actions .confirm:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}

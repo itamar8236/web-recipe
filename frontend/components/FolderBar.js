@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useLanguage } from './Language';
+import ConfirmDialog from './ConfirmDialog';
 import styles from './FolderBar.module.css';
 
 // `selected` is 'all', 'none' (recipes without a folder) or a folder id.
@@ -9,10 +10,12 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
   const { t } = useLanguage();
   const [mode, setMode] = useState(null); // null | 'new' | 'rename'
   const [name, setName] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const countIn = (folderId) => recipes.filter((r) => r.folderId === folderId).length;
   const unfiledCount = countIn(null);
   const selectedFolder = folders.find((f) => f.id === selected);
+  const selectedIsEmpty = selectedFolder ? countIn(selectedFolder.id) === 0 : false;
 
   function startEditing(nextMode) {
     setMode(nextMode);
@@ -41,6 +44,7 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
 
   return (
     <nav className={styles.bar} aria-label={t.folders}>
+      <h2 className={styles.heading}>{t.folders}</h2>
       <ul className={styles.list}>
         {pill('all', t.allRecipes, recipes.length, 'all')}
         {folders.map((folder) => pill(folder.id, folder.name, countIn(folder.id), folder.id))}
@@ -64,20 +68,38 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
         </form>
       ) : (
         <div className={styles.actions}>
-          <button type="button" className="button secondary" onClick={() => startEditing('new')}>+ {t.newFolder}</button>
+          <button type="button" className={`button secondary ${styles.newFolder}`} onClick={() => startEditing('new')}>+ {t.newFolder}</button>
           {selectedFolder && (
             <>
               <button type="button" className="button secondary" onClick={() => startEditing('rename')}>{t.rename}</button>
               <button
                 type="button"
                 className="button danger"
-                onClick={() => window.confirm(t.confirmDeleteFolder) && onDelete(selectedFolder.id)}
+                disabled={!selectedIsEmpty}
+                aria-describedby={selectedIsEmpty ? undefined : 'folder-not-empty'}
+                onClick={() => setConfirmingDelete(true)}
               >
                 {t.delete}
               </button>
             </>
           )}
         </div>
+      )}
+
+      {!mode && selectedFolder && !selectedIsEmpty && (
+        <p id="folder-not-empty" className="hint">{t.folderNotEmpty}</p>
+      )}
+
+      {confirmingDelete && selectedFolder && selectedIsEmpty && (
+        <ConfirmDialog
+          message={t.confirmDeleteFolder}
+          confirmLabel={t.delete}
+          onConfirm={async () => {
+            setConfirmingDelete(false);
+            await onDelete(selectedFolder.id);
+          }}
+          onCancel={() => setConfirmingDelete(false)}
+        />
       )}
     </nav>
   );

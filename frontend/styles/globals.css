@@ -78,6 +78,16 @@ textarea {
   border-color: var(--accent-dark);
 }
 
+.button:disabled,
+.button:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button.danger:disabled:hover {
+  background: var(--surface);
+}
+
 .button.secondary {
   background: var(--surface);
   color: var(--accent-dark);

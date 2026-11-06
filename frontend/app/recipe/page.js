@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/components/Language';
 import HeartButton from '@/components/HeartButton';
+import ConfirmDialog from '@/components/ConfirmDialog';
 import { pickLanguage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
@@ -15,6 +16,7 @@ function RecipeView() {
   const id = Number(useSearchParams().get('id'));
   const [recipe, setRecipe] = useState(undefined); // undefined = loading, null = missing
   const [folderName, setFolderName] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -44,7 +46,6 @@ function RecipeView() {
   const contentDir = contentLang === 'he' ? 'rtl' : 'ltr';
 
   async function remove() {
-    if (!window.confirm(t.confirmDeleteRecipe)) return;
     await api.deleteRecipe(recipe.id);
     router.push('/');
   }
@@ -56,18 +57,29 @@ function RecipeView() {
       </Link>
 
       <header className={styles.head} lang={contentLang} dir={contentDir}>
-        <h1 className={styles.title}>{content.name}</h1>
-        {folderName && <span className={styles.folder}>{folderName}</span>}
-        <p className={styles.sourceRow}>
-          {t.sourceLink}:{' '}
-          {recipe.link ? (
-            <a href={recipe.link} target="_blank" rel="noopener noreferrer" className={styles.source}>
-              {new URL(recipe.link).hostname}
-            </a>
-          ) : (
-            <span>{t.manualSource}</span>
-          )}
-        </p>
+        <div className={styles.titleRow}>
+          <h1 className={styles.title}>{content.name}</h1>
+          <HeartButton
+            active={recipe.favorite}
+            onClick={async () => {
+              await api.toggleFavorite(recipe.id);
+              setRecipe(await api.getRecipe(recipe.id));
+            }}
+          />
+        </div>
+        <div className={styles.metaRow}>
+          {folderName && <span className={styles.folder}>{folderName}</span>}
+          <p className={styles.sourceRow}>
+            {t.sourceLink}:{' '}
+            {recipe.link ? (
+              <a href={recipe.link} target="_blank" rel="noopener noreferrer" className={styles.source}>
+                {new URL(recipe.link).hostname} ↗
+              </a>
+            ) : (
+              <span>{t.manualSource}</span>
+            )}
+          </p>
+        </div>
       </header>
 
       {!content.translated && <p className={styles.notice}>{t.notTranslated}</p>}
@@ -87,16 +99,18 @@ function RecipeView() {
       </section>
 
       <div className={styles.actions}>
-        <HeartButton
-          active={recipe.favorite}
-          onClick={async () => {
-            await api.toggleFavorite(recipe.id);
-            setRecipe(await api.getRecipe(recipe.id));
-          }}
-        />
         <Link href={`/recipe/edit?id=${recipe.id}`} className="button">{t.edit}</Link>
-        <button type="button" className="button danger" onClick={remove}>{t.delete}</button>
+        <button type="button" className="button danger" onClick={() => setConfirmingDelete(true)}>{t.delete}</button>
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          message={t.confirmDeleteRecipe}
+          confirmLabel={t.delete}
+          onConfirm={remove}
+          onCancel={() => setConfirmingDelete(false)}
+        />
+      )}
     </article>
   );
 }

@@ -34,6 +34,7 @@ export default function HomePage() {
     return r.folderId === (selected === 'none' ? null : selected);
   });
   const folderName = (id) => folders.find((f) => f.id === id)?.name;
+  const viewTitle = selected === 'all' ? t.allRecipes : selected === 'none' ? t.noFolder : folderName(selected);
   const newRecipeHref = typeof selected === 'number' ? `/recipe/edit?folder=${selected}` : '/recipe/edit';
 
   return (
@@ -62,18 +63,25 @@ export default function HomePage() {
       </aside>
 
       <section className={styles.content}>
-        <Link href={newRecipeHref} className={`button ${styles.add}`}>
-          + {t.addRecipe}
-        </Link>
+        <div className={styles.toolbar}>
+          <Link href={newRecipeHref} className={`button ${styles.add}`}>
+            + {t.addRecipe}
+          </Link>
 
-        <button
-          type="button"
-          className={`button secondary ${styles.favToggle} ${favoritesOnly ? styles.favOn : ''}`}
-          aria-pressed={favoritesOnly}
-          onClick={() => setFavoritesOnly(!favoritesOnly)}
-        >
-          {favoritesOnly ? '♥' : '♡'} {t.favoritesOnly}
-        </button>
+          <button
+            type="button"
+            className={`button secondary ${styles.favToggle} ${favoritesOnly ? styles.favOn : ''}`}
+            aria-pressed={favoritesOnly}
+            onClick={() => setFavoritesOnly(!favoritesOnly)}
+          >
+            {favoritesOnly ? '♥' : '♡'} {t.favoritesOnly}
+          </button>
+        </div>
+
+        <div className={styles.titleRow}>
+          <h1 className={styles.title}>{viewTitle}</h1>
+          <span className={styles.titleCount}>{t.recipeCount(visible.length)}</span>
+        </div>
 
         {visible.length === 0 ? (
           <div className={styles.empty}>
