@@ -8,6 +8,16 @@ video links into recipes, and serves the frontend's static build. Read the root
 This file describes **what the backend must do**. Implementation details (file layout,
 schema, endpoints) are decided when the code is written, and recorded here in the same PR.
 
+## Current state
+
+The Worker is **assets-only**: `wrangler.jsonc` points at `../frontend/out` and Cloudflare
+serves the static build. There is no Worker code, API, database, or login yet; the
+frontend runs as an in-memory demo. Run it locally with `npm run dev` (port 8787, after
+`npm run build` in `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
+automatically through Workers Builds with build command `cd ../frontend && npm install &&
+npm run build`, and deploy command `npx wrangler deploy` from `backend/`. The sections
+below describe what the backend must do once built.
+
 ## Data
 
 - **Users**: up to 50. The owner is the only admin.
