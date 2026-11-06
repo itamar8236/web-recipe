@@ -16,7 +16,7 @@ description: End-to-end checklist for implementing a feature that spans backend 
    - Consume the API only through a dedicated API/client module, not ad-hoc fetches
      scattered across components.
    - Handle loading, empty, and error states.
-   - Use the `frontend-design` plugin skill for UI work.
+   - Follow the `frontend-ui` skill for UI work.
 5. **Verify** — run tests/lint for both apps; run the app and check the feature works.
 6. **Document** — update `CLAUDE.md` / READMEs if commands, stack, or structure changed.
 7. **Ship** — commit with Conventional Commits and open a PR (see `git-workflow`).

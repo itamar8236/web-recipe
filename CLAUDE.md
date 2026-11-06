@@ -1,35 +1,64 @@
 # CLAUDE.md
 
-Guidance for Claude Code and any other AI agent (or human) working in this repository.
-Read this file fully before making changes.
+Guidance for every coding agent (Claude Code, Codex, and others) and human contributor
+working in this repository. This file is the **single source of truth**: `AGENTS.md`
+points here. Read it fully before making changes, and keep it current.
 
-## Project overview
+## What we're building
 
-**web-recipe** is a full-stack web application for recipes (browse, create, and manage recipes).
-The project is in its **initial setup phase**: the product scope and tech stack will be
-defined and added to this file as decisions are made.
+**web-recipe** is a full-stack web application for recipes (browse, create, and manage
+recipes). The project is in its **initial setup phase**: product scope and tech stack
+will be added here as decisions are made.
 
 > TODO (owner): expand on features, target users, and the chosen stack.
 
-## Repository layout
+## Principles
+
+- **Simple first.** Build the smallest thing that solves the problem. YAGNI: no
+  speculative abstractions, config, or dependencies.
+- **Measure twice, cut once.** Read the surrounding code and this file before editing.
+  Ask the owner when requirements are ambiguous instead of guessing.
+- **Leave it better documented.** If you change commands, stack, layout, or
+  conventions, update this file in the same PR.
+
+## Glossary
+
+- **Owner**: the human who owns this repo and approves PRs.
+- **Agent**: any AI coding assistant working in the repo (Claude Code, Codex, ...).
+- **Backend**: the server app in `backend/` (API, business logic, database).
+- **Frontend**: the browser app in `frontend/` (UI).
+- **Skill**: a step-by-step playbook in `.agents/skills/<name>/SKILL.md`.
+
+## Ways to hurt yourself (never do these)
+
+- Commit or push directly to `main`, or force-push any shared branch.
+- Commit secrets. `.env` files are git-ignored; commit a `.env.example` instead.
+  Don't read or print `.env` contents.
+- Import code across `backend/` and `frontend/`. They talk only over the HTTP API.
+- Add a framework, language, or major dependency without the owner's approval.
+- Merge your own PR without the owner's approval.
+
+## Where code lives
 
 ```
 .
-├── backend/      # Server-side app: API, business logic, database access
-├── frontend/     # Client-side app: UI served to the browser
-├── .claude/      # Shared Claude Code config (settings, project skills)
-└── CLAUDE.md     # This file
+├── backend/          # Server app: API, business logic, database access
+├── frontend/         # Browser app: UI
+├── .agents/skills/   # Shared agent skills (source of truth)
+├── .claude/          # Claude Code config: settings.json, skills mirror
+├── scripts/          # Repo maintenance scripts
+├── AGENTS.md         # Entry point for non-Claude agents, points here
+└── CLAUDE.md         # This file
 ```
 
-- Keep backend and frontend **independent**: each has its own dependencies, config,
-  scripts, and README. Do not import code across the two folders; they communicate
-  only over the HTTP API.
-- Shared contracts (API shapes) should be documented in `backend/README.md` (or an
-  OpenAPI spec once one exists).
+- `backend/` and `frontend/` are independent: each has its own dependencies, config,
+  scripts, and README.
+- The API contract is documented in `backend/README.md` (or an OpenAPI spec once one
+  exists). Change the contract and its docs in the same PR.
 
 ## Tech stack
 
-Not decided yet. When the stack is chosen, record it here:
+Not decided yet. When chosen, record it here in the same PR:
 
 | Area      | Choice | Notes |
 |-----------|--------|-------|
@@ -38,9 +67,6 @@ Not decided yet. When the stack is chosen, record it here:
 | Database  | TBD    |       |
 | Testing   | TBD    |       |
 | Hosting   | TBD    |       |
-
-Do not introduce a framework, language, or major dependency without the owner's approval;
-once chosen, update this table in the same PR.
 
 ## Commands
 
@@ -54,29 +80,38 @@ Fill in once each app is scaffolded:
 | Lint / format       | TBD     | TBD      |
 | Build               | TBD     | TBD      |
 
+## Verifying
+
+Before every push:
+
+- Run lint and tests for each app you touched (see Commands). Prefer focused tests for
+  the code you changed over the whole suite.
+- For UI changes, run the app and check the change in a browser at mobile and desktop
+  widths.
+- Never report work as done if checks fail or weren't run; say exactly what was and
+  wasn't verified.
+
 ## Git workflow
 
-`main` is protected in practice: **never commit or push directly to `main`**.
-All work happens on a branch and lands through a Pull Request.
+All work happens on a branch and lands through a Pull Request into `main`.
 
 ### Branch names
 
-Format: `<type>/<short-kebab-description>`
+Format: `<type>/<short-kebab-description>` (lowercase, hyphens, ≤ 5 words).
 
-| Type       | Use for                                         | Example                         |
-|------------|-------------------------------------------------|---------------------------------|
-| `feat`     | New feature                                     | `feat/recipe-search`            |
-| `fix`      | Bug fix                                         | `fix/login-redirect-loop`       |
-| `chore`    | Tooling, config, deps, setup                    | `chore/project-setup`           |
-| `refactor` | Code change with no behavior change             | `refactor/recipe-service`       |
-| `docs`     | Documentation only                              | `docs/api-endpoints`            |
-| `test`     | Adding or fixing tests only                     | `test/recipe-api`               |
-| `style`    | Formatting / UI styling with no logic change    | `style/navbar-spacing`          |
+| Type       | Use for                                      | Example                   |
+|------------|----------------------------------------------|---------------------------|
+| `feat`     | New feature                                  | `feat/recipe-search`      |
+| `fix`      | Bug fix                                      | `fix/login-redirect-loop` |
+| `chore`    | Tooling, config, deps, setup                 | `chore/project-setup`     |
+| `refactor` | Code change with no behavior change          | `refactor/recipe-service` |
+| `docs`     | Documentation only                           | `docs/api-endpoints`      |
+| `test`     | Adding or fixing tests only                  | `test/recipe-api`         |
+| `style`    | Formatting / UI styling with no logic change | `style/navbar-spacing`    |
 
 Optional scope for clarity: `feat/frontend-recipe-card`, `fix/backend-auth-token`.
-Lowercase, hyphens only, keep it short (≤ 5 words).
 
-### Commit messages — Conventional Commits
+### Commit messages: Conventional Commits
 
 ```
 <type>(<scope>): <imperative summary, ≤ 72 chars, no trailing period>
@@ -87,52 +122,54 @@ Lowercase, hyphens only, keep it short (≤ 5 words).
 ```
 
 - `type`: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `style`, `perf`, `ci`, `build`
-- `scope`: `frontend`, `backend`, `db`, `config`, `deps`, or a feature area (`recipes`, `auth`)
-- Examples:
-  - `feat(backend): add GET /recipes endpoint`
-  - `fix(frontend): prevent double submit on recipe form`
-  - `chore(config): add shared Claude Code settings`
-- One logical change per commit. Don't mix unrelated changes.
-- AI agents end commit messages with a `Co-Authored-By:` trailer for the model used.
+- `scope`: `frontend`, `backend`, `db`, `config`, `deps`, `agents`, or a feature area
+  (`recipes`, `auth`)
+- Examples: `feat(backend): add GET /recipes endpoint`,
+  `fix(frontend): prevent double submit on recipe form`
+- One logical change per commit. AI agents end commit messages with a
+  `Co-Authored-By:` trailer naming the model used.
 
 ### Pull requests
 
-- Title follows the same Conventional Commit format as commits.
+- Title uses the Conventional Commit format.
 - Body sections: **Summary**, **Changes**, **How to test**, **Notes / follow-ups**.
-- Link related issues (`Closes #N`).
-- Keep PRs small and focused; split large work into multiple PRs.
-- Before opening a PR: tests and lint pass locally for the parts you touched, and
-  this file is updated if commands, stack, or conventions changed.
-- Merge into `main` only after review. Delete the branch after merge.
+  Add screenshots for visible UI changes. Link issues with `Closes #N`.
+- Keep PRs small and focused; split large work.
+- Open with `gh pr create` when the GitHub CLI is available, otherwise via
+  `https://github.com/itamar8236/web-recipe/compare/main...<branch>`.
+- Merge only after the owner's review; delete the branch after merge.
 
 ### Standard agent workflow
 
-1. `git checkout main && git pull` — start from up-to-date `main`.
-2. `git checkout -b <type>/<description>` — create a branch per task.
-3. Make focused changes; follow existing patterns in the folder you're editing.
-4. Run tests/lint for the affected app(s).
+1. `git checkout main && git pull`
+2. `git checkout -b <type>/<description>`
+3. Make focused changes, following existing patterns in the folder you're editing.
+4. Verify (see Verifying).
 5. Commit with Conventional Commit messages.
 6. `git push -u origin <branch>` and open a PR against `main`.
-7. Report what changed, what was tested, and what's left.
+7. Report what changed, what was verified, and what's left.
 
-The project skills `git-workflow` and `new-feature` in `.claude/skills/` encode these steps.
+## Plans and work artifacts
 
-## Coding conventions (general, refine once stack is set)
+- Don't commit plans, scratch files, or debug output. Track work in GitHub issues and PRs.
 
-- Prefer clarity over cleverness; small functions, descriptive names.
-- No secrets in the repo. Use `.env` files (git-ignored) and commit a `.env.example`.
+## Taste (refine once the stack is set)
+
+- Clarity over cleverness: small functions, descriptive names.
+- Comments explain *why*, not *what*. Don't leave commented-out code.
 - Validate all input on the backend; never trust the client.
 - Write tests alongside new features and bug fixes.
-- Keep this file current — it is the source of truth for future agents.
 
-## Claude Code setup
+## Agent setup
 
-- Shared settings: `.claude/settings.json` (committed). It enables the plugins below and
-  denies force-pushes, direct pushes to `main`, and reading `.env` files. Personal
-  overrides go in `.claude/settings.local.json` (git-ignored).
-- Plugins (from `anthropics/claude-plugins-official`, enabled via `enabledPlugins` in
-  `.claude/settings.json`; Claude Code asks to install them when the folder is trusted):
-  - `frontend-design` — UI/UX implementation guidance
-  - `commit-commands` — `/commit`, `/commit-push-pr` helpers
-  - `code-review` — PR review
-- Project skills: `.claude/skills/git-workflow`, `.claude/skills/new-feature`.
+- **Skills** live in `.agents/skills/` (read by all agents). `.claude/skills/` is a
+  copy for Claude Code. Edit skills only in `.agents/skills/`, then run
+  `bash scripts/sync-skills.sh` and commit both folders.
+  - `git-workflow`: branch, commit, push, open a PR
+  - `new-feature`: feature checklist across backend and frontend
+  - `frontend-ui`: UI work in `frontend/`
+- **Claude Code settings**: `.claude/settings.json` (committed) denies force-pushes,
+  direct pushes to `main`, and reading `.env` files. Personal overrides go in
+  `.claude/settings.local.json` (git-ignored).
+- No plugins are required. Contributors may install optional Claude Code plugins for
+  themselves, but anything the project depends on goes in as a skill.
