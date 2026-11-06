@@ -15,6 +15,7 @@ git checkout -b <type>/<short-kebab-description>
 ```
 Branch name: lowercase, hyphens, ≤ 5 words (e.g. `feat/recipe-import`, `fix/rtl-ingredients`).
 Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `style`.
+Always pull `main` before creating the branch so it starts from the latest code.
 Never work directly on `main`.
 
 ## 2. Commit
@@ -35,13 +36,6 @@ Never work directly on `main`.
   `backend/README.md`, `frontend/README.md`, skills) in the same branch.
 - Run lint and tests for each app you touched (`CLAUDE.md` → Commands); never push
   failing checks.
-- Bring in the latest `main`:
-  ```bash
-  git fetch origin
-  git rebase origin/main      # first push of this branch
-  ```
-  Resolve conflicts, then re-run the checks. If the branch was **already pushed**, use
-  `git merge origin/main` instead (rebasing would need a force-push, which is forbidden).
 
 ## 4. Push and open a PR
 ```bash

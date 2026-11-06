@@ -15,5 +15,4 @@ description: Steps for fixing a bug in web-recipe - reproduce, write a failing t
    behavior is correct in the browser (phone + desktop, English + Hebrew if relevant).
 6. **Document**: if the fix changes behavior, the API, schema, or commands, update the
    matching `.md` files (`CLAUDE.md`, `backend/README.md`, `frontend/README.md`, skills).
-7. **Ship**: commit `fix(<scope>): ...` and open a PR describing cause and fix
-   (rebase on `origin/main` first, see `git-workflow`).
+7. **Ship**: commit `fix(<scope>): ...` and open a PR describing cause and fix.

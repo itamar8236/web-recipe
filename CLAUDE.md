@@ -125,9 +125,8 @@ Run each from its own folder.
   in the same PR whenever it changes what they describe: this file (product, stack,
   commands, rules), `backend/README.md` (schema, API, auth, LLM flow, env),
   `frontend/README.md` (screens, UX), and skills. Remove docs that became wrong.
-- Git: branch from a freshly pulled `main`, Conventional Commits, and before pushing
-  `git fetch origin && git rebase origin/main`. Then PR into `main`. Full steps in the
-  `git-workflow` skill.
+- Git: always `git checkout main && git pull` before creating a new branch, use
+  Conventional Commits, and PR into `main`. Full steps in the `git-workflow` skill.
 
 ## Verifying
 
