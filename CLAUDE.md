@@ -127,10 +127,11 @@ The project skills `git-workflow` and `new-feature` in `.claude/skills/` encode 
 
 ## Claude Code setup
 
-- Shared settings: `.claude/settings.json` (committed, to be added). Personal overrides
-  go in `.claude/settings.local.json` (git-ignored).
-- Recommended plugins (from `anthropics/claude-plugins-official`; install per user, or
-  enable for everyone via `enabledPlugins` in `.claude/settings.json`):
+- Shared settings: `.claude/settings.json` (committed). It enables the plugins below and
+  denies force-pushes, direct pushes to `main`, and reading `.env` files. Personal
+  overrides go in `.claude/settings.local.json` (git-ignored).
+- Plugins (from `anthropics/claude-plugins-official`, enabled via `enabledPlugins` in
+  `.claude/settings.json`; Claude Code asks to install them when the folder is trusted):
   - `frontend-design` — UI/UX implementation guidance
   - `commit-commands` — `/commit`, `/commit-push-pr` helpers
   - `code-review` — PR review
