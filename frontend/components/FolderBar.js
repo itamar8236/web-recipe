@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from './Language';
 import ConfirmDialog from './ConfirmDialog';
 import styles from './FolderBar.module.css';
@@ -11,6 +11,15 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
   const [mode, setMode] = useState(null); // null | 'new' | 'rename'
   const [name, setName] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const listRef = useRef(null);
+
+  // On phones the pills scroll sideways; keep the selected one (e.g. a new folder) in view.
+  useEffect(() => {
+    const list = listRef.current;
+    const active = list?.querySelector('[aria-pressed="true"]');
+    if (!active || list.scrollWidth <= list.clientWidth) return;
+    active.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [selected, folders.length]);
 
   const countIn = (folderId) => recipes.filter((r) => r.folderId === folderId).length;
   const unfiledCount = countIn(null);
@@ -45,7 +54,7 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
   return (
     <nav className={styles.bar} aria-label={t.folders}>
       <h2 className={styles.heading}>{t.folders}</h2>
-      <ul className={styles.list}>
+      <ul className={styles.list} ref={listRef}>
         {pill('all', t.allRecipes, recipes.length, 'all')}
         {folders.map((folder) => pill(folder.id, folder.name, countIn(folder.id), folder.id))}
         {unfiledCount > 0 && pill('none', t.noFolder, unfiledCount, 'none')}

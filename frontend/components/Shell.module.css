@@ -1,7 +1,7 @@
 .main {
   max-width: var(--page-width);
   margin-inline: auto;
-  padding: 20px 16px 40px;
+  padding: 16px 16px 32px;
 }
 
 .footer {

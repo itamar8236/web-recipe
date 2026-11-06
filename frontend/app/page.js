@@ -67,6 +67,13 @@ export default function HomePage() {
           <Link href={newRecipeHref} className={`button ${styles.add}`}>
             + {t.addRecipe}
           </Link>
+        </div>
+
+        <div className={styles.titleRow}>
+          <div className={styles.titleText}>
+            <h1 className={styles.title}>{viewTitle}</h1>
+            <span className={styles.titleCount}>{t.recipeCount(visible.length)}</span>
+          </div>
 
           <button
             type="button"
@@ -76,11 +83,6 @@ export default function HomePage() {
           >
             {favoritesOnly ? '♥' : '♡'} {t.favoritesOnly}
           </button>
-        </div>
-
-        <div className={styles.titleRow}>
-          <h1 className={styles.title}>{viewTitle}</h1>
-          <span className={styles.titleCount}>{t.recipeCount(visible.length)}</span>
         </div>
 
         {visible.length === 0 ? (
