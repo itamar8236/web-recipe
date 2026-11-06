@@ -11,9 +11,11 @@ build/
 .next/
 out/
 coverage/
+.wrangler/
 
 # Environment / secrets
 .env
+.dev.vars
 .env.*
 !.env.example
 

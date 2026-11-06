@@ -13,4 +13,5 @@ Read the matching `SKILL.md` before starting that kind of task:
 
 - `git-workflow`: branching, commits, pushing, and pull requests
 - `new-feature`: implementing a feature across backend and frontend
+- `bug-fix`: reproducing and fixing a bug
 - `frontend-ui`: building or changing UI in `frontend/`
