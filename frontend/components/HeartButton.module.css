@@ -1,0 +1,20 @@
+.heart {
+  width: var(--tap);
+  height: var(--tap);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.heart:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.heart.active {
+  color: #d62f4b;
+}

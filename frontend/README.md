@@ -4,24 +4,38 @@ Next.js app (App Router) in plain JavaScript and CSS Modules, built as a **stati
 (`output: 'export'` → `out/`) that the backend Worker serves. All data comes from the
 backend's API (see `backend/README.md`). Read the root `CLAUDE.md` first.
 
-## Layout (planned)
+## Current state: UI-only demo
+
+Only the recipe browsing and manual add/edit/delete screens exist. There is **no login,
+no database and no backend API yet**: `lib/api.js` keeps everything in memory (seeded
+with a few sample recipes) and resets when the page is closed or reloaded. Its functions
+are async and shaped like the future endpoints, so swapping in real `fetch` calls later
+won't touch the components. Folders are a flat list for now (no nesting or reordering).
+Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
+recipe has a `link`, otherwise plain "Added manually" text. The link is not editable in the
+UI; it will be filled by video import. One sample recipe links to claude.ai as an example.
+
+## Layout
+
+Marked (planned) = not built yet.
 
 ```
 frontend/
 ├── app/
-│   ├── layout.js          # Shell: header, language toggle, logout, sets <html lang dir>
-│   ├── page.js            # Home: folder tree + recipes in the selected folder
-│   ├── login/page.js      # Username/email field only        (/login)
-│   ├── admin/page.js      # Admin: list, add, delete users   (/admin)
+│   ├── layout.js          # Root layout: wraps everything in the Shell
+│   ├── page.js            # Home: folders + recipes in the selected folder
+│   ├── login/page.js      # (planned) Username/email field only   (/login)
+│   ├── admin/page.js      # (planned) Admin: list, add, delete users (/admin)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       ├── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-│       └── import/page.js # Paste a video link, compare, save (/recipe/import)
-├── components/            # Small reusable pieces: FolderTree, RecipeCard, AuthGate, ...
+│       └── import/page.js # (planned) Paste a video link, compare, save (/recipe/import)
+├── components/            # Shell, Header, Language (context), FolderBar, RecipeCard
 ├── lib/
-│   ├── api.js             # The only place that calls fetch()
-│   └── i18n.js            # UI strings in en/he + current-language helper
-├── styles/globals.css     # Design tokens (CSS variables) and base styles
+│   ├── api.js             # The only data layer (in-memory for now; later the only fetch())
+│   ├── api.test.js        # Vitest tests for api.js and i18n helpers
+│   └── i18n.js            # UI strings in en/he + pickLanguage()
+├── styles/globals.css     # Design tokens (CSS variables), buttons, form fields
 └── next.config.mjs
 ```
 
@@ -29,7 +43,7 @@ frontend/
   pages take the id as a **query parameter** and fetch on the client.
 - Components are client components where they fetch or hold state; keep it simple.
 
-## Login flow
+## Login flow (planned)
 
 - `AuthGate` (in the root layout) asks the backend who is logged in once on load:
   - logged in → render the app; on `/login`, redirect to home.
@@ -42,9 +56,15 @@ frontend/
 
 ## Screens
 
-1. **Login**: described above.
-2. **Home**: folder tree on the side (a drawer on phones), recipes of the selected folder
-   as a list. Create, rename, move, and delete folders inline. Big "Add recipe" button.
+Built now: Home, Recipe view, Edit. The rest are planned.
+
+1. **Login** (planned): described above.
+2. **Home**: folders as pills on phones and a side list on desktop, with recipe counts;
+   recipes of the selected folder as cards. Create, rename, and delete folders inline
+   (deleting keeps the recipes, in "No folder"). Big "Add recipe" button. Each card has a
+   heart to mark a favorite, and a "Favorites only" toggle filters the list (combined with
+   the selected folder). (Nesting,
+   moving, and reordering folders are planned.)
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
 4. **Import**: URL field (YouTube or Facebook; others show "not supported yet"), a folder
    picker, a submit button, then a spinner with "Reading the video..." Then:
@@ -52,10 +72,12 @@ frontend/
    - several candidates → show them side by side (stacked on phones) with the model name
      and time taken; failed models show their error. The user taps "Use this one",
      can edit, then saves.
-5. **Recipe view**: name, source link (opens the video), ingredients, steps. Edit and
-   Delete buttons (delete asks for confirmation).
-6. **Edit**: name, ingredients, and steps for the current language, with a switch to edit
-   the other one. If the other language is left empty, the backend translates it.
+5. **Recipe view**: name, source link (opens the video), ingredients, steps. Heart, Edit
+   and Delete buttons (delete asks for confirmation).
+6. **Edit**: name, ingredients, and steps (one per line) for one language at a time,
+   with a switch to edit the other one, plus a folder picker. A name in at least one
+   language is required. If a language is left empty, the recipe view shows the other
+   language with a "not written yet" note; later the backend will translate it.
 7. **Users** (admin only): list of users, a form to add one (username, optional email),
    and a delete button per user with confirmation. Shows "N / 50 users".
 
@@ -76,6 +98,8 @@ frontend/
 - UI strings live only in `lib/i18n.js`; never hard-code visible text in components.
 
 ## API client
+
+Today `lib/api.js` is the in-memory demo described above. The target design is:
 
 - `lib/api.js` exports one function per endpoint (`login`, `getMe`, `getFolders`,
   `importRecipe`, ...) and throws an `Error` with the backend's message on failure.

@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "web-recipe",
+  "compatibility_date": "2026-01-01",
+  // No Worker code yet: Cloudflare serves the frontend's static build directly.
+  "assets": {
+    "directory": "../frontend/out",
+    "not_found_handling": "404-page"
+  }
+}

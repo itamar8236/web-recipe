@@ -1,0 +1,82 @@
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding-inline: 18px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pill:hover {
+  border-color: var(--accent);
+}
+
+.pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.count {
+  min-width: 26px;
+  padding-inline: 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 14px;
+  text-align: center;
+}
+
+.pill.active .count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Desktop: folders become a vertical list beside the recipes. */
+@media (min-width: 760px) {
+  .list {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .pill {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .pillName {
+    overflow-wrap: anywhere;
+    text-align: start;
+  }
+}

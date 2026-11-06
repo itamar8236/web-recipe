@@ -1,0 +1,132 @@
+.recipe {
+  max-width: 720px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--tap);
+  font-weight: 600;
+  color: var(--accent-dark);
+  text-decoration: none;
+}
+
+.arrow {
+  display: inline-block;
+}
+
+:global([dir='rtl']) .arrow {
+  transform: scaleX(-1);
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.title {
+  font-size: 34px;
+}
+
+.folder {
+  padding: 2px 14px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.sourceRow {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 16px;
+}
+
+.source {
+  color: var(--accent-dark);
+  font-weight: 600;
+}
+
+.notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 16px;
+}
+
+.card {
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.card h2 {
+  margin-bottom: 12px;
+  font-size: 22px;
+}
+
+.ingredients,
+.steps {
+  margin: 0;
+  padding-inline-start: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ingredients li::marker,
+.steps li::marker {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ---- Edit form ---- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+}
+
+.tabs button {
+  min-height: 44px;
+  min-width: 96px;
+  padding-inline: 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}

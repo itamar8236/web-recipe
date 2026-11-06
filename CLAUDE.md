@@ -5,6 +5,12 @@ this repo. `AGENTS.md` points here. Read this file before changing anything, and
 it current: if you change the stack, commands, layout, or conventions, update it in the
 same PR.
 
+## Status
+
+Built so far: the recipe browsing UI (folders, recipes, English/Hebrew, manual add/edit/
+delete) as an in-memory demo. Login, D1, the API, and LLM import are not built yet; the
+sections below describe the target.
+
 ## The product
 
 **web-recipe** is a small personal web app for a handful of people to keep their recipes.
@@ -94,18 +100,18 @@ One Cloudflare Worker  (backend/)
 
 ## Commands
 
-Planned; the scaffolding PR must make these real and fix this table if anything differs.
-Run each from its own folder.
+Run each from its own folder. The backend is assets-only for now (no Worker code, tests,
+lint, or DB yet), so those rows are planned until it gets real code.
 
 | Task           | `backend/`                                   | `frontend/`       |
 |----------------|----------------------------------------------|-------------------|
 | Install        | `npm install`                                | `npm install`     |
-| Dev server     | `npm run dev` (wrangler, :8787)              | `npm run dev` (:3000) |
-| Tests          | `npm test`                                   | `npm test`        |
-| Lint           | `npm run lint`                               | `npm run lint`    |
+| Dev server     | `npm run dev` (wrangler, :8787, serves `frontend/out`: build the frontend first) | `npm run dev` (:3000) |
+| Tests          | (planned)                                    | `npm test`        |
+| Lint           | (planned)                                    | `npm run lint`    |
 | Build          | n/a                                          | `npm run build` → `out/` |
-| DB migrate     | `npm run db:migrate` (local D1)              | n/a               |
-| Deploy         | automatic on merge to `main`                 | (deployed with backend) |
+| DB migrate     | (planned) `npm run db:migrate` (local D1)    | n/a               |
+| Deploy         | automatic on merge to `main` (or `npm run deploy`) | (deployed with backend) |
 
 ## Never do these
 

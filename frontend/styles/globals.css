@@ -1,0 +1,135 @@
+:root {
+  --bg: #fbf7f1;
+  --surface: #ffffff;
+  --ink: #2b2622;
+  --ink-soft: #6f655c;
+  --line: #eadfce;
+  --accent: #c4501b;
+  --accent-dark: #a13f12;
+  --accent-soft: #fbe9de;
+  --danger: #b3261e;
+  --radius: 16px;
+  --radius-sm: 12px;
+  --shadow: 0 2px 10px rgba(80, 55, 30, 0.08);
+  --tap: 48px;
+  --page-width: 960px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans Hebrew', Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+  margin: 0;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Shared form controls and buttons, used on every screen. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding-inline: 22px;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+}
+
+.button.secondary {
+  background: var(--surface);
+  color: var(--accent-dark);
+}
+
+.button.secondary:hover {
+  background: var(--accent-soft);
+}
+
+.button.danger {
+  background: var(--surface);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.button.danger:hover {
+  background: #fdecea;
+}
+
+.field {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 10px 14px;
+  border: 2px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.field:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+textarea.field {
+  resize: vertical;
+  min-height: 140px;
+}
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.hint {
+  color: var(--ink-soft);
+  font-size: 15px;
+  font-weight: 400;
+}
+
+.error {
+  color: var(--danger);
+  font-weight: 600;
+}
