@@ -14,7 +14,9 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
 4. **Backend** (if needed):
    - Schema change → add a new numbered file in `backend/migrations/`; never edit an
      applied migration.
-   - SQL only in `db.js` with bound parameters; LLM calls only in `llm.js`.
+   - SQL only in `db.js` with bound parameters; LLM calls only in `llm.js`;
+     platform-specific video code only in `sources.js`.
+   - New routes require a session (admin routes also the admin check).
    - Validate input, return `{ error }` with the right status code.
    - Add Vitest tests for the handler.
    - Update the API table in `backend/README.md`.
@@ -22,7 +24,9 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
    `lib/api.js`, and support both English and Hebrew.
 6. **Verify**: lint and tests for every app touched; run both dev servers and try the
    feature end to end in a browser.
-7. **Document**: update `CLAUDE.md` / READMEs if commands, stack, structure, or the API
-   changed.
+7. **Document**: update every `.md` file the feature makes outdated, in the same PR:
+   `CLAUDE.md` (product, stack, commands, rules), `backend/README.md` (schema, API, auth,
+   LLM flow, env), `frontend/README.md` (screens, UX), skills (then run
+   `bash scripts/sync-skills.sh`).
 8. **Ship**: commit and open a PR (`git-workflow`). Report what changed, how it was
    tested, and what's left.

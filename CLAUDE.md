@@ -10,11 +10,18 @@ same PR.
 **web-recipe** is a small personal web app for a handful of people to keep their recipes.
 
 - Recipes live in **folders** the user creates, renames, nests, and reorders freely.
-- Add, edit, and delete recipes **manually**, or **from a short-video link**
-  (YouTube Shorts, Instagram, TikTok, ...): the backend sends the link to a free LLM,
-  which extracts the recipe, and the result is saved.
+- Add, edit, and delete recipes **manually**, or **from a short-video link**: the
+  backend sends the link to Google's free LLMs, which extract the recipe, and the user
+  saves it. Supported now: **YouTube and Facebook** only. Other platforms may come later;
+  don't build for them until asked.
+- When several LLM models are configured, an import runs all of them and the user
+  **compares the results side by side** and picks one to save.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
+- **Up to 50 users**, all sharing one recipe collection. One **admin** (the owner) adds
+  and deletes users. Login is **username or email only, no password**, and the session
+  is remembered: after logging in once, a user never sees the login page again on that
+  device unless they log out or the admin deletes them.
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not
@@ -40,8 +47,8 @@ same PR.
 | Frontend  | Next.js (App Router), React, plain JavaScript, CSS Modules | Static export (`output: 'export'`), no TypeScript, no UI library |
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Node-style JS on the Workers runtime (`nodejs_compat`); no web framework |
 | Database  | Cloudflare D1 (serverless SQLite)                  | SQL migrations in `backend/migrations/`            |
-| LLM       | Google Gemini API, free tier                       | Reads YouTube links natively; key in a Worker secret |
-| Auth      | Cloudflare Access (Zero Trust free plan)           | Allow-list of emails in front of the whole app; no login code |
+| LLM       | Google Gemini API, free tier (Gemini / Gemma models) | One or more models, set by config; key in a Worker secret |
+| Auth      | Built in: users + sessions tables in D1            | Passwordless username/email login, long-lived HttpOnly cookie |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-pool-workers`     |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |
 
@@ -50,13 +57,13 @@ Adding a framework, language, paid service, or major dependency needs the owner'
 ## Architecture
 
 ```
-Browser ──► Cloudflare Access (email allow-list)
-              │
-              ▼
-        One Cloudflare Worker  (backend/)
-        ├── /api/*   → JSON API (backend/src)  ──► D1 (SQLite)
-        │                                     └──► Gemini API (video → recipe, translation)
-        └── /*       → static files built from frontend/ (frontend/out)
+Browser
+   │
+   ▼
+One Cloudflare Worker  (backend/)
+├── /api/*   → JSON API (backend/src)  ──► D1 (SQLite: users, sessions, folders, recipes)
+│              session cookie checked  └──► Gemini API (video → recipe, translation)
+└── /*       → static files built from frontend/ (frontend/out)
 ```
 
 - **One deployable, one origin.** The Worker serves the API and the frontend's static
@@ -65,8 +72,8 @@ Browser ──► Cloudflare Access (email allow-list)
   config, and README. They share no code; they talk only over the HTTP API. The backend
   only references the frontend's *build output* folder.
 - **Details live next to the code:**
-  - [`backend/README.md`](backend/README.md): data model, API contract, LLM import flow,
-    secrets, deploy. Change the API and its docs in the same PR.
+  - [`backend/README.md`](backend/README.md): data model, auth, API contract, LLM import
+    flow, secrets, deploy.
   - [`frontend/README.md`](frontend/README.md): screens, UX rules, bilingual/RTL, API client.
 
 ## Where code lives
@@ -104,6 +111,8 @@ Run each from its own folder.
   `.env.example` with placeholder values instead.
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
+- Add an API endpoint without the session check (only `POST /api/auth/login` is public),
+  or an admin action without the admin check.
 - Add a paid service or anything outside the free tiers above.
 
 ## Conventions
@@ -112,8 +121,13 @@ Run each from its own folder.
 - Comments explain *why*, not *what*. No commented-out code.
 - Validate all input in the backend; never trust the client.
 - Write tests with every feature and bug fix (a failing test first for bugs).
-- Git: branch `<type>/<kebab-description>`, Conventional Commits, PR into `main`.
-  Full steps in the `git-workflow` skill.
+- **Docs move with the code.** Every feature or bug fix updates the relevant `.md` files
+  in the same PR whenever it changes what they describe: this file (product, stack,
+  commands, rules), `backend/README.md` (schema, API, auth, LLM flow, env),
+  `frontend/README.md` (screens, UX), and skills. Remove docs that became wrong.
+- Git: branch from a freshly pulled `main`, Conventional Commits, and before pushing
+  `git fetch origin && git rebase origin/main`. Then PR into `main`. Full steps in the
+  `git-workflow` skill.
 
 ## Verifying
 

@@ -12,7 +12,8 @@ components before inventing new ones. The app must stay extremely simple to use.
 - Plain JavaScript and CSS Modules. No TypeScript, UI kits, or CSS frameworks.
 - Static export: no server components that fetch, no API routes, no dynamic route
   segments. Pass ids as query params (`/recipe?id=12`) and fetch on the client.
-- Data only through `lib/api.js`; never `fetch` inside components.
+- Data only through `lib/api.js` (sends the session cookie, redirects to `/login` on
+  401); never `fetch` inside components. Admin-only UI checks `user.is_admin`.
 - Visible text only from `lib/i18n.js`, in both English and Hebrew.
 - Use CSS logical properties (`margin-inline-start`, `text-align: start`) so Hebrew RTL
   works; colors and spacing come from the CSS variables in `styles/globals.css`.

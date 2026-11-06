@@ -31,9 +31,17 @@ Never work directly on `main`.
 - AI agents end the message with a `Co-Authored-By:` trailer naming the model used.
 
 ## 3. Before pushing
+- Update every `.md` file whose content your change affects (`CLAUDE.md`,
+  `backend/README.md`, `frontend/README.md`, skills) in the same branch.
 - Run lint and tests for each app you touched (`CLAUDE.md` → Commands); never push
   failing checks.
-- Update `CLAUDE.md` if stack, commands, or conventions changed.
+- Bring in the latest `main`:
+  ```bash
+  git fetch origin
+  git rebase origin/main      # first push of this branch
+  ```
+  Resolve conflicts, then re-run the checks. If the branch was **already pushed**, use
+  `git merge origin/main` instead (rebasing would need a force-push, which is forbidden).
 
 ## 4. Push and open a PR
 ```bash
