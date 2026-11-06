@@ -2,7 +2,7 @@
 
 Next.js app (App Router) in plain JavaScript and CSS Modules, built as a **static export**
 (`output: 'export'` → `out/`) that the backend Worker serves. All data comes from the
-backend's `/api/*` (contract in `backend/README.md`). Read the root `CLAUDE.md` first.
+backend's API (see `backend/README.md`). Read the root `CLAUDE.md` first.
 
 ## Layout (planned)
 
@@ -31,12 +31,12 @@ frontend/
 
 ## Login flow
 
-- `AuthGate` (in the root layout) calls `GET /api/auth/me` once on load:
+- `AuthGate` (in the root layout) asks the backend who is logged in once on load:
   - logged in → render the app; on `/login`, redirect to home.
   - 401 → redirect to `/login`.
 - `/login` has one field ("Username or email") and one button. On success go to home.
-  Because the session cookie lasts a year and renews on use, users see this page only
-  the first time on a device or after logging out.
+  The login is remembered, so users see this page only the first time on a device
+  or after logging out.
 - Any API call returning 401 (e.g. the admin deleted the user) sends the user to `/login`.
 - The current user is kept in a small React context; `is_admin` shows the "Users" link.
 

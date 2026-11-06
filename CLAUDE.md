@@ -46,9 +46,9 @@ same PR.
 |-----------|----------------------------------------------------|----------------------------------------------------|
 | Frontend  | Next.js (App Router), React, plain JavaScript, CSS Modules | Static export (`output: 'export'`), no TypeScript, no UI library |
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Node-style JS on the Workers runtime (`nodejs_compat`); no web framework |
-| Database  | Cloudflare D1 (serverless SQLite)                  | SQL migrations in `backend/migrations/`            |
-| LLM       | Google Gemini API, free tier (Gemini / Gemma models) | One or more models, set by config; key in a Worker secret |
-| Auth      | Built in: users + sessions tables in D1            | Passwordless username/email login, long-lived HttpOnly cookie |
+| Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
+| LLM       | Google's free-tier LLMs                            | One or more models, set by config; key in a Worker secret |
+| Auth      | Built in, stored in D1                             | No passwords; admin manages users; stays logged in |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-pool-workers`     |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |
 
@@ -61,8 +61,8 @@ Browser
    │
    ▼
 One Cloudflare Worker  (backend/)
-├── /api/*   → JSON API (backend/src)  ──► D1 (SQLite: users, sessions, folders, recipes)
-│              session cookie checked  └──► Gemini API (video → recipe, translation)
+├── /api/*   → JSON API (login required) ──► D1 (users, folders, recipes)
+│                                        └──► Google LLMs (video → recipe, translation)
 └── /*       → static files built from frontend/ (frontend/out)
 ```
 
@@ -111,8 +111,8 @@ Run each from its own folder.
   `.env.example` with placeholder values instead.
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
-- Add an API endpoint without the session check (only `POST /api/auth/login` is public),
-  or an admin action without the admin check.
+- Add an API endpoint that skips the login check (only login itself is public), or an
+  admin action that skips the admin check.
 - Add a paid service or anything outside the free tiers above.
 
 ## Conventions
