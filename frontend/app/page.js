@@ -5,20 +5,29 @@ import Link from 'next/link';
 import FolderBar from '@/components/FolderBar';
 import RecipeCard from '@/components/RecipeCard';
 import { useLanguage } from '@/components/Language';
+import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './page.module.css';
 
 export default function HomePage() {
   const { t } = useLanguage();
-  const [folders, setFolders] = useState(null);
+  const [folders, setFolders] = useState(null); // null while loading
   const [recipes, setRecipes] = useState([]);
+  const [loadError, setLoadError] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [savingFavorite, setSavingFavorite] = useState(new Set()); // recipe ids
   const [selected, setSelected] = useState('all');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const load = useCallback(async () => {
-    const [loadedFolders, loadedRecipes] = await Promise.all([api.getFolders(), api.getRecipes()]);
-    setFolders(loadedFolders);
-    setRecipes(loadedRecipes);
+    setLoadError(null);
+    try {
+      const [loadedFolders, loadedRecipes] = await Promise.all([api.getFolders(), api.getRecipes()]);
+      setRecipes(loadedRecipes);
+      setFolders(loadedFolders);
+    } catch (error) {
+      setLoadError(error);
+    }
   }, []);
 
   useEffect(() => {
@@ -26,6 +35,15 @@ export default function HomePage() {
     load();
   }, [load]);
 
+  if (loadError) {
+    return (
+      <div className={styles.empty} role="alert">
+        <p className={styles.emptyTitle}>{t.errLoad}</p>
+        <p>{errorMessage(t, loadError)}</p>
+        <button type="button" className="button" onClick={load}>{t.retry}</button>
+      </div>
+    );
+  }
   if (!folders) return <p>{t.loading}</p>;
 
   const visible = recipes.filter((r) => {
@@ -33,9 +51,36 @@ export default function HomePage() {
     if (selected === 'all') return true;
     return r.folderId === (selected === 'none' ? null : selected);
   });
+  // A message about a failed tap is stale once the user does something else.
+  const select = (value) => {
+    setActionError(null);
+    setSelected(value);
+  };
   const folderName = (id) => folders.find((f) => f.id === id)?.name;
   const viewTitle = selected === 'all' ? t.allRecipes : selected === 'none' ? t.noFolder : folderName(selected);
   const newRecipeHref = typeof selected === 'number' ? `/recipe/edit?folder=${selected}` : '/recipe/edit';
+
+  // The heart changes at once and changes back if saving fails, so a tap feels instant.
+  async function toggleFavorite(recipe) {
+    const favorite = !recipe.favorite;
+    const setLocal = (value) =>
+      setRecipes((list) => list.map((r) => (r.id === recipe.id ? { ...r, favorite: value } : r)));
+    setActionError(null);
+    setLocal(favorite);
+    setSavingFavorite((ids) => new Set(ids).add(recipe.id));
+    try {
+      await api.setFavorite(recipe.id, favorite);
+    } catch (error) {
+      setLocal(!favorite);
+      setActionError(errorMessage(t, error));
+    } finally {
+      setSavingFavorite((ids) => {
+        const next = new Set(ids);
+        next.delete(recipe.id);
+        return next;
+      });
+    }
+  }
 
   return (
     <div className={styles.layout}>
@@ -44,20 +89,21 @@ export default function HomePage() {
           folders={folders}
           recipes={recipes}
           selected={selected}
-          onSelect={setSelected}
+          onSelect={select}
           onCreate={async (name) => {
             const folder = await api.createFolder(name);
-            await load();
-            setSelected(folder.id);
+            setFolders((list) => [...list, folder]);
+            select(folder.id);
           }}
           onRename={async (id, name) => {
-            await api.renameFolder(id, name);
-            await load();
+            const folder = await api.renameFolder(id, name);
+            setFolders((list) => list.map((f) => (f.id === id ? folder : f)));
+            setActionError(null);
           }}
           onDelete={async (id) => {
             await api.deleteFolder(id);
-            await load();
-            setSelected('all');
+            setFolders((list) => list.filter((f) => f.id !== id));
+            select('all');
           }}
         />
       </aside>
@@ -85,6 +131,8 @@ export default function HomePage() {
           </button>
         </div>
 
+        {actionError && <p className="error" role="alert">{actionError}</p>}
+
         {visible.length === 0 ? (
           <div className={styles.empty}>
             <p className={styles.emptyTitle}>{favoritesOnly ? t.emptyFavorites : t.emptyRecipes}</p>
@@ -97,10 +145,8 @@ export default function HomePage() {
                 <RecipeCard
                   recipe={recipe}
                   folderName={selected === 'all' ? folderName(recipe.folderId) : null}
-                  onToggleFavorite={async () => {
-                    await api.toggleFavorite(recipe.id);
-                    await load();
-                  }}
+                  saving={savingFavorite.has(recipe.id)}
+                  onToggleFavorite={() => toggleFavorite(recipe)}
                 />
               </li>
             ))}

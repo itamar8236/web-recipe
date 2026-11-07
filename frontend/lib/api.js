@@ -1,6 +1,6 @@
-// Data layer for the UI. Login goes to the backend; recipes and folders are still kept in
-// memory, shaped like the future endpoints, so swapping the bodies for fetch() calls
-// won't touch any component.
+// The only data layer for the UI. A logged-in user's folders and recipes come from the
+// backend; a guest's live only in memory here (never sent anywhere) and are gone on
+// reload. Both modes have the same functions and errors, so components never check.
 
 // An error from the backend. `code` is its machine-readable `error` value.
 export class ApiError extends Error {
@@ -9,6 +9,13 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+// Called when a data request finds the user logged out (e.g. the admin deleted them),
+// so the app can show the login screen.
+let onLoggedOut = () => {};
+export function setLoggedOutHandler(handler) {
+  onLoggedOut = handler;
 }
 
 async function request(path, method = 'GET', body) {
@@ -25,6 +32,16 @@ async function request(path, method = 'GET', body) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new ApiError(response.status, data.error ?? 'server_error');
   return data;
+}
+
+// A request for the user's data: a 401 here means the session is gone.
+async function dataRequest(path, method, body) {
+  try {
+    return await request(path, method, body);
+  } catch (error) {
+    if (error.status === 401) onLoggedOut();
+    throw error;
+  }
 }
 
 // The logged-in user ({ id, username, is_admin }), or null when nobody is logged in.
@@ -49,89 +66,124 @@ export async function logout() {
   await request('/api/auth/logout', 'POST');
 }
 
+// ---- Guest store (in memory) ----
+
+let guest = false;
 let nextId = 0;
-const newId = () => ++nextId;
+let memory = { folders: [], recipes: [] };
 
-function emptyData() {
-  return { folders: [], recipes: [] };
+// Called on every change of who uses the app. A guest starts from an empty app, and one
+// guest's data never shows for the next person.
+export function setGuestMode(on) {
+  guest = on;
+  memory = { folders: [], recipes: [] };
 }
 
-let db = emptyData();
-
-// For tests: start again from a clean state.
-export function resetData() {
-  db = emptyData();
-}
-
-function cleanLines(lines) {
-  return lines.map((line) => line.trim()).filter(Boolean);
-}
+const copy = (value) => structuredClone(value);
+const findRecipe = (id) => memory.recipes.find((r) => r.id === id);
 
 function cleanContent(content) {
-  return {
-    name: content.name.trim(),
-    ingredients: cleanLines(content.ingredients),
-    steps: cleanLines(content.steps),
-  };
+  const lines = (list) => list.map((line) => line.trim()).filter(Boolean);
+  return { name: content.name.trim(), ingredients: lines(content.ingredients), steps: lines(content.steps) };
 }
 
+// The same checks the backend makes, so a guest sees the same messages.
+function folderName(name) {
+  const trimmed = name.trim();
+  if (!trimmed) throw new ApiError(400, 'name_required');
+  return trimmed;
+}
+
+// ---- Folders ----
+
 export async function getFolders() {
-  return db.folders.map((folder) => ({ ...folder }));
+  if (guest) return copy(memory.folders);
+  return (await dataRequest('/api/folders')).folders;
 }
 
 export async function createFolder(name) {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error('Folder name is required');
-  const folder = { id: newId(), name: trimmed };
-  db.folders.push(folder);
-  return { ...folder };
+  if (guest) {
+    const folder = { id: ++nextId, name: folderName(name) };
+    memory.folders.push(folder);
+    return copy(folder);
+  }
+  return (await dataRequest('/api/folders', 'POST', { name })).folder;
 }
 
 export async function renameFolder(id, name) {
-  const trimmed = name.trim();
-  if (!trimmed) throw new Error('Folder name is required');
-  const folder = db.folders.find((f) => f.id === id);
-  if (folder) folder.name = trimmed;
+  if (guest) {
+    const folder = memory.folders.find((f) => f.id === id);
+    if (!folder) throw new ApiError(404, 'not_found');
+    folder.name = folderName(name);
+    return copy(folder);
+  }
+  return (await dataRequest(`/api/folders/${id}`, 'PUT', { name })).folder;
 }
 
 // Only empty folders can be deleted, so recipes are never lost or moved by accident.
 export async function deleteFolder(id) {
-  if (db.recipes.some((r) => r.folderId === id)) throw new Error('Folder is not empty');
-  db.folders = db.folders.filter((f) => f.id !== id);
+  if (guest) {
+    if (memory.recipes.some((r) => r.folderId === id)) throw new ApiError(409, 'folder_not_empty');
+    memory.folders = memory.folders.filter((f) => f.id !== id);
+    return;
+  }
+  await dataRequest(`/api/folders/${id}`, 'DELETE');
 }
+
+// ---- Recipes ----
+// A recipe is { id, folderId, favorite, link, en: {name, ingredients[], steps[]}, he: {...} }.
 
 export async function getRecipes() {
-  return db.recipes.map((recipe) => ({ ...recipe }));
+  if (guest) return copy(memory.recipes);
+  return (await dataRequest('/api/recipes')).recipes;
 }
 
+// The recipe, or null if it doesn't exist (or isn't this user's).
 export async function getRecipe(id) {
-  const recipe = db.recipes.find((r) => r.id === id);
-  return recipe ? { ...recipe } : null;
-}
-
-// `data` is { folderId, en: {name, ingredients[], steps[]}, he: {...} }.
-export async function saveRecipe(id, data) {
-  const en = cleanContent(data.en);
-  const he = cleanContent(data.he);
-  if (!en.name && !he.name) throw new Error('Recipe name is required');
-  const fields = { folderId: data.folderId ?? null, en, he };
-
-  const existing = db.recipes.find((r) => r.id === id);
-  if (existing) {
-    Object.assign(existing, fields);
-    return { ...existing };
+  if (guest) {
+    const recipe = findRecipe(id);
+    return recipe ? copy(recipe) : null;
   }
-  const recipe = { id: newId(), link: '', favorite: false, ...fields };
-  db.recipes.push(recipe);
-  return { ...recipe };
+  try {
+    return (await dataRequest(`/api/recipes/${id}`)).recipe;
+  } catch (error) {
+    if (error.status === 404) return null;
+    throw error;
+  }
 }
 
-export async function toggleFavorite(id) {
-  const recipe = db.recipes.find((r) => r.id === id);
-  if (recipe) recipe.favorite = !recipe.favorite;
-  return recipe ? recipe.favorite : false;
+// Creates the recipe when `id` is null, otherwise replaces its text and folder.
+// `data` is { folderId, en, he }.
+export async function saveRecipe(id, data) {
+  if (guest) {
+    const fields = { folderId: data.folderId ?? null, en: cleanContent(data.en), he: cleanContent(data.he) };
+    if (!fields.en.name && !fields.he.name) throw new ApiError(400, 'name_required');
+    const existing = findRecipe(id);
+    if (existing) Object.assign(existing, fields);
+    else memory.recipes.push({ id: ++nextId, link: '', favorite: false, ...fields });
+    return copy(existing ?? memory.recipes.at(-1));
+  }
+  const body = { folderId: data.folderId ?? null, en: data.en, he: data.he };
+  return id === null
+    ? (await dataRequest('/api/recipes', 'POST', body)).recipe
+    : (await dataRequest(`/api/recipes/${id}`, 'PUT', body)).recipe;
+}
+
+// Returns the updated recipe.
+export async function setFavorite(id, favorite) {
+  if (guest) {
+    const recipe = findRecipe(id);
+    if (!recipe) throw new ApiError(404, 'not_found');
+    recipe.favorite = favorite;
+    return copy(recipe);
+  }
+  return (await dataRequest(`/api/recipes/${id}/favorite`, 'PUT', { favorite })).recipe;
 }
 
 export async function deleteRecipe(id) {
-  db.recipes = db.recipes.filter((r) => r.id !== id);
+  if (guest) {
+    memory.recipes = memory.recipes.filter((r) => r.id !== id);
+    return;
+  }
+  await dataRequest(`/api/recipes/${id}`, 'DELETE');
 }

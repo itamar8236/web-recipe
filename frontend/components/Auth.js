@@ -20,15 +20,19 @@ export function AuthProvider({ children }) {
       .then((user) => {
         if (!cancelled) setAuth(user ? { status: 'user', user } : { status: 'anonymous', user: null });
       });
+    // A data request that finds the session gone (e.g. the admin deleted this user)
+    // brings back the login screen.
+    api.setLoggedOutHandler(() => setAuth({ status: 'anonymous', user: null }));
     return () => {
       cancelled = true;
     };
   }, []);
 
-  // Data in memory belongs to whoever was using the app, so every change of who that is
-  // starts from an empty app.
+  // A guest's data lives only in memory and a user's comes from the backend. Every change
+  // of who uses the app also empties the guest store, so one guest's data never shows
+  // for the next person.
   const switchTo = (next) => {
-    api.resetData();
+    api.setGuestMode(next.status === 'guest');
     setAuth(next);
   };
 

@@ -29,12 +29,14 @@ function cookie(request, name, value, maxAge) {
   return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
 }
 
-// The logged-in user for this request, or null.
+// The logged-in user for this request, or null. `data_user_id` is whose folders and
+// recipes this session works on: the user, or the user the admin is acting as.
 export async function getSessionUser(request, env) {
   const token = readCookies(request).session;
   if (!token) return null;
   return env.DB.prepare(
-    `SELECT users.id, users.username, users.is_admin
+    `SELECT users.id, users.username, users.is_admin,
+            COALESCE(sessions.acting_as_user_id, sessions.user_id) AS data_user_id
        FROM sessions JOIN users ON users.id = sessions.user_id
       WHERE sessions.token_hash = ?`,
   )

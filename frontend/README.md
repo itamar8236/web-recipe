@@ -4,14 +4,14 @@ Next.js app (App Router) in plain JavaScript and CSS Modules, built as a **stati
 (`output: 'export'` → `out/`) that the backend Worker serves. All data comes from the
 backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 
-## Current state: UI only
+## Current state
 
 The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up and
-guest mode. Recipes and folders have **no backend API yet**: `lib/api.js` keeps them in
-memory, starts empty (no sample recipes), and loses them on reload, for logged-in users
-and guests alike (a logged-in user just sees their username). Its functions
-are async and shaped like the future endpoints, so swapping in real `fetch` calls later
-won't touch the components. Folders are a flat list (no nesting or reordering).
+guest mode. A logged-in user's folders, recipes and favorites are loaded from and saved
+to the backend (D1). A **guest's** live only in memory in `lib/api.js`: nothing is sent
+to the backend, the app starts empty and everything is gone on reload. Components call
+the same `lib/api.js` functions in both modes. Folders are a flat list (no nesting or
+reordering).
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
 recipe has a `link`, otherwise plain "Added manually" text. The link is not editable in the
 UI; it will be filled by video import. 
@@ -34,7 +34,7 @@ frontend/
 ├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, Language (context), FolderBar, RecipeCard, HeartButton, ConfirmDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
-│   ├── api.js             # The only data layer (in-memory for now; later the only fetch())
+│   ├── api.js             # The only data layer: the backend for users, memory for guests
 │   ├── api.test.js        # Vitest tests for api.js and i18n helpers
 │   └── i18n.js            # UI strings in en/he + pickLanguage()
 ├── styles/globals.css     # Design tokens (CSS variables), buttons, form fields
@@ -47,6 +47,13 @@ frontend/
 - Static export can't use dynamic route segments without a build-time list, so recipe
   pages take the id as a **query parameter** and fetch on the client.
 - Components are client components where they fetch or hold state; keep it simple.
+- **Known, harmless: prefetch 404s in Windows builds.** On a build made on Windows, the
+  browser console shows 404s for files like `recipe/__next.recipe.__PAGE__.txt`. Next
+  16.4.5's export names those prefetch files from `path.relative()`, which uses `\` on
+  Windows, and then only turns `/` into `.`, so the files land in subfolders the browser
+  never asks for. Navigation still works (Next falls back to the page's full data file).
+  Production builds on Linux (Workers Builds), where the names come out right. Leave it
+  as is: don't turn off prefetching or rename files to work around it.
 
 ## Login flow
 
@@ -62,12 +69,14 @@ frontend/
   see this screen only the first time on a device or after logging out.
 - A thin bar under the header shows "Hello, <username>" and Log out; a guest sees "Guest"
   and a Log in button (back to the login screen).
-- Every change of who is using the app (log in, sign up, log out, guest) clears the
-  in-memory recipes, so one person's data never shows for the next.
+- Every change of who is using the app (log in, sign up, log out, guest) tells `lib/api.js`
+  whether this is a guest (`setGuestMode`) and empties the guest's in-memory data, so one
+  person's data never shows for the next.
+- A folders/recipes request that answers 401 (e.g. the admin deleted the user) brings back
+  the login screen.
 - Auth cookies need the same origin as the API, so test login on the Worker (:8787, after
   `npm run build`); on `next dev` (:3000) there is no backend, so only guest mode works.
-- Planned: any API call returning 401 (e.g. the admin deleted the user) sends the user to
-  the login screen; `is_admin` shows the "Users" link and `acting_as` the "Acting as" banner.
+- Planned: `is_admin` shows the "Users" link and `acting_as` the "Acting as" banner.
 
 ## Screens
 
@@ -78,7 +87,7 @@ Built now: Login, Home, Recipe view, Edit. The rest are planned.
    scrolls sideways; on desktop, a side list with no scrolling;
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
    Only an empty folder can be deleted (Delete looks disabled otherwise; tapping it shows a hint). Big "Add recipe" button. Each card has a
-   heart to mark a favorite (once login exists, each user sees only their own folders, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
+   heart to mark a favorite (each user sees only their own folders, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
    the selected folder).
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
 4. **Import**: URL field (YouTube or Facebook; others show "not supported yet"), a folder
@@ -109,7 +118,12 @@ Built now: Login, Home, Recipe view, Edit. The rest are planned.
 - Extremely simple: every action is reachable in 1-2 taps, with clear words on buttons
   (icons only alongside text).
 - Mobile first: works from ~360px up, no horizontal scroll, large tap targets (≥ 44px).
-- Every data screen handles loading, empty, error, and success states.
+- Every data screen handles loading, empty, error, and success states. Built so far:
+  - Loading shows "Loading..."; a failed load shows the reason and a "Try again" button.
+  - While a save runs its button is disabled and reads "Saving..." / "Deleting...";
+    on failure the form stays filled in and the message shows under it.
+  - The favorite heart changes at once, is disabled until the backend answers, and
+    changes back with a message if saving failed.
 - Destructive actions ask for confirmation with `components/ConfirmDialog` (an in-page
   dialog). Don't use `window.confirm()`: some browsers and in-app views block it and it
   silently returns false.
@@ -126,8 +140,11 @@ Built now: Login, Home, Recipe view, Edit. The rest are planned.
 
 ## API client
 
-`lib/api.js` exports one function per endpoint. The auth ones (`getMe`, `login`,
-`register`, `logout`) call the backend; folders and recipes are still in memory.
+`lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`,
+`logout`), folders (`getFolders`, `createFolder`, `renameFolder`, `deleteFolder`) and
+recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setFavorite`, `deleteRecipe`). For a
+guest the folder and recipe functions use memory instead, with the same checks and error
+codes as the backend.
 
 - Requests go to the same origin (`/api/...`), so the session cookie is sent without any
   extra setup. There is no API base URL or CORS: test anything that needs the backend on

@@ -1,3 +1,5 @@
+import { handleData } from './data.js';
+import { fail, json, readJson } from './http.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { endSession, getSessionUser, startSession } from './session.js';
 
@@ -5,29 +7,15 @@ const MAX_USERS = 50;
 const MIN_PASSWORD = 1;
 const MAX_PASSWORD = 200;
 
-function json(body, status = 200, cookies = []) {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
-  for (const value of cookies) headers.append('Set-Cookie', value);
-  return new Response(JSON.stringify(body), { status, headers });
-}
-
-const fail = (status, code) => json({ error: code }, status);
-
 function publicUser(user) {
   return { id: user.id, username: user.username, is_admin: user.is_admin === 1 };
 }
 
-// Reads { username, password } from the body. Returns null if it isn't a JSON object of strings.
-// The JSON content type is required because a plain HTML form on another site can't send
-// it, so no other site can sign a visitor up or log them in to an account it chose.
+// Reads { username, password } from the body. Returns null if it isn't a JSON object of
+// strings (readJson also refuses a body another site's plain HTML form could send, so no
+// other site can sign a visitor up or log them in to an account it chose).
 async function readCredentials(request) {
-  if (!request.headers.get('Content-Type')?.startsWith('application/json')) return null;
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return null;
-  }
+  const body = await readJson(request);
   if (typeof body?.username !== 'string' || typeof body?.password !== 'string') return null;
   return { username: body.username.trim(), password: body.password };
 }
@@ -98,7 +86,7 @@ async function handleApi(request, env, path) {
 
   if (method === 'GET' && path === '/api/auth/me') return json({ user: publicUser(user) });
 
-  return fail(404, 'not_found');
+  return handleData(request, env, path, user.data_user_id) ?? fail(404, 'not_found');
 }
 
 export default {

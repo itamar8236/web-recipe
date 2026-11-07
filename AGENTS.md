@@ -8,11 +8,12 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 
 ## Status
 
-Built so far: the recipe browsing UI (folders, recipes, English/Hebrew, manual add/edit/
-delete), keeping data in memory and starting empty, the D1 binding + schema (`backend/schema.sql`), and
-sign-up / log-in / log-out with remembered sessions plus a guest mode (Worker auth API in
-`backend/src/`). Recipes and folders are still in-memory in the browser (no API for them yet), and
-LLM import and the admin screens are not built yet; the sections below describe the target.
+Built so far: the recipe browsing UI (folders, recipes, favorites, English/Hebrew, manual
+add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
+log-out with remembered sessions plus a guest mode, and the folders/recipes API, so a
+logged-in user's data is stored in D1 (a guest's stays in browser memory). LLM import,
+translation, password changes and the admin screens are not built yet; the sections below
+describe the target.
 
 ## The product
 

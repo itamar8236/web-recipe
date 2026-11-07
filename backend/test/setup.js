@@ -20,7 +20,9 @@ beforeAll(async () => {
   for (const statement of statements(schema)) await env.DB.prepare(statement).run();
 });
 
-// Every test starts with no users and no sessions.
+// Every test starts with an empty database.
 beforeEach(async () => {
-  await env.DB.batch([env.DB.prepare('DELETE FROM sessions'), env.DB.prepare('DELETE FROM users')]);
+  await env.DB.batch(
+    ['recipes', 'folders', 'sessions', 'users'].map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
+  );
 });
