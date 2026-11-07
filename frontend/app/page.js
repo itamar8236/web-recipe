@@ -81,7 +81,7 @@ export default function HomePage() {
             aria-pressed={favoritesOnly}
             onClick={() => setFavoritesOnly(!favoritesOnly)}
           >
-            {favoritesOnly ? '♥' : '♡'} {t.favoritesOnly}
+            {t.favoritesOnly} {favoritesOnly ? '♥' : '♡'}
           </button>
         </div>
 

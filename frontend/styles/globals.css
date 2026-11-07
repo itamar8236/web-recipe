@@ -79,12 +79,15 @@ textarea {
 }
 
 .button:disabled,
-.button:disabled:hover {
+.button:disabled:hover,
+.button[aria-disabled='true'],
+.button[aria-disabled='true']:hover {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.button.danger:disabled:hover {
+.button.danger:disabled:hover,
+.button.danger[aria-disabled='true']:hover {
   background: var(--surface);
 }
 

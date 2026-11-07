@@ -11,6 +11,7 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
   const [mode, setMode] = useState(null); // null | 'new' | 'rename'
   const [name, setName] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [hintFor, setHintFor] = useState(null); // folder id + recipe count the hint was requested for
   const listRef = useRef(null);
 
   // On phones the pills scroll sideways; keep the selected one (e.g. a new folder) in view.
@@ -25,6 +26,9 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
   const unfiledCount = countIn(null);
   const selectedFolder = folders.find((f) => f.id === selected);
   const selectedIsEmpty = selectedFolder ? countIn(selectedFolder.id) === 0 : false;
+  // The hint belongs to one attempt, so it disappears when the folder or its contents change.
+  const hintKey = selectedFolder ? `${selectedFolder.id}:${countIn(selectedFolder.id)}` : null;
+  const showNotEmptyHint = hintKey !== null && hintFor === hintKey;
 
   function startEditing(nextMode) {
     setMode(nextMode);
@@ -84,9 +88,10 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
               <button
                 type="button"
                 className="button danger"
-                disabled={!selectedIsEmpty}
-                aria-describedby={selectedIsEmpty ? undefined : 'folder-not-empty'}
-                onClick={() => setConfirmingDelete(true)}
+                // aria-disabled (not disabled) so a tap still fires and can explain why nothing happens.
+                aria-disabled={!selectedIsEmpty}
+                aria-describedby={showNotEmptyHint ? 'folder-not-empty' : undefined}
+                onClick={() => (selectedIsEmpty ? setConfirmingDelete(true) : setHintFor(hintKey))}
               >
                 {t.delete}
               </button>
@@ -95,7 +100,7 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
         </div>
       )}
 
-      {!mode && selectedFolder && !selectedIsEmpty && (
+      {!mode && selectedFolder && !selectedIsEmpty && showNotEmptyHint && (
         <p id="folder-not-empty" className="hint">{t.folderNotEmpty}</p>
       )}
 
