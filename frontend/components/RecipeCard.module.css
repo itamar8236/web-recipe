@@ -5,16 +5,16 @@
 
 .heart {
   position: absolute;
-  top: 8px;
-  inset-inline-end: 8px;
+  top: 4px;
+  inset-inline-end: 4px;
 }
 
 .card {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 18px 20px;
+  gap: 6px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -30,8 +30,8 @@
 }
 
 .name {
-  padding-inline-end: 44px;
-  font-size: 21px;
+  padding-inline-end: 40px;
+  font-size: 19px;
 }
 
 .meta {
@@ -50,4 +50,21 @@
   background: var(--accent-soft);
   color: var(--accent-dark);
   font-weight: 600;
+}
+
+@media (min-width: 760px) {
+  .heart {
+    top: 8px;
+    inset-inline-end: 8px;
+  }
+
+  .card {
+    gap: 8px;
+    padding: 18px 20px;
+  }
+
+  .name {
+    padding-inline-end: 44px;
+    font-size: 21px;
+  }
 }

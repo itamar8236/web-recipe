@@ -3,7 +3,7 @@
   margin-inline: auto;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .back {
@@ -39,7 +39,7 @@
 }
 
 .title {
-  font-size: 34px;
+  font-size: 28px;
   overflow-wrap: anywhere;
 }
 
@@ -80,7 +80,7 @@
 }
 
 .card {
-  padding: 20px 22px;
+  padding: 16px 18px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -88,8 +88,8 @@
 }
 
 .card h2 {
-  margin-bottom: 14px;
-  font-size: 22px;
+  margin-bottom: 10px;
+  font-size: 21px;
 }
 
 .ingredients {
@@ -98,7 +98,7 @@
 }
 
 .ingredients li {
-  padding-block: 8px;
+  padding-block: 6px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -146,6 +146,11 @@
   gap: 10px;
 }
 
+/* Phones: action buttons share the row equally, easy to hit with a thumb. */
+.actions > * {
+  flex: 1 1 0;
+}
+
 /* Save / Cancel stay reachable at the bottom of long forms on phones. */
 .form .actions {
   position: sticky;
@@ -166,4 +171,31 @@
 
 .subtitle {
   margin: 6px 0 0;
+}
+
+@media (min-width: 760px) {
+  .recipe {
+    gap: 18px;
+  }
+
+  .title {
+    font-size: 34px;
+  }
+
+  .card {
+    padding: 20px 22px;
+  }
+
+  .card h2 {
+    margin-bottom: 14px;
+    font-size: 22px;
+  }
+
+  .ingredients li {
+    padding-block: 8px;
+  }
+
+  .actions > * {
+    flex: 0 0 auto;
+  }
 }

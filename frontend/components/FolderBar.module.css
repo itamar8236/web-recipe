@@ -1,7 +1,7 @@
 .bar {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 .heading {
@@ -16,21 +16,32 @@
   border-style: dashed;
 }
 
+/* Phones: one row of pills that scrolls sideways, running to the screen edges. */
 .list {
   list-style: none;
-  margin: 0;
-  padding: 0;
+  margin: 0 -16px;
+  padding: 2px 16px 4px;
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+.list li {
+  flex: 0 0 auto;
 }
 
 .pill {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: var(--tap);
-  padding-inline: 18px;
+  gap: 8px;
+  min-height: 44px;
+  padding-inline: 16px;
+  white-space: nowrap;
   border: 2px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
@@ -75,16 +86,35 @@
   gap: 8px;
 }
 
+.actions :global(.button) {
+  min-height: 44px;
+  padding-inline: 16px;
+  font-size: 16px;
+}
+
+.bar :global(.hint) {
+  margin: 0;
+}
+
 /* Desktop: folders become a vertical list beside the recipes. */
 @media (min-width: 760px) {
+  .bar {
+    gap: 12px;
+  }
+
   .list {
     flex-direction: column;
-    flex-wrap: nowrap;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
   }
 
   .pill {
     width: 100%;
+    min-height: var(--tap);
+    padding-inline: 18px;
     justify-content: space-between;
+    white-space: normal;
   }
 
   .pillName {
