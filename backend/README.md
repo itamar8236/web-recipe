@@ -52,11 +52,12 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
 
 - **Production**: `wrangler deploy` binds the real database.
 - **Local dev**: `wrangler dev` uses a local SQLite copy in `.wrangler/state` and never
-  touches production. `npm run dev` first runs `npm run db:pull`
-  ([`scripts/db-pull.mjs`](scripts/db-pull.mjs)): it exports production (read-only),
-  replaces the local database with that copy, then applies `schema.sql` locally.
-  `npm run dev:keep` skips the pull and keeps your local test data.
-  `db:pull` needs `npx wrangler login` once per machine.
+  touches production. `npm run dev` starts it on :8787 with whatever local data exists.
+- **Refreshing the local copy (owner only)**: wrangler stays logged out so agents can't
+  reach production. To copy production to local, run `npx wrangler login`,
+  `npm run db:pull`, `npx wrangler logout`. `db:pull`
+  ([`scripts/db-pull.mjs`](scripts/db-pull.mjs)) exports production (read-only), replaces
+  the local database with that copy, then applies `schema.sql` locally.
 - **Schema**: [`schema.sql`](schema.sql) describes every table. It only uses
   `IF NOT EXISTS`, so applying it again is safe. The owner applies it to production by
   hand: `npx wrangler d1 execute recipes-db --remote --file=schema.sql`.

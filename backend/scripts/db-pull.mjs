@@ -1,6 +1,7 @@
-// Replace the local D1 database with a fresh copy of production, so local dev starts
-// with real data instead of an empty app. Production is only read (exported), never
-// written. Needs `npx wrangler login` once on the machine.
+// Replace the local D1 database with a fresh copy of production, so local dev has real
+// data instead of an empty app. Production is only read (exported), never written.
+// Run by the owner only: wrangler stays logged out so agents can't reach production,
+// so this is run as `npx wrangler login`, `npm run db:pull`, `npx wrangler logout`.
 import { execSync } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 

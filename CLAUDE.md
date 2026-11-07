@@ -109,11 +109,11 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 | Task           | `backend/`                                   | `frontend/`       |
 |----------------|----------------------------------------------|-------------------|
 | Install        | `npm install`                                | `npm install`     |
-| Dev server     | `npm run dev` (copies prod DB to local, then wrangler on :8787 serving `frontend/out`: build the frontend first); `npm run dev:keep` skips the copy | `npm run dev` (:3000) |
+| Dev server     | `npm run dev` (wrangler on :8787 with the local DB, serving `frontend/out`: build the frontend first) | `npm run dev` (:3000) |
 | Tests          | (planned)                                    | `npm test`        |
 | Lint           | (planned)                                    | `npm run lint`    |
 | Build          | n/a                                          | `npm run build` → `out/` |
-| DB             | `npm run db:pull` (prod → local), `npm run db:schema:local` (apply `schema.sql` locally); production schema is applied by the owner | n/a |
+| DB             | `npm run db:schema:local` (apply `schema.sql` locally). Owner only, wrangler is otherwise logged out: `npx wrangler login`, `npm run db:pull` (prod → local), `npx wrangler logout`; production schema is applied by the owner | n/a |
 | Deploy         | automatic on merge to `main` (or `npm run deploy`) | (deployed with backend) |
 
 ## Never do these
