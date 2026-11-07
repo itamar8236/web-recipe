@@ -8,7 +8,7 @@ same PR.
 ## Status
 
 Built so far: the recipe browsing UI (folders, recipes, English/Hebrew, manual add/edit/
-delete) as an in-memory demo, and the D1 binding + schema (`backend/schema.sql`). Login,
+delete), keeping data in memory and starting empty, and the D1 binding + schema (`backend/schema.sql`). Login,
 the API, and LLM import are not built yet; the sections below describe the target.
 
 ## The product

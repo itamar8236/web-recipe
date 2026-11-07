@@ -12,7 +12,7 @@ schema, endpoints) are decided when the code is written, and recorded here in th
 
 The Worker is **assets-only**: `wrangler.jsonc` points at `../frontend/out` and Cloudflare
 serves the static build. There is no Worker code, API, or login yet; the frontend runs as
-an in-memory demo. The D1 database is bound (see [Database](#database)) but nothing reads
+memory and starts empty. The D1 database is bound (see [Database](#database)) but nothing reads
 it yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
 `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
 automatically through Workers Builds (root directory `/`), which builds with

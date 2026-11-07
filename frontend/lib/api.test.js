@@ -6,16 +6,27 @@ const content = (name, ingredients = [], steps = []) => ({ name, ingredients, st
 
 beforeEach(() => api.resetData());
 
+const newRecipe = (name, folderId = null) =>
+  api.saveRecipe(null, { folderId, en: content(name), he: content('') });
+
+describe('starting data', () => {
+  it('starts with no folders and no recipes', async () => {
+    expect(await api.getFolders()).toEqual([]);
+    expect(await api.getRecipes()).toEqual([]);
+  });
+});
+
 describe('recipes', () => {
   it('saves a new recipe and trims blank lines', async () => {
+    const folder = await api.createFolder('Breakfast');
     const saved = await api.saveRecipe(null, {
-      folderId: 1,
+      folderId: folder.id,
       en: content(' Pancakes ', ['flour', '  ', ' milk '], ['mix', '']),
       he: content(''),
     });
     const loaded = await api.getRecipe(saved.id);
     expect(loaded.en).toEqual(content('Pancakes', ['flour', 'milk'], ['mix']));
-    expect(loaded.folderId).toBe(1);
+    expect(loaded.folderId).toBe(folder.id);
   });
 
   it('accepts a recipe written only in Hebrew', async () => {
@@ -28,26 +39,26 @@ describe('recipes', () => {
   });
 
   it('updates an existing recipe', async () => {
-    await api.saveRecipe(1, { folderId: 2, en: content('Green Shakshuka'), he: content('') });
-    const loaded = await api.getRecipe(1);
+    const folder = await api.createFolder('Dinner');
+    const recipe = await newRecipe('Shakshuka');
+    await api.saveRecipe(recipe.id, { folderId: folder.id, en: content('Green Shakshuka'), he: content('') });
+    const loaded = await api.getRecipe(recipe.id);
     expect(loaded.en.name).toBe('Green Shakshuka');
-    expect(loaded.folderId).toBe(2);
+    expect(loaded.folderId).toBe(folder.id);
   });
 
-  it('keeps the source link when a recipe is edited, and manual recipes have none', async () => {
-    await api.saveRecipe(2, { folderId: 2, en: content('Lemon Chicken v2'), he: content('') });
-    expect((await api.getRecipe(2)).link).toBe('https://claude.ai');
-    const manual = await api.saveRecipe(null, { folderId: null, en: content('Toast'), he: content('') });
+  it('manual recipes have no source link', async () => {
+    const manual = await newRecipe('Toast');
     expect(manual.link).toBe('');
   });
 
   it('toggles favorite, and edits keep it', async () => {
-    expect((await api.getRecipe(2)).favorite).toBe(false);
-    await api.toggleFavorite(2);
-    await api.saveRecipe(2, { folderId: 2, en: content('Lemon Chicken'), he: content('') });
-    expect((await api.getRecipe(2)).favorite).toBe(true);
-    await api.toggleFavorite(2);
-    expect((await api.getRecipe(2)).favorite).toBe(false);
+    const { id } = await newRecipe('Lemon Chicken');
+    await api.toggleFavorite(id);
+    await api.saveRecipe(id, { folderId: null, en: content('Lemon Chicken v2'), he: content('') });
+    expect((await api.getRecipe(id)).favorite).toBe(true);
+    await api.toggleFavorite(id);
+    expect((await api.getRecipe(id)).favorite).toBe(false);
   });
 
   it('new recipes are not favorites', async () => {
@@ -56,8 +67,9 @@ describe('recipes', () => {
   });
 
   it('deletes a recipe', async () => {
-    await api.deleteRecipe(1);
-    expect(await api.getRecipe(1)).toBeNull();
+    const { id } = await newRecipe('Toast');
+    await api.deleteRecipe(id);
+    expect(await api.getRecipe(id)).toBeNull();
   });
 });
 
@@ -74,15 +86,19 @@ describe('folders', () => {
   });
 
   it('refuses to delete a folder that still has recipes', async () => {
-    await expect(api.deleteFolder(1)).rejects.toThrow();
-    expect((await api.getFolders()).some((f) => f.id === 1)).toBe(true);
-    expect((await api.getRecipe(1)).folderId).toBe(1);
+    const folder = await api.createFolder('Breakfast');
+    const recipe = await newRecipe('Shakshuka', folder.id);
+    await expect(api.deleteFolder(folder.id)).rejects.toThrow();
+    expect((await api.getFolders()).some((f) => f.id === folder.id)).toBe(true);
+    expect((await api.getRecipe(recipe.id)).folderId).toBe(folder.id);
   });
 
   it('deletes an empty folder', async () => {
-    await api.deleteRecipe(1);
-    await api.deleteFolder(1);
-    expect((await api.getFolders()).some((f) => f.id === 1)).toBe(false);
+    const folder = await api.createFolder('Breakfast');
+    const recipe = await newRecipe('Shakshuka', folder.id);
+    await api.deleteRecipe(recipe.id);
+    await api.deleteFolder(folder.id);
+    expect((await api.getFolders()).some((f) => f.id === folder.id)).toBe(false);
   });
 });
 

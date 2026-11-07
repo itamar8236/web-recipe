@@ -4,11 +4,3 @@
   padding: 16px 16px 32px;
 }
 
-.footer {
-  max-width: var(--page-width);
-  margin-inline: auto;
-  padding: 0 16px 32px;
-  color: var(--ink-soft);
-  font-size: 14px;
-  text-align: center;
-}

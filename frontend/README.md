@@ -4,17 +4,16 @@ Next.js app (App Router) in plain JavaScript and CSS Modules, built as a **stati
 (`output: 'export'` → `out/`) that the backend Worker serves. All data comes from the
 backend's API (see `backend/README.md`). Read the root `CLAUDE.md` first.
 
-## Current state: UI-only demo
+## Current state: UI only
 
-Only the recipe browsing and manual add/edit/delete screens exist. There is **no login,
-no database and no backend API yet**: `lib/api.js` keeps everything in memory (seeded
-with a few sample recipes) and resets when the page is closed or reloaded. Its functions
+Only the recipe browsing and manual add/edit/delete screens exist. There is **no login
+and no backend API yet**, so the app doesn't read the D1 database: `lib/api.js` keeps
+data in memory, starts empty (no sample recipes), and loses it on reload. Its functions
 are async and shaped like the future endpoints, so swapping in real `fetch` calls later
 won't touch the components. Folders are a flat list (no nesting or reordering).
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
 recipe has a `link`, otherwise plain "Added manually" text. The link is not editable in the
-UI; it will be filled by video import. One sample recipe links to claude.ai as an example.
-
+UI; it will be filled by video import. 
 ## Layout
 
 Marked (planned) = not built yet.
@@ -118,7 +117,7 @@ Built now: Home, Recipe view, Edit. The rest are planned.
 
 ## API client
 
-Today `lib/api.js` is the in-memory demo described above. The target design is:
+Today `lib/api.js` is the in-memory data layer described above. The target design is:
 
 - `lib/api.js` exports one function per endpoint (`login`, `getMe`, `getFolders`,
   `importRecipe`, ...) and throws an `Error` with the backend's message on failure.
