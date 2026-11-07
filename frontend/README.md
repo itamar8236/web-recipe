@@ -62,7 +62,8 @@ frontend/
 - If the admin set or reset the password, the user is sent to a "Choose a new password"
   screen before the app opens.
 - Any API call returning 401 (e.g. the admin deleted the user) sends the user to `/login`.
-- The current user is kept in a small React context; `is_admin` shows the "Users" link.
+- The current user is kept in a small React context; `is_admin` shows the "Users" link,
+  and `acting_as` (the impersonated user, if any) shows the "Acting as" banner.
 
 ## Screens
 
@@ -91,9 +92,12 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    language is required. If a language is left empty, the recipe view shows the other
    language with a "not written yet" note; later the backend will translate it.
 7. **Users** (admin only): list of users, a form to add one (username, optional email,
-   first password), a "Reset password" button and a delete button per user, both with
-   confirmation (deleting a user also deletes their folders and recipes; the dialog says
-   so). Shows "N / 50 users".
+   first password), and per user an "Act as" button, a "Reset password" button and a
+   delete button (the last two with confirmation; deleting a user also deletes all their
+   folders and recipes, and the dialog says so). Shows "N / 50 users".
+   "Act as" opens Home showing that user's folders and recipes; every screen then works
+   on their data, and a banner on every page says "Acting as <name>" with a "Stop"
+   button that returns the admin to their own data.
 8. **Change password** (planned): current password, new password, and Save. Reached
    from the header, and shown automatically after the admin sets or resets a password.
 

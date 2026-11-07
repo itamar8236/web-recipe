@@ -25,8 +25,9 @@ the API, and LLM import are not built yet; the sections below describe the targe
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**
-  (nothing is shared between users). One **admin** (the owner) adds
-  and deletes users and sets their first password. Login is **username or email plus a
+  (nothing is shared between users). One **admin** (the owner) adds users, sets their
+  first password, can **act as any user** to see and manage their data, and deletes
+  users (which deletes all of their data). Login is **username or email plus a
   password**, and the session is remembered: after logging in once, a user never sees
   the login page again on that device unless they log out, change their password, or the
   admin deletes them.
@@ -94,8 +95,7 @@ One Cloudflare Worker  (backend/)
 ├── backend/          # Cloudflare Worker: API, D1 access, LLM calls, serves frontend build
 ├── frontend/         # Next.js app (static export)
 ├── .agents/skills/   # Shared agent skills (source of truth)
-├── .claude/          # Claude Code settings + skills mirror (generated)
-├── scripts/          # Repo maintenance scripts
+├── .claude/          # Claude Code settings; skills is a symlink to ../.agents/skills
 ├── AGENTS.md         # Entry point for non-Claude agents, points here
 └── CLAUDE.md         # This file
 ```
@@ -152,9 +152,12 @@ Before every push:
 
 ## Agent setup
 
-- **Skills** live in `.agents/skills/` (read by all agents); `.claude/skills/` is a copy
-  for Claude Code. Edit only `.agents/skills/`, then run `bash scripts/sync-skills.sh`
-  and commit both folders.
+- **Skills** live only in `.agents/skills/` (read by all agents). `.claude/skills` is a
+  git symlink to `../.agents/skills` so Claude Code finds the same files; there is no
+  copy to keep in sync. Edit and commit only `.agents/skills/`.
+  - Windows without symlink support checks the link out as a small text file, so Claude
+    Code sees no skills. One-time fix per clone, no admin needed (Git Bash, repo root):
+    `rm .claude/skills && cmd //c "mklink /J .claude\skills .agents\skills" && git update-index --skip-worktree .claude/skills`
   - `git-workflow`: branch, commit, push, open a PR
   - `new-feature`: feature checklist across backend and frontend
   - `bug-fix`: reproduce, test, fix, verify

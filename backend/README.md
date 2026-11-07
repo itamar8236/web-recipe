@@ -29,9 +29,13 @@ The sections below describe what the backend must do once built.
 ## Data
 
 - **Users**: up to 50. The owner is the only admin.
-- **Every user has their own private folders and recipes.** Nobody else (the admin
-  included) sees or changes them, and every query is filtered by the logged-in user.
-  Deleting a user deletes their folders and recipes too.
+- **Every user has their own private folders and recipes.** No other user sees or
+  changes them, and every query is filtered by the user the session acts for.
+- **Admin impersonation**: the admin can "act as" any user and then sees and changes
+  that user's folders and recipes exactly as they would, until tapping "Stop". It is
+  stored on the admin's session (`sessions.acting_as_user_id`), so it doesn't affect the
+  user's own devices, and the database refuses it for anyone but the admin.
+- **Deleting a user deletes everything of theirs**: sessions, folders, and recipes.
 - **Folders**: created, renamed, nested, and reordered freely by their owner.
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
   and Hebrew** so either version can be edited. A recipe sits in one of its owner's
@@ -79,8 +83,10 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   for a long time.
 - Logins that go unused expire on the server and are cleaned up, so they don't pile up.
 - Deleting a user logs them out everywhere right away.
-- Every API endpoint requires a logged-in user, except login itself. User management
-  requires the admin.
+- Every API endpoint requires a logged-in user, except login itself. User management and
+  starting or stopping impersonation require the admin. While impersonating, recipe and
+  folder endpoints use the impersonated user; user management still checks the real
+  user (the admin), and the admin can't change the user's password while acting as them.
 
 ## Import from a video link
 

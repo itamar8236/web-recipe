@@ -102,15 +102,42 @@ END;
 -- unused for a long time are deleted by the backend
 -- (DELETE FROM sessions WHERE last_seen_at < ?), using last_seen_at so active users
 -- are never logged out.
+-- acting_as_user_id is admin impersonation: while it is set, the admin's session sees
+-- and changes that user's folders and recipes exactly as the user would. It lives on the
+-- session (not the user) so it applies only on the admin's device, ends when the admin
+-- taps "Stop", and never touches the user's own sessions. user_id stays the admin, so
+-- the backend always knows who is really acting. Deleting the impersonated user sets it
+-- back to NULL, returning the admin to their own data.
 CREATE TABLE IF NOT EXISTS sessions (
-  token_hash   TEXT    PRIMARY KEY CHECK (length(token_hash) = 64),
-  user_id      INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  created_at   INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
-  last_seen_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
+  token_hash        TEXT    PRIMARY KEY CHECK (length(token_hash) = 64),
+  user_id           INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  acting_as_user_id INTEGER REFERENCES users (id) ON DELETE SET NULL,
+  created_at        INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+  last_seen_at      INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
+  CHECK (acting_as_user_id IS NULL OR acting_as_user_id <> user_id)
 );
 
 CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS sessions_acting_as_user_id ON sessions (acting_as_user_id);
 CREATE INDEX IF NOT EXISTS sessions_last_seen_at ON sessions (last_seen_at);
+
+-- Only the admin may impersonate. The backend checks this too; these triggers make a
+-- missed check impossible to turn into one user reading another's recipes.
+CREATE TRIGGER IF NOT EXISTS sessions_only_admin_acts_as_insert
+BEFORE INSERT ON sessions
+WHEN NEW.acting_as_user_id IS NOT NULL
+  AND (SELECT is_admin FROM users WHERE id = NEW.user_id) <> 1
+BEGIN
+  SELECT RAISE(ABORT, 'Only the admin can act as another user');
+END;
+
+CREATE TRIGGER IF NOT EXISTS sessions_only_admin_acts_as_update
+BEFORE UPDATE OF acting_as_user_id ON sessions
+WHEN NEW.acting_as_user_id IS NOT NULL
+  AND (SELECT is_admin FROM users WHERE id = NEW.user_id) <> 1
+BEGIN
+  SELECT RAISE(ABORT, 'Only the admin can act as another user');
+END;
 
 -- Each user's own folders: nobody else sees them. parent_id nests them and position
 -- orders siblings (the user drags them freely). The composite foreign keys

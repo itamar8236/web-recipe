@@ -26,7 +26,6 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
    (`local-dev` skill, never production) and try the feature end to end in a browser.
 7. **Document**: update every `.md` file the feature makes outdated, in the same PR:
    `CLAUDE.md` (product, stack, commands, rules), `backend/README.md` (schema, API, auth,
-   LLM flow, env), `frontend/README.md` (screens, UX), skills (then run
-   `bash scripts/sync-skills.sh`).
+   LLM flow, env), `frontend/README.md` (screens, UX), skills (in `.agents/skills/` only).
 8. **Ship**: commit and open a PR (`git-workflow`). Report what changed, how it was
    tested, and what's left.
