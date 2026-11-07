@@ -14,7 +14,8 @@ the same `lib/api.js` functions in both modes. Folders are a flat list (no nesti
 reordering).
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
 recipe has a `link`, otherwise plain "Added manually" text. The link is not editable in the
-UI; it will be filled by video import. 
+UI; it will be filled by video import.
+
 ## Layout
 
 Marked (planned) = not built yet.

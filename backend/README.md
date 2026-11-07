@@ -5,8 +5,9 @@ JSON API, stores data in Cloudflare D1, handles login, calls Google's free LLMs 
 video links into recipes, and serves the frontend's static build. Read the root
 `AGENTS.md` first.
 
-This file describes **what the backend must do**. Implementation details (file layout,
-schema, endpoints) are decided when the code is written, and recorded here in the same PR.
+"Current state" and the API tables describe what exists; the sections after them
+describe what the backend must do once built. Record new files, schema and endpoints
+here in the same PR that adds them.
 
 ## Current state
 
