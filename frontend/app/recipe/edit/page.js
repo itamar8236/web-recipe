@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/components/Language';
+import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from '../recipe.module.css';
 
@@ -31,26 +32,72 @@ function RecipeForm() {
   const [folders, setFolders] = useState([]);
   const [folderId, setFolderId] = useState(params.get('folder') ? Number(params.get('folder')) : null);
   const [form, setForm] = useState({ en: blank, he: blank });
-  const [ready, setReady] = useState(false);
+  const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'missing' | 'error'
+  const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
     async function load() {
-      setFolders(await api.getFolders());
-      if (id !== null) {
-        const recipe = await api.getRecipe(id);
+      try {
+        const [loadedFolders, recipe] = await Promise.all([
+          api.getFolders(),
+          id === null ? null : api.getRecipe(id),
+        ]);
+        if (cancelled) return;
+        setFolders(loadedFolders);
+        if (id !== null && !recipe) return setStatus('missing');
         if (recipe) {
           setFolderId(recipe.folderId);
           setForm({ en: toText(recipe.en), he: toText(recipe.he) });
         }
+        setStatus('ready');
+      } catch (err) {
+        if (!cancelled) {
+          setError(errorMessage(t, err));
+          setStatus('error');
+        }
       }
-      setReady(true);
     }
     load();
-  }, [id]);
+    return () => {
+      cancelled = true;
+    };
+    // `t` is left out on purpose: switching language must not reload and wipe the form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, attempt]);
 
-  if (!ready) return <p>{t.loading}</p>;
+  if (status === 'loading') return <p>{t.loading}</p>;
+  if (status === 'missing') {
+    return (
+      <>
+        <p>{t.notFound}</p>
+        <Link href="/" className="button secondary">{t.back}</Link>
+      </>
+    );
+  }
+  if (status === 'error') {
+    return (
+      <div role="alert">
+        <p className="error">{error}</p>
+        <div className={styles.actions}>
+          <button
+            type="button"
+            className="button"
+            onClick={() => {
+              setError('');
+              setStatus('loading');
+              setAttempt(attempt + 1);
+            }}
+          >
+            {t.retry}
+          </button>
+          <Link href="/" className="button secondary">{t.back}</Link>
+        </div>
+      </div>
+    );
+  }
 
   function update(field, value) {
     setForm({ ...form, [lang]: { ...form[lang], [field]: value } });
@@ -67,8 +114,8 @@ function RecipeForm() {
         he: toContent(form.he),
       });
       router.push(`/recipe?id=${saved.id}`);
-    } catch {
-      setError(t.nameRequired);
+    } catch (err) {
+      setError(errorMessage(t, err));
       setSaving(false);
     }
   }
@@ -115,7 +162,7 @@ function RecipeForm() {
       {error && <p className="error" role="alert">{error}</p>}
 
       <div className={styles.actions}>
-        <button type="submit" className="button" disabled={saving}>{t.save}</button>
+        <button type="submit" className="button" disabled={saving}>{saving ? t.saving : t.save}</button>
         <Link href={id === null ? '/' : `/recipe?id=${id}`} className="button secondary">{t.cancel}</Link>
       </div>
     </form>

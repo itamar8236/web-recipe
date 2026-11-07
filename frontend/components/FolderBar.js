@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLanguage } from './Language';
 import ConfirmDialog from './ConfirmDialog';
+import { errorMessage } from '@/lib/i18n';
 import styles from './FolderBar.module.css';
 
 // `selected` is 'all', 'none' (recipes without a folder) or a folder id.
@@ -12,6 +13,8 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
   const [name, setName] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [hintFor, setHintFor] = useState(null); // folder id + recipe count the hint was requested for
+  const [busy, setBusy] = useState(false); // a create, rename or delete is being saved
+  const [error, setError] = useState('');
   const listRef = useRef(null);
 
   // On phones the pills scroll sideways; keep the selected one (e.g. a new folder) in view.
@@ -33,21 +36,36 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
   function startEditing(nextMode) {
     setMode(nextMode);
     setName(nextMode === 'rename' ? selectedFolder.name : '');
+    setError('');
+  }
+
+  // Runs a save; on failure the form stays open with the message, so nothing typed is lost.
+  async function save(action) {
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+      return true;
+    } catch (err) {
+      setError(errorMessage(t, err, t.errFolderNameRequired));
+      return false;
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submit(event) {
     event.preventDefault();
-    if (!name.trim()) return;
-    if (mode === 'new') await onCreate(name);
-    else await onRename(selectedFolder.id, name);
-    setMode(null);
+    if (!name.trim() || busy) return;
+    const ok = await save(() => (mode === 'new' ? onCreate(name) : onRename(selectedFolder.id, name)));
+    if (ok) setMode(null);
   }
 
   function pill(key, label, count, value) {
     const active = selected === value;
     return (
       <li key={key}>
-        <button type="button" className={`${styles.pill} ${active ? styles.active : ''}`} aria-pressed={active} onClick={() => onSelect(value)}>
+        <button type="button" className={`${styles.pill} ${active ? styles.active : ''}`} aria-pressed={active} onClick={() => { setError(''); onSelect(value); }}>
           <span className={styles.pillName}>{label}</span>
           <span className={styles.count}>{count}</span>
         </button>
@@ -75,30 +93,33 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
             autoFocus
           />
           <div className={styles.actions}>
-            <button type="submit" className="button" disabled={!name.trim()}>{t.save}</button>
-            <button type="button" className="button secondary" onClick={() => setMode(null)}>{t.cancel}</button>
+            <button type="submit" className="button" disabled={!name.trim() || busy}>{busy ? t.saving : t.save}</button>
+            <button type="button" className="button secondary" disabled={busy} onClick={() => setMode(null)}>{t.cancel}</button>
           </div>
         </form>
       ) : (
         <div className={styles.actions}>
-          <button type="button" className={`button secondary ${styles.newFolder}`} onClick={() => startEditing('new')}>+ {t.newFolder}</button>
+          <button type="button" className={`button secondary ${styles.newFolder}`} disabled={busy} onClick={() => startEditing('new')}>+ {t.newFolder}</button>
           {selectedFolder && (
             <>
-              <button type="button" className="button secondary" onClick={() => startEditing('rename')}>{t.rename}</button>
+              <button type="button" className="button secondary" disabled={busy} onClick={() => startEditing('rename')}>{t.rename}</button>
               <button
                 type="button"
                 className="button danger"
+                disabled={busy}
                 // aria-disabled (not disabled) so a tap still fires and can explain why nothing happens.
                 aria-disabled={!selectedIsEmpty}
                 aria-describedby={showNotEmptyHint ? 'folder-not-empty' : undefined}
                 onClick={() => (selectedIsEmpty ? setConfirmingDelete(true) : setHintFor(hintKey))}
               >
-                {t.delete}
+                {busy ? t.deleting : t.delete}
               </button>
             </>
           )}
         </div>
       )}
+
+      {error && <p className="error" role="alert">{error}</p>}
 
       {!mode && selectedFolder && !selectedIsEmpty && showNotEmptyHint && (
         <p id="folder-not-empty" className="hint">{t.folderNotEmpty}</p>
@@ -110,7 +131,7 @@ export default function FolderBar({ folders, recipes, selected, onSelect, onCrea
           confirmLabel={t.delete}
           onConfirm={async () => {
             setConfirmingDelete(false);
-            await onDelete(selectedFolder.id);
+            await save(() => onDelete(selectedFolder.id));
           }}
           onCancel={() => setConfirmingDelete(false)}
         />

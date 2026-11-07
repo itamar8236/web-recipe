@@ -6,7 +6,7 @@ import HeartButton from './HeartButton';
 import { pickLanguage } from '@/lib/i18n';
 import styles from './RecipeCard.module.css';
 
-export default function RecipeCard({ recipe, folderName, onToggleFavorite }) {
+export default function RecipeCard({ recipe, folderName, saving, onToggleFavorite }) {
   const { lang, t } = useLanguage();
   const content = pickLanguage(recipe, lang);
 
@@ -20,7 +20,7 @@ export default function RecipeCard({ recipe, folderName, onToggleFavorite }) {
         </p>
       </Link>
       {/* A sibling of the link, not inside it: buttons can't be nested in links. */}
-      <HeartButton active={recipe.favorite} onClick={onToggleFavorite} className={styles.heart} />
+      <HeartButton active={recipe.favorite} disabled={saving} onClick={onToggleFavorite} className={styles.heart} />
     </div>
   );
 }

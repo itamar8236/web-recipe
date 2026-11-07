@@ -18,3 +18,8 @@
 .heart.active {
   color: #d62f4b;
 }
+
+/* While the change is saved: the heart already shows the new state, so just block taps. */
+.heart:disabled {
+  cursor: progress;
+}

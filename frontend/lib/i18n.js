@@ -61,6 +61,15 @@ export const strings = {
     errPasswordInvalid: 'The password must be 1 to 200 characters.',
     errUserLimit: 'No more users can sign up right now.',
     errGeneric: 'Something went wrong. Please try again.',
+    errNetwork: 'Could not reach the server. Check your connection and try again.',
+    errLoad: 'Could not load your recipes.',
+    errFolderNameRequired: 'Please give the folder a name.',
+    errTooLong: 'This is too long. Please shorten it.',
+    errFolderNotFound: 'That folder no longer exists. Please pick another one.',
+    errNotFound: 'This was already deleted.',
+    retry: 'Try again',
+    saving: 'Saving...',
+    deleting: 'Deleting...',
   },
   he: {
     appName: 'המתכונים שלי',
@@ -122,17 +131,33 @@ export const strings = {
     errPasswordInvalid: 'הסיסמה חייבת להיות באורך 1 עד 200 תווים.',
     errUserLimit: 'אי אפשר להירשם כרגע, הגענו למספר המשתמשים המרבי.',
     errGeneric: 'משהו השתבש. נסו שוב.',
+    errNetwork: 'אין חיבור לשרת. בדקו את החיבור ונסו שוב.',
+    errLoad: 'לא הצלחנו לטעון את המתכונים.',
+    errFolderNameRequired: 'נא לתת שם לתיקייה.',
+    errTooLong: 'הטקסט ארוך מדי. נא לקצר.',
+    errFolderNotFound: 'התיקייה הזו כבר לא קיימת. נא לבחור תיקייה אחרת.',
+    errNotFound: 'זה כבר נמחק.',
+    retry: 'לנסות שוב',
+    saving: 'שומר...',
+    deleting: 'מוחק...',
   },
 };
 
-// Maps a backend error code to a message in the current language.
-export function errorMessage(t, error) {
+// Maps a backend error code to a message in the current language. `nameRequired` is the
+// message for a missing name, which depends on what is being named.
+export function errorMessage(t, error, nameRequired = t.nameRequired) {
   const byCode = {
     invalid_credentials: t.errInvalidCredentials,
     username_taken: t.errUsernameTaken,
     username_invalid: t.errUsernameInvalid,
     password_invalid: t.errPasswordInvalid,
     user_limit: t.errUserLimit,
+    network: t.errNetwork,
+    name_required: nameRequired,
+    too_long: t.errTooLong,
+    folder_not_found: t.errFolderNotFound,
+    folder_not_empty: t.folderNotEmpty,
+    not_found: t.errNotFound,
   };
   return byCode[error?.code] ?? t.errGeneric;
 }

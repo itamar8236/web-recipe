@@ -90,6 +90,10 @@
   margin: 0;
 }
 
+.empty :global(.button) {
+  margin-top: 16px;
+}
+
 .empty .emptyTitle {
   margin-bottom: 6px;
   font-size: 20px;
