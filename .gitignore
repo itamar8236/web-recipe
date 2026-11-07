@@ -34,3 +34,7 @@ desktop.ini
 
 # Claude Code personal settings
 .claude/settings.local.json
+
+# .claude/skills is a symlink to .agents/skills. On Windows it may be a junction (a real
+# folder to git); ignoring it stops git add from committing a copy of the skills.
+.claude/skills/
