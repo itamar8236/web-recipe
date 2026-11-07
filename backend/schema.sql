@@ -112,38 +112,48 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions (user_id);
 CREATE INDEX IF NOT EXISTS sessions_last_seen_at ON sessions (last_seen_at);
 
--- Shared folders that organize the shared recipes. parent_id nests them and position
--- orders siblings (the user drags them freely). RESTRICT on parent_id (and on
--- recipes.folder_id) is what makes "only an empty folder can be deleted" a database
--- rule. The backend must also refuse to move a folder under one of its own descendants
--- (SQLite triggers cannot run the recursive query needed to check that).
+-- Each user's own folders: nobody else sees them. parent_id nests them and position
+-- orders siblings (the user drags them freely). The composite foreign keys
+-- (parent_id, user_id) and, in recipes, (folder_id, user_id) make the database refuse
+-- to put a folder or recipe inside another user's folder. They are NO ACTION (checked
+-- at the end of each statement), which is what makes "only an empty folder can be
+-- deleted" a database rule while still letting a user's deletion cascade through all
+-- of their folders and recipes in one go. The backend must also refuse to move a folder
+-- under one of its own descendants (SQLite triggers cannot run the recursive query
+-- needed to check that).
 CREATE TABLE IF NOT EXISTS folders (
   id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   name       TEXT    NOT NULL CHECK (length(trim(name)) > 0),
-  parent_id  INTEGER REFERENCES folders (id) ON DELETE RESTRICT
-             CHECK (parent_id IS NULL OR parent_id <> id),
+  parent_id  INTEGER CHECK (parent_id IS NULL OR parent_id <> id),
   position   INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
-  created_by INTEGER REFERENCES users (id) ON DELETE SET NULL,
   updated_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
-  updated_by INTEGER REFERENCES users (id) ON DELETE SET NULL
+  UNIQUE (id, user_id),
+  FOREIGN KEY (parent_id, user_id) REFERENCES folders (id, user_id)
 );
 
-CREATE INDEX IF NOT EXISTS folders_parent_position ON folders (parent_id, position);
+CREATE INDEX IF NOT EXISTS folders_user_parent_position ON folders (user_id, parent_id, position);
 
--- The shared recipe collection, in both languages side by side. Two fixed languages fit
--- in one row, so a recipe is read and saved in one statement. Either language may be
--- empty ('' and '[]') until it is written or translated, but at least one name is set.
+-- Each user's own recipes, in both languages side by side. Two fixed languages fit in
+-- one row, so a recipe is read and saved in one statement. Either language may be empty
+-- ('' and '[]') until it is written or translated, but at least one name is set.
 -- folder_id NULL means "No folder". source_url NULL means added manually.
+-- is_favorite is a plain column because only the owner ever sees a recipe, so "my
+-- favorite" and "favorite" are the same thing.
+-- source_model is the LLM whose result the user picked on the compare screen (NULL for
+-- manual recipes); it is all an import needs to remember once the recipe is saved.
 -- machine_translated_lang names the language the LLM filled in, so the UI can label it;
--- the backend clears it when a user edits that language, since it is then human text.
--- created_by/updated_by become NULL when that user is deleted: the recipe stays.
+-- the backend clears it when the user edits that language, since it is then human text.
 CREATE TABLE IF NOT EXISTS recipes (
   id             INTEGER PRIMARY KEY,
-  folder_id      INTEGER REFERENCES folders (id) ON DELETE RESTRICT,
+  user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  folder_id      INTEGER,
+  is_favorite    INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1)),
   platform       TEXT    NOT NULL DEFAULT 'manual'
                  CHECK (platform IN ('manual', 'youtube', 'facebook')),
   source_url     TEXT,
+  source_model   TEXT,
   name_en        TEXT    NOT NULL DEFAULT '',
   ingredients_en TEXT    NOT NULL DEFAULT '[]'
                  CHECK (json_valid(ingredients_en) AND json_type(ingredients_en) = 'array'),
@@ -156,63 +166,12 @@ CREATE TABLE IF NOT EXISTS recipes (
                  CHECK (json_valid(steps_he) AND json_type(steps_he) = 'array'),
   machine_translated_lang TEXT CHECK (machine_translated_lang IN ('en', 'he')),
   created_at     INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
-  created_by     INTEGER REFERENCES users (id) ON DELETE SET NULL,
   updated_at     INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
-  updated_by     INTEGER REFERENCES users (id) ON DELETE SET NULL,
+  FOREIGN KEY (folder_id, user_id) REFERENCES folders (id, user_id),
   CHECK (trim(name_en) <> '' OR trim(name_he) <> ''),
-  -- A manual recipe has no link and an imported one always has its video link.
-  CHECK ((platform = 'manual') = (source_url IS NULL))
+  -- A manual recipe has no link and no model; an imported one always has its video link.
+  CHECK ((platform = 'manual') = (source_url IS NULL)),
+  CHECK (platform <> 'manual' OR source_model IS NULL)
 );
 
-CREATE INDEX IF NOT EXISTS recipes_folder_id ON recipes (folder_id);
-
--- Hearts are per user: everyone shares one collection, so one person's favorites must
--- not change what another person sees under "Favorites". A row means "this user hearted
--- this recipe"; deleting the user or the recipe removes it.
-CREATE TABLE IF NOT EXISTS favorites (
-  user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  recipe_id  INTEGER NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
-  created_at INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
-  PRIMARY KEY (user_id, recipe_id)
-) WITHOUT ROWID;
-
--- One video import a user started. An import runs several free-tier LLMs and can take a
--- minute; keeping the attempt lets the compare screen survive a reload or a phone
--- switching apps without spending the models' free quota again. These rows are drafts,
--- not recipes: a recipe is created only when the user picks a candidate and saves
--- (saved_recipe_id then points at it). Discarding an import deletes its row; the backend
--- also deletes runs older than a few days. folder_id is only the folder picked on the
--- import screen, so it is SET NULL rather than blocking a folder delete.
-CREATE TABLE IF NOT EXISTS import_runs (
-  id              INTEGER PRIMARY KEY,
-  user_id         INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  platform        TEXT    NOT NULL CHECK (platform IN ('youtube', 'facebook')),
-  source_url      TEXT    NOT NULL,
-  folder_id       INTEGER REFERENCES folders (id) ON DELETE SET NULL,
-  saved_recipe_id INTEGER REFERENCES recipes (id) ON DELETE SET NULL,
-  created_at      INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
-);
-
-CREATE INDEX IF NOT EXISTS import_runs_user_created ON import_runs (user_id, created_at);
-
--- One model's answer within an import, shown side by side on the compare screen with
--- the model name, time taken, and error. 'running' rows let a reloaded screen show which
--- models are still working; 'no_recipe' is separate from 'error' so the UI can say
--- "this video has no recipe" in the user's language. result is the whole draft
--- ({"en": {name, ingredients, steps}, "he": {...}}) as JSON because it is only ever shown
--- and copied whole into recipes.
-CREATE TABLE IF NOT EXISTS import_candidates (
-  id          INTEGER PRIMARY KEY,
-  run_id      INTEGER NOT NULL REFERENCES import_runs (id) ON DELETE CASCADE,
-  model       TEXT    NOT NULL,
-  status      TEXT    NOT NULL DEFAULT 'running'
-              CHECK (status IN ('running', 'ok', 'no_recipe', 'error')),
-  duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms >= 0),
-  error       TEXT,
-  result      TEXT,
-  created_at  INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
-  UNIQUE (run_id, model),
-  CHECK ((status = 'ok') = (result IS NOT NULL)),
-  CHECK (result IS NULL OR (json_valid(result) AND json_type(result) = 'object')),
-  CHECK ((status = 'error') = (error IS NOT NULL))
-);
+CREATE INDEX IF NOT EXISTS recipes_user_folder ON recipes (user_id, folder_id);

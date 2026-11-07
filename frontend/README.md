@@ -73,7 +73,7 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    scrolls sideways; on desktop, a side list with no scrolling;
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
    Only an empty folder can be deleted (Delete looks disabled otherwise; tapping it shows a hint). Big "Add recipe" button. Each card has a
-   heart to mark a favorite (once login exists, favorites are per user), and a "Favorites" toggle filters the list (combined with
+   heart to mark a favorite (once login exists, each user sees only their own folders, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
    the selected folder). (Nesting,
    moving, and reordering folders are planned.)
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
@@ -92,7 +92,8 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    language with a "not written yet" note; later the backend will translate it.
 7. **Users** (admin only): list of users, a form to add one (username, optional email,
    first password), a "Reset password" button and a delete button per user, both with
-   confirmation. Shows "N / 50 users".
+   confirmation (deleting a user also deletes their folders and recipes; the dialog says
+   so). Shows "N / 50 users".
 8. **Change password** (planned): current password, new password, and Save. Reached
    from the header, and shown automatically after the admin sets or resets a password.
 

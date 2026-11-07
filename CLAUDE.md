@@ -24,7 +24,8 @@ the API, and LLM import are not built yet; the sections below describe the targe
   **compares the results side by side** and picks one to save.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
-- **Up to 50 users**, all sharing one recipe collection. One **admin** (the owner) adds
+- **Up to 50 users**, each with their **own private folders, recipes, and favorites**
+  (nothing is shared between users). One **admin** (the owner) adds
   and deletes users and sets their first password. Login is **username or email plus a
   password**, and the session is remembered: after logging in once, a user never sees
   the login page again on that device unless they log out, change their password, or the

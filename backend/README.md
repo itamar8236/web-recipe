@@ -29,15 +29,16 @@ The sections below describe what the backend must do once built.
 ## Data
 
 - **Users**: up to 50. The owner is the only admin.
-- **Folders**: created, renamed, nested, and reordered freely by users.
+- **Every user has their own private folders and recipes.** Nobody else (the admin
+  included) sees or changes them, and every query is filtered by the logged-in user.
+  Deleting a user deletes their folders and recipes too.
+- **Folders**: created, renamed, nested, and reordered freely by their owner.
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
-  and Hebrew** so either version can be edited. A recipe sits in a folder (or none).
-  All users share the same folders and recipes.
-- **Favorites**: per user. Each user's heart marks their own favorite; it doesn't change
-  anyone else's Favorites list.
-- **Imports**: each video import and every model's result are kept as drafts, so the
-  compare screen survives a reload. A recipe is created only when the user saves; old
-  drafts are cleaned up.
+  and Hebrew** so either version can be edited. A recipe sits in one of its owner's
+  folders (or none). A favorite is a flag on the recipe, since only its owner sees it.
+- **Imports** are not stored: the models' results go back to the browser for the
+  compare screen, and only the recipe the user saves is written (with the model it came
+  from).
 
 Every table, column and constraint is in [`schema.sql`](schema.sql), with comments on why.
 
