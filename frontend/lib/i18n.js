@@ -44,6 +44,23 @@ export const strings = {
     languageLocked: 'Finish or cancel the recipe to change the language.',
     writingIn: 'You are writing the English version. To add Hebrew, save, switch to עברית and tap Edit.',
     notFound: 'Recipe not found.',
+    username: 'Username',
+    password: 'Password',
+    logIn: 'Log in',
+    signUp: 'Sign up',
+    noAccount: "Don't have an account?",
+    haveAccount: 'Already have an account?',
+    continueAsGuest: 'Continue as guest',
+    guestNote: 'As a guest nothing is saved.',
+    guest: 'Guest',
+    hello: (name) => `Hello, ${name}`,
+    logOut: 'Log out',
+    errInvalidCredentials: 'Wrong username or password.',
+    errUsernameTaken: 'This username is already taken.',
+    errUsernameInvalid: 'Please enter a username (up to 50 characters).',
+    errPasswordInvalid: 'The password must be 1 to 200 characters.',
+    errUserLimit: 'No more users can sign up right now.',
+    errGeneric: 'Something went wrong. Please try again.',
   },
   he: {
     appName: 'המתכונים שלי',
@@ -88,8 +105,37 @@ export const strings = {
     languageLocked: 'יש לשמור או לבטל את המתכון כדי להחליף שפה.',
     writingIn: 'כותבים את הגרסה בעברית. כדי להוסיף אנגלית, שומרים, עוברים ל-English ולוחצים על עריכה.',
     notFound: 'המתכון לא נמצא.',
+    username: 'שם משתמש',
+    password: 'סיסמה',
+    logIn: 'כניסה',
+    signUp: 'הרשמה',
+    noAccount: 'אין לכם חשבון?',
+    haveAccount: 'כבר יש לכם חשבון?',
+    continueAsGuest: 'המשך כאורח',
+    guestNote: 'כאורח שום דבר לא נשמר.',
+    guest: 'אורח',
+    hello: (name) => `שלום, ${name}`,
+    logOut: 'התנתקות',
+    errInvalidCredentials: 'שם משתמש או סיסמה שגויים.',
+    errUsernameTaken: 'שם המשתמש הזה כבר תפוס.',
+    errUsernameInvalid: 'נא להזין שם משתמש (עד 50 תווים).',
+    errPasswordInvalid: 'הסיסמה חייבת להיות באורך 1 עד 200 תווים.',
+    errUserLimit: 'אי אפשר להירשם כרגע, הגענו למספר המשתמשים המרבי.',
+    errGeneric: 'משהו השתבש. נסו שוב.',
   },
 };
+
+// Maps a backend error code to a message in the current language.
+export function errorMessage(t, error) {
+  const byCode = {
+    invalid_credentials: t.errInvalidCredentials,
+    username_taken: t.errUsernameTaken,
+    username_invalid: t.errUsernameInvalid,
+    password_invalid: t.errPasswordInvalid,
+    user_limit: t.errUserLimit,
+  };
+  return byCode[error?.code] ?? t.errGeneric;
+}
 
 export const languageLabels = { en: 'English', he: 'עברית' };
 

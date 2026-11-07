@@ -9,8 +9,10 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 ## Status
 
 Built so far: the recipe browsing UI (folders, recipes, English/Hebrew, manual add/edit/
-delete), keeping data in memory and starting empty, and the D1 binding + schema (`backend/schema.sql`). Login,
-the API, and LLM import are not built yet; the sections below describe the target.
+delete), keeping data in memory and starting empty, the D1 binding + schema (`backend/schema.sql`), and
+sign-up / log-in / log-out with remembered sessions plus a guest mode (Worker auth API in
+`backend/src/`). Recipes and folders are still in-memory in the browser (no API for them yet), and
+LLM import and the admin screens are not built yet; the sections below describe the target.
 
 ## The product
 
@@ -26,12 +28,15 @@ the API, and LLM import are not built yet; the sections below describe the targe
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**
-  (nothing is shared between users). One **admin** (the owner) adds users, sets their
-  first password, can **act as any user** to see and manage their data, and deletes
-  users (which deletes all of their data). Login is **username plus a
-  password**, and the session is remembered: after logging in once, a user never sees
-  the login page again on that device unless they log out, change their password, or the
-  admin deletes them.
+  (nothing is shared between users). Anyone can **sign up** with a username and password
+  (until 50 users exist). One **admin** (the owner, created by hand on production) can
+  **act as any user** to see and manage their data, and deletes users (which deletes all
+  of their data). Login is **username plus a password**, and the session is remembered:
+  after logging in once, a user never sees the login page again on that device unless they
+  log out, change their password, or the admin deletes them.
+- **Guest mode**: the login screen has "Continue as guest". The app is fully usable, but
+  nothing is read from or written to the database; the guest starts empty and loses
+  everything on reload.
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not
@@ -62,7 +67,7 @@ the API, and LLM import are not built yet; the sections below describe the targe
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
 | LLM       | Google's free-tier LLMs                            | One or more models, set by config; key in a Worker secret |
 | Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); admin manages users; stays logged in |
-| Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-pool-workers`     |
+| Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-plugin`           |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |
 
 Adding a framework, language, paid service, or major dependency needs the owner's approval.
@@ -103,15 +108,14 @@ One Cloudflare Worker  (backend/)
 
 ## Commands
 
-Run each from its own folder. The backend is assets-only for now (no Worker code, tests,
-or lint yet), so those rows are planned until it gets real code. The D1 database is
+Run each from its own folder. The backend has no lint yet (planned). The D1 database is
 bound and has a schema; local dev never touches production (`local-dev` skill).
 
 | Task           | `backend/`                                   | `frontend/`       |
 |----------------|----------------------------------------------|-------------------|
 | Install        | `npm install`                                | `npm install`     |
 | Dev server     | `npm run dev` (wrangler on :8787 with the local DB, serving `frontend/out`: build the frontend first) | `npm run dev` (:3000) |
-| Tests          | (planned)                                    | `npm test`        |
+| Tests          | `npm test` (Workers runtime, throwaway local DB) | `npm test`        |
 | Lint           | (planned)                                    | `npm run lint`    |
 | Build          | n/a                                          | `npm run build` → `out/` |
 | DB             | `npm run db:schema:local` (apply `schema.sql` locally). Owner only, wrangler is otherwise logged out: `npx wrangler login`, `npm run db:pull` (prod → local), `npx wrangler logout`; production schema is applied by the owner | n/a |
@@ -124,7 +128,7 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
   `.env.example` with placeholder values instead.
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
-- Add an API endpoint that skips the login check (only login itself is public), or an
+- Add an API endpoint that skips the login check (only sign-up, login and logout are public), or an
   admin action that skips the admin check.
 - Add a paid service or anything outside the free tiers above.
 

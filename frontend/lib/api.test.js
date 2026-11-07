@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
-import { pickLanguage } from './i18n';
+import { errorMessage, pickLanguage, strings } from './i18n';
 
 const content = (name, ingredients = [], steps = []) => ({ name, ingredients, steps });
 
@@ -111,5 +111,44 @@ describe('pickLanguage', () => {
   it('falls back to the other language when empty', () => {
     const recipe = { en: content('Tea'), he: content('') };
     expect(pickLanguage(recipe, 'he')).toMatchObject({ name: 'Tea', translated: false });
+  });
+});
+
+describe('login', () => {
+  const mockFetch = (status, body) =>
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: status < 400, status, json: async () => body })));
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('getMe returns the user, or null when not logged in', async () => {
+    mockFetch(200, { user: { id: 1, username: 'dana', is_admin: false } });
+    expect((await api.getMe()).username).toBe('dana');
+    mockFetch(401, { error: 'not_logged_in' });
+    expect(await api.getMe()).toBeNull();
+  });
+
+  it('login sends the credentials as JSON', async () => {
+    mockFetch(200, { user: { id: 1, username: 'dana' } });
+    await api.login('dana', 'password123');
+    const [path, options] = fetch.mock.calls[0];
+    expect(path).toBe('/api/auth/login');
+    expect(JSON.parse(options.body)).toEqual({ username: 'dana', password: 'password123' });
+  });
+
+  it('turns backend errors into ApiError with the code', async () => {
+    mockFetch(401, { error: 'invalid_credentials' });
+    await expect(api.login('dana', 'nope')).rejects.toMatchObject({ code: 'invalid_credentials' });
+  });
+
+  it('reports an unreachable backend as a network error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fail'); }));
+    await expect(api.register('dana', 'password123')).rejects.toMatchObject({ code: 'network' });
+  });
+});
+
+describe('errorMessage', () => {
+  it('maps known codes and falls back to a generic message', () => {
+    expect(errorMessage(strings.en, { code: 'username_taken' })).toBe(strings.en.errUsernameTaken);
+    expect(errorMessage(strings.he, { code: 'weird' })).toBe(strings.he.errGeneric);
   });
 });

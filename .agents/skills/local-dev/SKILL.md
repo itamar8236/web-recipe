@@ -44,8 +44,8 @@ database (then run `npm run db:schema:local` and add test data through the app).
 2. `cd backend && npm run db:schema:local` (adds any tables new on this branch; it only
    creates what's missing, so existing data stays), then `npm run dev`: `wrangler dev` on
    http://localhost:8787 using the local database.
-3. Optional hot reload: in `frontend/`, set `NEXT_PUBLIC_API_BASE=http://localhost:8787`
-   in `.env.local` and run `npm run dev` (http://localhost:3000) alongside the backend.
+3. Optional hot reload for UI-only work: in `frontend/`, `npm run dev` (http://localhost:3000).
+   It has no backend, so only guest mode works there; test login on :8787.
 
 ## Local data
 The local DB is yours to test with: add, edit, or delete anything. Only the owner's
@@ -58,5 +58,5 @@ you ran, and what you checked in the browser. Never report unrun checks as done.
 
 ## Known gap
 Workers Builds runs `wrangler preview` for PR branches, and previews use the same D1
-binding, i.e. **production**. Once Worker code reads `env.DB`, a PR preview would read
+binding, i.e. **production**. The Worker reads `env.DB` now, so a PR preview would read
 and write real data. Not solved yet; flag it in the PR if your change makes it worse.
