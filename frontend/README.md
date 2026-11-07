@@ -23,6 +23,8 @@ Marked (planned) = not built yet.
 frontend/
 ├── app/
 │   ├── layout.js          # Root layout: wraps everything in the Shell
+│   ├── manifest.js        # Web app manifest (makes the site installable on Android)
+│   ├── icon.png           # Favicon
 │   ├── page.js            # Home: folders + recipes in the selected folder
 │   ├── login/page.js      # (planned) Username/email field only   (/login)
 │   ├── admin/page.js      # (planned) Admin: list, add, delete users (/admin)
@@ -31,6 +33,7 @@ frontend/
 │       ├── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
 │       └── import/page.js # (planned) Paste a video link, compare, save (/recipe/import)
 ├── components/            # Shell, Header, Language (context), FolderBar, RecipeCard, HeartButton, ConfirmDialog
+├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer (in-memory for now; later the only fetch())
 │   ├── api.test.js        # Vitest tests for api.js and i18n helpers
@@ -39,6 +42,9 @@ frontend/
 └── next.config.mjs
 ```
 
+- **Installable (PWA):** `app/manifest.js` + `public/sw.js` (registered in production only) let
+  Chrome on Android offer "Install app". Icons are cropped from the Recipe Rocket logo into
+  `public/icons/`. Needs HTTPS (fine on Cloudflare); it doesn't work on plain `http://` hosts.
 - Static export can't use dynamic route segments without a build-time list, so recipe
   pages take the id as a **query parameter** and fetch on the client.
 - Components are client components where they fetch or hold state; keep it simple.
