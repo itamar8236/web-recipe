@@ -25,7 +25,7 @@ automatically through Workers Builds (root directory `/`), which builds with
   `wrangler.jsonc`.
 
 Code: `src/index.js` (routes), `src/session.js` (cookies and the `sessions` table),
-`src/password.js` (PBKDF2), `scripts/hash-password.mjs` (makes the admin INSERT: `node scripts/hash-password.mjs <username> <password>`, then run the printed command; the file lands in git-ignored `.wrangler/`). Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
+`src/password.js` (PBKDF2). Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
 throwaway local D1 built from `schema.sql`; never touches production or `.wrangler/state`).
 
 ## Auth API

@@ -27,10 +27,10 @@
 -- Bootstrap the admin (once, on production, replacing the placeholders). Only one admin
 -- can exist, and the admin row cannot be deleted or demoted (see the users triggers).
 -- <password-hash> is the full encoded string 'pbkdf2-sha256$<iterations>$<salt b64>$<hash b64>'
--- produced by scripts/hash-password.mjs, which also writes the INSERT for you;
+-- made once by hand with PBKDF2-SHA256 (100000 iterations, random 16-byte salt, 32-byte hash);
 -- never put a plaintext password here.
---   node scripts/hash-password.mjs <admin-username> <password>   (writes .wrangler/create-admin.sql)
---   npx wrangler d1 execute recipes-db --remote --file=.wrangler/create-admin.sql
+--   npx wrangler d1 execute recipes-db --remote --file=<file with the INSERT below>
+--   INSERT INTO users (username, is_admin, password_hash) VALUES ('<admin-username>', 1, '<password-hash>');
 
 -- People who may log in. There is no sign-up: the admin adds rows here with a password,
 -- and a login matches the username plus the password.
