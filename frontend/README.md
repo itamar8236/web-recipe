@@ -69,7 +69,7 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    scrolls sideways; on desktop, a side list with no scrolling;
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
    Only an empty folder can be deleted (Delete looks disabled otherwise; tapping it shows a hint). Big "Add recipe" button. Each card has a
-   heart to mark a favorite, and a "Favorites only" toggle filters the list (combined with
+   heart to mark a favorite, and a "Favorites" toggle filters the list (combined with
    the selected folder). (Nesting,
    moving, and reordering folders are planned.)
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
