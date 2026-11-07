@@ -11,9 +11,9 @@ export const metadata = {
 export const viewport = { themeColor: '#c4501b' };
 
 export default function RootLayout({ children }) {
-  // lang/dir are set on the client from the saved language choice.
+  // Hebrew is the starting language; the client switches lang/dir when the user toggles.
   return (
-    <html lang="en" dir="ltr" suppressHydrationWarning>
+    <html lang="he" dir="rtl" suppressHydrationWarning>
       <body>
         <RegisterServiceWorker />
         <Shell>{children}</Shell>

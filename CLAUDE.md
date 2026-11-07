@@ -132,7 +132,8 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 - Clarity over cleverness: small functions, descriptive names, plain JavaScript.
 - Comments explain *why*, not *what*. No commented-out code.
 - Validate all input in the backend; never trust the client.
-- Write tests with every feature and bug fix (a failing test first for bugs).
+- Write tests with every feature and bug fix (a failing test first for bugs). Backend
+  changes always get simple tests: a few clear cases per endpoint, run on the local DB.
 - **Docs move with the code.** Every feature or bug fix updates the relevant `.md` files
   in the same PR whenever it changes what they describe: this file (product, stack,
   commands, rules), `backend/README.md` (schema, API, auth, LLM flow, env),

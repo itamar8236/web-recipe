@@ -9,7 +9,8 @@ description: Steps for fixing a bug in web-recipe - reproduce, write a failing t
 2. **Reproduce**: confirm the bug locally (dev servers on the local DB, see `local-dev`;
    a request; or a test) and find the
    root cause before editing. If you can't reproduce it, ask the owner for steps.
-3. **Failing test first**: add a test that fails because of the bug.
+3. **Failing test first**: add a test that fails because of the bug. Backend bugs get a
+   simple Vitest test in `backend/` too (local D1, never production).
 4. **Smallest fix**: change only what the bug needs. No refactors or unrelated cleanups;
    mention anything else you noticed in the PR's "Notes / follow-ups".
 5. **Verify**: the new test passes, lint and the app's tests pass, and for UI bugs the

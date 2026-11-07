@@ -108,8 +108,9 @@ Built now: Home, Recipe view, Edit. The rest are planned.
 
 ## Bilingual (English / Hebrew)
 
-- A language toggle in the header switches both the UI strings and the recipe content
-  shown. Remember the choice in `localStorage`. The toggle is disabled on the add/edit
+- The app **always opens in Hebrew**, on every visit and reload; the choice is not
+  remembered. A language toggle in the header switches both the UI strings and the
+  recipe content shown for the rest of the visit. The toggle is disabled on the add/edit
   page (until Save or Cancel), and the form writes the recipe in that language only.
 - Hebrew sets `<html lang="he" dir="rtl">`. Use CSS logical properties
   (`margin-inline-start`, `padding-inline`, `text-align: start`) so layouts flip correctly.
