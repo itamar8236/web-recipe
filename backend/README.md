@@ -14,9 +14,15 @@ The Worker is **assets-only**: `wrangler.jsonc` points at `../frontend/out` and 
 serves the static build. There is no Worker code, API, database, or login yet; the
 frontend runs as an in-memory demo. Run it locally with `npm run dev` (port 8787, after
 `npm run build` in `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
-automatically through Workers Builds with build command `cd ../frontend && npm install &&
-npm run build`, and deploy command `npx wrangler deploy` from `backend/`. The sections
-below describe what the backend must do once built.
+automatically through Workers Builds (root directory `/`), which builds with
+`cd frontend && npm install && npm run build` and then:
+
+- on `main`: `cd backend && npm install && npx wrangler deploy` (production).
+- on other branches and PRs: `cd backend && npm install && npx wrangler preview`, a
+  Worker Preview that doesn't touch production. It needs the `"previews": {}` block in
+  `wrangler.jsonc`.
+
+The sections below describe what the backend must do once built.
 
 ## Data
 
