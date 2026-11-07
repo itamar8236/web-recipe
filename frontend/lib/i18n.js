@@ -44,7 +44,6 @@ export const strings = {
     languageLocked: 'Finish or cancel the recipe to change the language.',
     writingIn: 'You are writing the English version. To add Hebrew, save, switch to עברית and tap Edit.',
     notFound: 'Recipe not found.',
-    sessionNote: 'Demo mode: recipes are cleared when you close the window.',
   },
   he: {
     appName: 'המתכונים שלי',
@@ -89,7 +88,6 @@ export const strings = {
     languageLocked: 'יש לשמור או לבטל את המתכון כדי להחליף שפה.',
     writingIn: 'כותבים את הגרסה בעברית. כדי להוסיף אנגלית, שומרים, עוברים ל-English ולוחצים על עריכה.',
     notFound: 'המתכון לא נמצא.',
-    sessionNote: 'מצב הדגמה: המתכונים נמחקים כשסוגרים את החלון.',
   },
 };
 

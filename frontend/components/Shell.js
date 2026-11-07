@@ -1,16 +1,14 @@
 'use client';
 
-import { LanguageProvider, useLanguage } from './Language';
+import { LanguageProvider } from './Language';
 import Header from './Header';
 import styles from './Shell.module.css';
 
 function Page({ children }) {
-  const { t } = useLanguage();
   return (
     <>
       <Header />
       <main className={styles.main}>{children}</main>
-      <footer className={styles.footer}>{t.sessionNote}</footer>
     </>
   );
 }

@@ -12,19 +12,22 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
 3. **Read the docs for the area**: `backend/README.md` (data, login, video import) and/or
    `frontend/README.md` (screens, UX, bilingual rules).
 4. **Backend** (if needed):
-   - Schema changes go through new migrations; never edit an applied one.
+   - All tables live in `backend/schema.sql` (only `IF NOT EXISTS`, safe to re-run).
+     New tables go there; changing an existing table also needs a one-off `ALTER`
+     that the owner runs on production: write it in the PR.
    - Use bound SQL parameters only; keep LLM provider code in one place.
    - New routes require a session (admin routes also the admin check).
    - Validate input, return `{ error }` with the right status code.
-   - Add Vitest tests for the handler.
+   - Add simple Vitest tests (`@cloudflare/vitest-pool-workers`, local D1) for every
+     new or changed endpoint: the happy path, bad input, and not logged in / not admin.
+     Keep them small: a few clear cases, no elaborate fixtures.
    - Record new endpoints and schema in `backend/README.md`.
 5. **Frontend** (if needed): follow the `frontend-ui` skill. Call the API only through
    `lib/api.js`, and support both English and Hebrew.
-6. **Verify**: lint and tests for every app touched; run both dev servers and try the
-   feature end to end in a browser.
+6. **Verify**: lint and tests for every app touched; run the app against the local DB
+   (`local-dev` skill, never production) and try the feature end to end in a browser.
 7. **Document**: update every `.md` file the feature makes outdated, in the same PR:
-   `CLAUDE.md` (product, stack, commands, rules), `backend/README.md` (schema, API, auth,
-   LLM flow, env), `frontend/README.md` (screens, UX), skills (then run
-   `bash scripts/sync-skills.sh`).
+   `AGENTS.md` (product, stack, commands, rules), `backend/README.md` (schema, API, auth,
+   LLM flow, env), `frontend/README.md` (screens, UX), skills (in `.agents/skills/` only).
 8. **Ship**: commit and open a PR (`git-workflow`). Report what changed, how it was
    tested, and what's left.

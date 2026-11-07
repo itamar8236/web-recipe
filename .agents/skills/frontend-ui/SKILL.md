@@ -24,5 +24,6 @@ components before inventing new ones. The app must stay extremely simple to use.
 
 ## Before you finish
 - Run `npm run lint` and `npm test` in `frontend/`.
-- Check the change in a browser at phone and desktop widths, in English and Hebrew.
+- Check the change in a browser at phone and desktop widths, in English and Hebrew
+  (run the app as in the `local-dev` skill).
 - Attach screenshots to the PR for visible changes.

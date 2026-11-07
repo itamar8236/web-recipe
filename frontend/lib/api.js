@@ -1,74 +1,18 @@
-// Temporary in-memory data layer: nothing is saved, everything resets when the page
-// is closed or reloaded. It exposes the same async functions the real backend client
-// will have, so replacing the body with fetch() calls later won't touch any component.
+// Data layer for the UI. Its async functions are shaped like the future backend
+// endpoints, so swapping the bodies for fetch() calls won't touch any component.
 
-const emptyContent = { name: '', ingredients: [], steps: [] };
-
-let nextId = 100;
+let nextId = 0;
 const newId = () => ++nextId;
 
-function seed() {
-  return {
-    folders: [
-      { id: 1, name: 'Breakfast' },
-      { id: 2, name: 'Dinner' },
-      { id: 3, name: 'Desserts' },
-    ],
-    recipes: [
-      {
-        id: 1,
-        folderId: 1,
-        link: '',
-        favorite: true,
-        en: {
-          name: 'Shakshuka',
-          ingredients: ['4 eggs', '4 ripe tomatoes, chopped', '1 onion, diced', '2 cloves garlic', '1 tsp paprika', 'Olive oil and salt'],
-          steps: ['Fry the onion and garlic in olive oil until soft.', 'Add the tomatoes and paprika and simmer for 10 minutes.', 'Make small wells and crack in the eggs.', 'Cover and cook until the whites are set. Serve with bread.'],
-        },
-        he: {
-          name: 'שקשוקה',
-          ingredients: ['4 ביצים', '4 עגבניות בשלות קצוצות', 'בצל אחד קצוץ', '2 שיני שום', 'כפית פפריקה', 'שמן זית ומלח'],
-          steps: ['מטגנים את הבצל והשום בשמן זית עד שמתרככים.', 'מוסיפים עגבניות ופפריקה ומבשלים 10 דקות.', 'עושים גומות קטנות ושוברים לתוכן את הביצים.', 'מכסים ומבשלים עד שהחלבון מתייצב. מגישים עם לחם.'],
-        },
-      },
-      {
-        id: 2,
-        folderId: 2,
-        // Example of an imported recipe: later this will be the original video link.
-        link: 'https://claude.ai',
-        favorite: false,
-        en: {
-          name: 'Lemon Chicken',
-          ingredients: ['1 kg chicken thighs', '2 lemons', '4 cloves garlic', '2 tbsp olive oil', 'Thyme, salt and pepper'],
-          steps: ['Heat the oven to 200°C.', 'Mix the lemon juice, garlic, oil and spices and coat the chicken.', 'Bake for 40 minutes until golden.'],
-        },
-        he: {
-          name: 'עוף בלימון',
-          ingredients: ['קילו שוקי עוף', '2 לימונים', '4 שיני שום', '2 כפות שמן זית', 'טימין, מלח ופלפל'],
-          steps: ['מחממים תנור ל-200 מעלות.', 'מערבבים מיץ לימון, שום, שמן ותבלינים ומצפים את העוף.', 'אופים 40 דקות עד שהעוף מזהיב.'],
-        },
-      },
-      {
-        id: 3,
-        folderId: 3,
-        link: '',
-        favorite: false,
-        en: {
-          name: 'Chocolate Mug Cake',
-          ingredients: ['4 tbsp flour', '2 tbsp cocoa', '3 tbsp sugar', '3 tbsp milk', '2 tbsp oil'],
-          steps: ['Mix everything in a big mug.', 'Microwave for 90 seconds.', 'Let it cool a minute before eating.'],
-        },
-        he: emptyContent,
-      },
-    ],
-  };
+function emptyData() {
+  return { folders: [], recipes: [] };
 }
 
-let db = seed();
+let db = emptyData();
 
 // For tests: start again from a clean state.
 export function resetData() {
-  db = seed();
+  db = emptyData();
 }
 
 function cleanLines(lines) {
