@@ -16,7 +16,9 @@ export default function Header() {
     <header className={styles.header}>
       <div className={styles.inner}>
         <Link href="/" className={styles.brand}>
-          <span aria-hidden="true">🍳</span> {t.appName}
+          {/* eslint-disable-next-line @next/next/no-img-element -- static export, no image optimizer */}
+          <img src="/icons/icon-192.png" alt="" className={styles.logo} width="36" height="36" />
+          {t.appName}
         </Link>
         <div
           className={`${styles.toggle} ${locked ? styles.locked : ''}`}
