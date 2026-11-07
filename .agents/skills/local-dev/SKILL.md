@@ -58,5 +58,5 @@ you ran, and what you checked in the browser. Never report unrun checks as done.
 
 ## Known gap
 Workers Builds runs `wrangler preview` for PR branches, and previews use the same D1
-binding, i.e. **production**. The Worker reads `env.DB` now, so a PR preview would read
-and write real data. Not solved yet; flag it in the PR if your change makes it worse.
+binding, i.e. **production**. The Worker reads and writes `env.DB` now (including folders
+and recipes), so a PR preview would read and write real data. Not solved yet; flag it in the PR if your change makes it worse.

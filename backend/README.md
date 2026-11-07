@@ -11,9 +11,9 @@ schema, endpoints) are decided when the code is written, and recorded here in th
 ## Current state
 
 The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
-everything else is the static build from `../frontend/out`, served by Cloudflare. Only the
-auth API below exists. Recipes and folders have no API yet: the frontend keeps them in
-memory. Run it locally with `npm run dev` (port 8787, after `npm run build` in
+everything else is the static build from `../frontend/out`, served by Cloudflare. The auth
+API and the folders/recipes API below exist; video import, translation, password changes
+and the admin endpoints don't yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
 `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
 automatically through Workers Builds (root directory `/`), which builds with
 `cd frontend && npm install && npm run build` and then:
@@ -24,7 +24,8 @@ automatically through Workers Builds (root directory `/`), which builds with
   (see the known gap under [Database](#database)). It needs the `"previews": {}` block in
   `wrangler.jsonc`.
 
-Code: `src/index.js` (routes), `src/session.js` (cookies and the `sessions` table),
+Code: `src/index.js` (routes and auth), `src/data.js` (folders and recipes),
+`src/http.js` (JSON helpers), `src/session.js` (cookies and the `sessions` table),
 `src/password.js` (PBKDF2). Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
 throwaway local D1 built from `schema.sql`; never touches production or `.wrangler/state`).
 
@@ -45,6 +46,35 @@ session except the three public auth endpoints; unknown paths are 404 when logge
 `Secure` on https): `device` (random id, kept across logouts) and `session` (random
 secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
 device. Not built yet: login rate limiting, changing passwords, the admin endpoints.
+
+## Folders and recipes API
+
+All need a session (401 `not_logged_in` otherwise) and work only on the data of the user
+the session acts for (`COALESCE(sessions.acting_as_user_id, sessions.user_id)`, so admin
+impersonation will just work once it can be started). Another user's folder or recipe
+answers 404, exactly like one that doesn't exist. Bodies must be JSON with
+`Content-Type: application/json` (400 `invalid_request` otherwise). A path that exists
+with the wrong method answers 405 `method_not_allowed`.
+
+| Endpoint | Purpose | Success | Errors |
+|---|---|---|---|
+| `GET /api/folders` | The user's folders, oldest first | 200 `{folders: [{id, name}]}` | |
+| `POST /api/folders` `{name}` | Create a folder | 201 `{folder}` | 400 `name_required`, `too_long` (> 100 chars) |
+| `PUT /api/folders/:id` `{name}` | Rename | 200 `{folder}` | 400 as above, 404 `not_found` |
+| `DELETE /api/folders/:id` | Delete an empty folder | 200 `{ok}` | 409 `folder_not_empty`, 404 |
+| `GET /api/recipes` | All the user's recipes, oldest first | 200 `{recipes: [recipe]}` | |
+| `GET /api/recipes/:id` | One recipe | 200 `{recipe}` | 404 |
+| `POST /api/recipes` `{folderId, en, he}` | Create a manual recipe | 201 `{recipe}` | 400 `name_required` (no name in either language), `too_long`, `folder_not_found` |
+| `PUT /api/recipes/:id` `{folderId, en, he}` | Replace its text and folder (favorite and link are kept) | 200 `{recipe}` | 400 as above, 404 |
+| `PUT /api/recipes/:id/favorite` `{favorite: true\|false}` | Set (not toggle) the favorite | 200 `{recipe}` | 400 `invalid_request`, 404 |
+| `DELETE /api/recipes/:id` | Delete | 200 `{ok}` | 404 |
+
+`recipe` is `{ id, folderId, favorite, link, en, he }`, where `en` and `he` are
+`{ name, ingredients: [string], steps: [string] }`, `link` is the source video (`''` for
+manual recipes) and `folderId` is `null` for "No folder". The backend trims names and
+lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ingredients
+or steps per language, 2000 chars per line. Editing a language the LLM filled in clears
+`machine_translated_lang`.
 
 The sections below describe what the backend must do once built.
 
@@ -86,8 +116,8 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
 - The production dump (`.wrangler/prod-dump.sql`) holds real user data: it's git-ignored;
   never commit or paste it.
 - Known gap: Workers Builds PR previews (`wrangler preview`) use the same binding, and
-  the Worker now reads and writes `env.DB` (users and sessions), so a preview reads and
-  writes production. Give previews their own database.
+  the Worker now reads and writes `env.DB` (users, sessions, folders and recipes), so a
+  preview reads and writes production. Give previews their own database.
 
 ## Users and login
 
