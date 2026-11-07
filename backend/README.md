@@ -36,7 +36,7 @@ The sections below describe what the backend must do once built.
   stored on the admin's session (`sessions.acting_as_user_id`), so it doesn't affect the
   user's own devices, and the database refuses it for anyone but the admin.
 - **Deleting a user deletes everything of theirs**: sessions, folders, and recipes.
-- **Folders**: created, renamed, nested, and reordered freely by their owner.
+- **Folders**: a flat list per user, created, renamed, and deleted (only when empty).
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
   and Hebrew** so either version can be edited. A recipe sits in one of its owner's
   folders (or none). A favorite is a flag on the recipe, since only its owner sees it.
@@ -68,20 +68,20 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
 
 ## Users and login
 
-- A user logs in with their username or email **and a password**.
+- A user logs in with their **username and a password**.
 - Passwords are never stored or logged in plain text: only a salted PBKDF2-SHA256 hash
   (WebCrypto, built into Workers), stored with its iterations and salt so the cost can
   be raised later.
 - Only the admin can add and delete users. There is no sign-up page. The admin sets a
-  first password when adding a user and can reset it; the user must choose a new one on
-  their next login. Users can change their own password.
-- Changing or resetting a password logs that user out on their other devices.
-- After several wrong passwords in a row the account is locked for a few minutes, so
-  passwords can't be guessed.
+  user's password when adding them and can set a new one later. Users can change their
+  own password.
+- Changing or setting a password logs that user out on their other devices.
 - After a successful login the user stays logged in on that device and doesn't see the
-  login page again, unless they log out, the admin deletes them, or they stay inactive
-  for a long time.
-- Logins that go unused expire on the server and are cleaned up, so they don't pile up.
+  login page again, unless they log out, change their password, or the admin deletes
+  them. Logins don't expire.
+- **One session row per device**: the first login on a browser gives it a long-lived
+  device id cookie (kept across logouts). Logging in again on that device replaces its
+  row instead of adding one, so rows grow only with new devices. Logging out deletes it.
 - Deleting a user logs them out everywhere right away.
 - Every API endpoint requires a logged-in user, except login itself. User management and
   starting or stopping impersonation require the admin. While impersonating, recipe and

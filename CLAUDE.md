@@ -15,7 +15,7 @@ the API, and LLM import are not built yet; the sections below describe the targe
 
 **web-recipe** is a small personal web app for a handful of people to keep their recipes.
 
-- Recipes live in **folders** the user creates, renames, nests, and reorders freely.
+- Recipes live in **folders** (a flat list) the user creates, renames, and deletes.
 - Add, edit, and delete recipes **manually**, or **from a short-video link**: the
   backend sends the link to Google's free LLMs, which extract the recipe, and the user
   saves it. Supported now: **YouTube and Facebook** only. Other platforms may come later;
@@ -27,7 +27,7 @@ the API, and LLM import are not built yet; the sections below describe the targe
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**
   (nothing is shared between users). One **admin** (the owner) adds users, sets their
   first password, can **act as any user** to see and manage their data, and deletes
-  users (which deletes all of their data). Login is **username or email plus a
+  users (which deletes all of their data). Login is **username plus a
   password**, and the session is remembered: after logging in once, a user never sees
   the login page again on that device unless they log out, change their password, or the
   admin deletes them.

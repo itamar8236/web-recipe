@@ -10,7 +10,7 @@ Only the recipe browsing and manual add/edit/delete screens exist. There is **no
 no database and no backend API yet**: `lib/api.js` keeps everything in memory (seeded
 with a few sample recipes) and resets when the page is closed or reloaded. Its functions
 are async and shaped like the future endpoints, so swapping in real `fetch` calls later
-won't touch the components. Folders are a flat list for now (no nesting or reordering).
+won't touch the components. Folders are a flat list (no nesting or reordering).
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
 recipe has a `link`, otherwise plain "Added manually" text. The link is not editable in the
 UI; it will be filled by video import. One sample recipe links to claude.ai as an example.
@@ -26,7 +26,7 @@ frontend/
 │   ├── manifest.js        # Web app manifest (makes the site installable on Android)
 │   ├── icon.png           # Favicon
 │   ├── page.js            # Home: folders + recipes in the selected folder
-│   ├── login/page.js      # (planned) Username/email field only   (/login)
+│   ├── login/page.js      # (planned) Username + password         (/login)
 │   ├── admin/page.js      # (planned) Admin: list, add, delete users (/admin)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
@@ -54,13 +54,10 @@ frontend/
 - `AuthGate` (in the root layout) asks the backend who is logged in once on load:
   - logged in → render the app; on `/login`, redirect to home.
   - 401 → redirect to `/login`.
-- `/login` has two fields ("Username or email" and "Password") and one button. On success
+- `/login` has two fields ("Username" and "Password") and one button. On success
   go to home. The login is remembered, so users see this page only the first time on a
   device, after logging out, or after changing their password on another device.
-- Wrong username/email or password shows one generic message (never which one was
-  wrong); a locked account says to try again in a few minutes.
-- If the admin set or reset the password, the user is sent to a "Choose a new password"
-  screen before the app opens.
+- A wrong username or password shows one generic message (never which one was wrong).
 - Any API call returning 401 (e.g. the admin deleted the user) sends the user to `/login`.
 - The current user is kept in a small React context; `is_admin` shows the "Users" link,
   and `acting_as` (the impersonated user, if any) shows the "Acting as" banner.
@@ -75,8 +72,7 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
    Only an empty folder can be deleted (Delete looks disabled otherwise; tapping it shows a hint). Big "Add recipe" button. Each card has a
    heart to mark a favorite (once login exists, each user sees only their own folders, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
-   the selected folder). (Nesting,
-   moving, and reordering folders are planned.)
+   the selected folder).
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
 4. **Import**: URL field (YouTube or Facebook; others show "not supported yet"), a folder
    picker, a submit button, then a spinner with "Reading the video..." Then:
@@ -91,15 +87,15 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other
    language with a "not written yet" note; later the backend will translate it.
-7. **Users** (admin only): list of users, a form to add one (username, optional email,
-   first password), and per user an "Act as" button, a "Reset password" button and a
+7. **Users** (admin only): list of users, a form to add one (username and
+   password), and per user an "Act as" button, a "Set password" button and a
    delete button (the last two with confirmation; deleting a user also deletes all their
    folders and recipes, and the dialog says so). Shows "N / 50 users".
    "Act as" opens Home showing that user's folders and recipes; every screen then works
    on their data, and a banner on every page says "Acting as <name>" with a "Stop"
    button that returns the admin to their own data.
 8. **Change password** (planned): current password, new password, and Save. Reached
-   from the header, and shown automatically after the admin sets or resets a password.
+   from the header.
 
 ## UX rules
 
