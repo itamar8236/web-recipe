@@ -58,6 +58,20 @@ describe('register', () => {
     expect(notJson.status).toBe(400);
   });
 
+  it('refuses a JSON body sent as a plain form (another site posting it)', async () => {
+    const response = await worker.fetch(
+      new Request('http://localhost/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ username: 'dana', password: 'password123' }),
+      }),
+      env,
+    );
+    expect(response.status).toBe(400);
+    const { count } = await env.DB.prepare('SELECT COUNT(*) AS count FROM users').first();
+    expect(count).toBe(0);
+  });
+
   it('rejects a taken username, ignoring case', async () => {
     await register('dana');
     const again = await register('DANA');
@@ -103,6 +117,16 @@ describe('login', () => {
     expect(await wrong.json()).toEqual(await unknown.json());
   });
 
+  it('does not accept a longer password that starts with the real one', async () => {
+    const real = 'p'.repeat(200);
+    await register('dana', real);
+    const response = await call('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'dana', password: `${real}extra` },
+    });
+    expect(response.status).toBe(401);
+  });
+
   it('rejects a body without a username and password', async () => {
     const response = await call('/api/auth/login', { method: 'POST', body: { username: 'dana' } });
     expect(response.status).toBe(400);
@@ -120,6 +144,18 @@ describe('login', () => {
     }
     const { count } = await env.DB.prepare('SELECT COUNT(*) AS count FROM sessions').first();
     expect(count).toBe(1);
+  });
+
+  it('ignores a tampered device cookie and makes a fresh device id', async () => {
+    await register('dana', 'password123');
+    const response = await call('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'dana', password: 'password123' },
+      cookie: `device=${'z'.repeat(5000)}`,
+    });
+    expect(response.status).toBe(200);
+    const row = await env.DB.prepare('SELECT device_id FROM sessions WHERE user_id IS NOT NULL').first();
+    expect(row.device_id).toMatch(/^[0-9a-f]{32}$/);
   });
 });
 

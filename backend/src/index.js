@@ -18,7 +18,10 @@ function publicUser(user) {
 }
 
 // Reads { username, password } from the body. Returns null if it isn't a JSON object of strings.
+// The JSON content type is required because a plain HTML form on another site can't send
+// it, so no other site can sign a visitor up or log them in to an account it chose.
 async function readCredentials(request) {
+  if (!request.headers.get('Content-Type')?.startsWith('application/json')) return null;
   let body;
   try {
     body = await request.json();
@@ -42,11 +45,11 @@ async function login(request, env) {
   )
     .bind(credentials.username)
     .first();
+  // No stored password is longer than MAX_PASSWORD (sign-up refuses it), and refusing
+  // instead of hashing keeps a huge password from tying up the Worker.
+  if (credentials.password.length > MAX_PASSWORD) return fail(401, 'invalid_credentials');
   dummyHash ??= await hashPassword('dummy');
-  const ok = await verifyPassword(
-    credentials.password.slice(0, MAX_PASSWORD),
-    user ? user.password_hash : dummyHash,
-  );
+  const ok = await verifyPassword(credentials.password, user ? user.password_hash : dummyHash);
   if (!user || !ok) return fail(401, 'invalid_credentials');
 
   return json({ user: publicUser(user) }, 200, await startSession(request, env, user.id));

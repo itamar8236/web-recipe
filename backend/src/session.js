@@ -45,8 +45,10 @@ export async function getSessionUser(request, env) {
 // Logs the user in on this device, replacing the device's previous session (if any).
 // Returns the Set-Cookie headers to send.
 export async function startSession(request, env, userId) {
+  // Reuse only an id this backend could have made, so a tampered cookie can't put
+  // arbitrary text in the table.
   const deviceId = readCookies(request).device;
-  const device = deviceId?.length >= 32 ? deviceId : randomHex(16);
+  const device = /^[0-9a-f]{32}$/.test(deviceId ?? '') ? deviceId : randomHex(16);
   const token = randomHex(32);
   await env.DB.prepare(
     `INSERT INTO sessions (device_id, token_hash, user_id) VALUES (?, ?, ?)

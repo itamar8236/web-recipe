@@ -126,10 +126,11 @@ Built now: Login, Home, Recipe view, Edit. The rest are planned.
 
 ## API client
 
-Today `lib/api.js` is the in-memory data layer described above. The target design is:
+`lib/api.js` exports one function per endpoint. The auth ones (`getMe`, `login`,
+`register`, `logout`) call the backend; folders and recipes are still in memory.
 
-- `lib/api.js` exports one function per endpoint (`login`, `getMe`, `getFolders`,
-  `importRecipe`, ...) and throws an `Error` with the backend's message on failure.
-- Every request uses `credentials: 'include'` so the session cookie is sent.
-- Base URL is `process.env.NEXT_PUBLIC_API_BASE ?? ''`: empty in production (same
-  origin), `http://localhost:8787` in local dev (set in `.env.local`).
+- Requests go to the same origin (`/api/...`), so the session cookie is sent without any
+  extra setup. There is no API base URL or CORS: test anything that needs the backend on
+  the Worker (:8787).
+- On failure it throws `ApiError` with the backend's `error` code (`network` if the
+  backend can't be reached); `errorMessage()` in `lib/i18n.js` turns the code into text.

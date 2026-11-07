@@ -30,7 +30,8 @@ throwaway local D1 built from `schema.sql`; never touches production or `.wrangl
 
 ## Auth API
 
-JSON in and out. Errors are `{ "error": "<code>" }`. Everything under `/api/*` needs a
+JSON in and out; sign-up and login require `Content-Type: application/json` (so another
+site's plain HTML form can't log a visitor in). Errors are `{ "error": "<code>" }`. Everything under `/api/*` needs a
 session except the three public auth endpoints; unknown paths are 404 when logged in.
 
 | Endpoint | Purpose | Success | Errors |
@@ -84,9 +85,9 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   hand: `npx wrangler d1 execute recipes-db --remote --file=schema.sql`.
 - The production dump (`.wrangler/prod-dump.sql`) holds real user data: it's git-ignored;
   never commit or paste it.
-- Known gap: Workers Builds PR previews (`wrangler preview`) use the same binding, so
-  once Worker code reads `env.DB`, previews would read and write production. Give
-  previews their own database before that.
+- Known gap: Workers Builds PR previews (`wrangler preview`) use the same binding, and
+  the Worker now reads and writes `env.DB` (users and sessions), so a preview reads and
+  writes production. Give previews their own database.
 
 ## Users and login
 
@@ -105,7 +106,7 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   device id cookie (kept across logouts). Logging in again on that device replaces its
   row instead of adding one, so rows grow only with new devices. Logging out deletes it.
 - Deleting a user logs them out everywhere right away.
-- Every API endpoint requires a logged-in user, except login itself. User management and
+- Every API endpoint requires a logged-in user, except sign-up, login and logout. User management and
   starting or stopping impersonation require the admin. While impersonating, recipe and
   folder endpoints use the impersonated user; user management still checks the real
   user (the admin), and the admin can't change the user's password while acting as them.
