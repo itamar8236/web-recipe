@@ -8,8 +8,8 @@ same PR.
 ## Status
 
 Built so far: the recipe browsing UI (folders, recipes, English/Hebrew, manual add/edit/
-delete) as an in-memory demo. Login, D1, the API, and LLM import are not built yet; the
-sections below describe the target.
+delete) as an in-memory demo, and the D1 binding + schema (`backend/schema.sql`). Login,
+the API, and LLM import are not built yet; the sections below describe the target.
 
 ## The product
 
@@ -25,9 +25,10 @@ sections below describe the target.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, all sharing one recipe collection. One **admin** (the owner) adds
-  and deletes users. Login is **username or email only, no password**, and the session
-  is remembered: after logging in once, a user never sees the login page again on that
-  device unless they log out or the admin deletes them.
+  and deletes users and sets their first password. Login is **username or email plus a
+  password**, and the session is remembered: after logging in once, a user never sees
+  the login page again on that device unless they log out, change their password, or the
+  admin deletes them.
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not
@@ -57,7 +58,7 @@ sections below describe the target.
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Node-style JS on the Workers runtime (`nodejs_compat`); no web framework |
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
 | LLM       | Google's free-tier LLMs                            | One or more models, set by config; key in a Worker secret |
-| Auth      | Built in, stored in D1                             | No passwords; admin manages users; stays logged in |
+| Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); admin manages users; stays logged in |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-pool-workers`     |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |
 
@@ -101,16 +102,17 @@ One Cloudflare Worker  (backend/)
 ## Commands
 
 Run each from its own folder. The backend is assets-only for now (no Worker code, tests,
-lint, or DB yet), so those rows are planned until it gets real code.
+or lint yet), so those rows are planned until it gets real code. The D1 database is
+bound and has a schema; local dev never touches production (`local-dev` skill).
 
 | Task           | `backend/`                                   | `frontend/`       |
 |----------------|----------------------------------------------|-------------------|
 | Install        | `npm install`                                | `npm install`     |
-| Dev server     | `npm run dev` (wrangler, :8787, serves `frontend/out`: build the frontend first) | `npm run dev` (:3000) |
+| Dev server     | `npm run dev` (copies prod DB to local, then wrangler on :8787 serving `frontend/out`: build the frontend first); `npm run dev:keep` skips the copy | `npm run dev` (:3000) |
 | Tests          | (planned)                                    | `npm test`        |
 | Lint           | (planned)                                    | `npm run lint`    |
 | Build          | n/a                                          | `npm run build` → `out/` |
-| DB migrate     | (planned) `npm run db:migrate` (local D1)    | n/a               |
+| DB             | `npm run db:pull` (prod → local), `npm run db:schema:local` (apply `schema.sql` locally); production schema is applied by the owner | n/a |
 | Deploy         | automatic on merge to `main` (or `npm run deploy`) | (deployed with backend) |
 
 ## Never do these
@@ -156,6 +158,7 @@ Before every push:
   - `new-feature`: feature checklist across backend and frontend
   - `bug-fix`: reproduce, test, fix, verify
   - `frontend-ui`: UI work in `frontend/`
+  - `local-dev`: run and test the app against a local copy of the DB, never production
 - **Claude Code settings**: `.claude/settings.json` (committed) blocks force-pushes,
   pushes to `main`, and reading secret files. Personal overrides go in
   `.claude/settings.local.json` (git-ignored).

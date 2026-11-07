@@ -54,9 +54,13 @@ frontend/
 - `AuthGate` (in the root layout) asks the backend who is logged in once on load:
   - logged in → render the app; on `/login`, redirect to home.
   - 401 → redirect to `/login`.
-- `/login` has one field ("Username or email") and one button. On success go to home.
-  The login is remembered, so users see this page only the first time on a device
-  or after logging out.
+- `/login` has two fields ("Username or email" and "Password") and one button. On success
+  go to home. The login is remembered, so users see this page only the first time on a
+  device, after logging out, or after changing their password on another device.
+- Wrong username/email or password shows one generic message (never which one was
+  wrong); a locked account says to try again in a few minutes.
+- If the admin set or reset the password, the user is sent to a "Choose a new password"
+  screen before the app opens.
 - Any API call returning 401 (e.g. the admin deleted the user) sends the user to `/login`.
 - The current user is kept in a small React context; `is_admin` shows the "Users" link.
 
@@ -69,7 +73,7 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    scrolls sideways; on desktop, a side list with no scrolling;
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
    Only an empty folder can be deleted (Delete looks disabled otherwise; tapping it shows a hint). Big "Add recipe" button. Each card has a
-   heart to mark a favorite, and a "Favorites" toggle filters the list (combined with
+   heart to mark a favorite (once login exists, favorites are per user), and a "Favorites" toggle filters the list (combined with
    the selected folder). (Nesting,
    moving, and reordering folders are planned.)
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
@@ -86,8 +90,11 @@ Built now: Home, Recipe view, Edit. The rest are planned.
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other
    language with a "not written yet" note; later the backend will translate it.
-7. **Users** (admin only): list of users, a form to add one (username, optional email),
-   and a delete button per user with confirmation. Shows "N / 50 users".
+7. **Users** (admin only): list of users, a form to add one (username, optional email,
+   first password), a "Reset password" button and a delete button per user, both with
+   confirmation. Shows "N / 50 users".
+8. **Change password** (planned): current password, new password, and Save. Reached
+   from the header, and shown automatically after the admin sets or resets a password.
 
 ## UX rules
 

@@ -7,6 +7,16 @@
     "directory": "../frontend/out",
     "not_found_handling": "404-page"
   },
+  // Code reaches the database as env.DB. `wrangler deploy` binds the production
+  // database; `wrangler dev` always uses a local copy in .wrangler/state. Never add
+  // "remote": true here, or local dev would write to production.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "recipes-db",
+      "database_id": "960675bb-9caa-4787-816d-89783cd505b6"
+    }
+  ],
   // Required by `wrangler preview`, which Workers Builds runs for non-main branches.
   "previews": {}
 }

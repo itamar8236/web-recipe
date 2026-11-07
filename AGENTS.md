@@ -15,3 +15,4 @@ Read the matching `SKILL.md` before starting that kind of task:
 - `new-feature`: implementing a feature across backend and frontend
 - `bug-fix`: reproducing and fixing a bug
 - `frontend-ui`: building or changing UI in `frontend/`
+- `local-dev`: running and testing the app against the local database, never production

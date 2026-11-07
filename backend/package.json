@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "wrangler dev --port 8787",
+    "dev": "npm run db:pull && wrangler dev --port 8787",
+    "dev:keep": "wrangler dev --port 8787",
+    "db:pull": "node scripts/db-pull.mjs",
+    "db:schema:local": "wrangler d1 execute recipes-db --local --file=schema.sql --yes",
     "deploy": "wrangler deploy"
   },
   "devDependencies": {
