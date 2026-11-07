@@ -47,6 +47,13 @@ frontend/
 - Static export can't use dynamic route segments without a build-time list, so recipe
   pages take the id as a **query parameter** and fetch on the client.
 - Components are client components where they fetch or hold state; keep it simple.
+- **Known, harmless: prefetch 404s in Windows builds.** On a build made on Windows, the
+  browser console shows 404s for files like `recipe/__next.recipe.__PAGE__.txt`. Next
+  16.4.5's export names those prefetch files from `path.relative()`, which uses `\` on
+  Windows, and then only turns `/` into `.`, so the files land in subfolders the browser
+  never asks for. Navigation still works (Next falls back to the page's full data file).
+  Production builds on Linux (Workers Builds), where the names come out right. Leave it
+  as is: don't turn off prefetching or rename files to work around it.
 
 ## Login flow
 
