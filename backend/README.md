@@ -21,7 +21,7 @@ automatically through Workers Builds (root directory `/`), which builds with
 - on `main`: `cd backend && npm install && npx wrangler deploy` (production).
 - on other branches and PRs: `cd backend && npm install && npx wrangler preview`, a
   Worker Preview that doesn't replace the production Worker, but shares its database
-  (see the known gap under [Database](#database)). It needs the `"previews": {}` block in
+  (see [Database](#database)). It needs the `"previews": {}` block in
   `wrangler.jsonc`.
 
 Code: `src/index.js` (routes and auth), `src/data.js` (folders and recipes),
@@ -115,9 +115,10 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   hand: `npx wrangler d1 execute recipes-db --remote --file=schema.sql`.
 - The production dump (`.wrangler/prod-dump.sql`) holds real user data: it's git-ignored;
   never commit or paste it.
-- Known gap: Workers Builds PR previews (`wrangler preview`) use the same binding, and
-  the Worker now reads and writes `env.DB` (users, sessions, folders and recipes), so a
-  preview reads and writes production. Give previews their own database.
+- PR previews (`wrangler preview`) use the same binding, so a preview that someone uses
+  reads and writes production. Accepted for now: nobody else gets the preview links, and
+  a separate preview database may come later. It's a concern only if a PR would change
+  production data during the build or deploy itself (see the `local-dev` skill).
 
 ## Users and login
 

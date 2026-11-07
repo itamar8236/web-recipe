@@ -56,7 +56,10 @@ The local DB is yours to test with: add, edit, or delete anything. Only the owne
 In the PR's "How to test", say whether the local DB had data or was empty, which commands
 you ran, and what you checked in the browser. Never report unrun checks as done.
 
-## Known gap
+## PR previews share the production database
 Workers Builds runs `wrangler preview` for PR branches, and previews use the same D1
-binding, i.e. **production**. The Worker reads and writes `env.DB` now (including folders
-and recipes), so a PR preview would read and write real data. Not solved yet; flag it in the PR if your change makes it worse.
+binding, i.e. **production**. The owner accepts this: it's a personal project, nobody
+else gets the preview links, so nobody uses a preview to read or edit data. A separate
+preview database may come later. It matters only if a PR would change production data
+during the build or deploy itself (a build step, deploy script or startup code that writes
+to the database without anyone using the preview). Flag that in the PR if your change does it.
