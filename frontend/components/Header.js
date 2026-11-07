@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useAuth } from './Auth';
 import { useLanguage } from './Language';
 import { LANGUAGES, languageLabels } from '@/lib/i18n';
 import styles from './Header.module.css';
 
 export default function Header() {
   const { lang, setLang, t } = useLanguage();
+  const { status, user, logOut, leaveGuest } = useAuth();
   // While adding or editing a recipe the app language stays fixed; the form has its own
   // English/Hebrew tabs for the recipe text.
   const locked = usePathname().startsWith('/recipe/edit');
@@ -41,6 +43,18 @@ export default function Header() {
           ))}
         </div>
       </div>
+      {(status === 'user' || status === 'guest') && (
+        <div className={styles.userBar}>
+          <span className={styles.userName}>{status === 'user' ? t.hello(user.username) : t.guest}</span>
+          <button
+            type="button"
+            className={styles.userButton}
+            onClick={status === 'user' ? logOut : leaveGuest}
+          >
+            {status === 'user' ? t.logOut : t.logIn}
+          </button>
+        </div>
+      )}
     </header>
   );
 }

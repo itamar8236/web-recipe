@@ -2,10 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "web-recipe",
   "compatibility_date": "2026-01-01",
-  // No Worker code yet: Cloudflare serves the frontend's static build directly.
+  "main": "src/index.js",
+  // The frontend's static build is served by Cloudflare directly; only /api/* runs the
+  // Worker code.
   "assets": {
     "directory": "../frontend/out",
-    "not_found_handling": "404-page"
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"]
   },
   // Code reaches the database as env.DB. `wrangler deploy` binds the production
   // database; `wrangler dev` always uses a local copy in .wrangler/state. Never add

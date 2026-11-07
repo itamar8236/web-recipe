@@ -63,3 +63,33 @@
   background: var(--accent);
   color: #fff;
 }
+
+.userBar {
+  max-width: var(--page-width);
+  margin-inline: auto;
+  padding: 0 16px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink-soft);
+  font-size: 16px;
+}
+
+.userName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userButton {
+  min-height: 44px;
+  padding-inline: 8px;
+  border: 0;
+  background: none;
+  color: var(--accent-dark);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}

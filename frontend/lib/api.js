@@ -1,5 +1,53 @@
-// Data layer for the UI. Its async functions are shaped like the future backend
-// endpoints, so swapping the bodies for fetch() calls won't touch any component.
+// Data layer for the UI. Login goes to the backend; recipes and folders are still kept in
+// memory, shaped like the future endpoints, so swapping the bodies for fetch() calls
+// won't touch any component.
+
+// An error from the backend. `code` is its machine-readable `error` value.
+export class ApiError extends Error {
+  constructor(status, code) {
+    super(code);
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function request(path, method = 'GET', body) {
+  let response;
+  try {
+    response = await fetch(path, {
+      method,
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, 'network');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new ApiError(response.status, data.error ?? 'server_error');
+  return data;
+}
+
+// The logged-in user ({ id, username, is_admin }), or null when nobody is logged in.
+export async function getMe() {
+  try {
+    return (await request('/api/auth/me')).user;
+  } catch (error) {
+    if (error.status === 401) return null;
+    throw error;
+  }
+}
+
+export async function login(username, password) {
+  return (await request('/api/auth/login', 'POST', { username, password })).user;
+}
+
+export async function register(username, password) {
+  return (await request('/api/auth/register', 'POST', { username, password })).user;
+}
+
+export async function logout() {
+  await request('/api/auth/logout', 'POST');
+}
 
 let nextId = 0;
 const newId = () => ++nextId;

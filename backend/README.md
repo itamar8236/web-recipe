@@ -10,10 +10,10 @@ schema, endpoints) are decided when the code is written, and recorded here in th
 
 ## Current state
 
-The Worker is **assets-only**: `wrangler.jsonc` points at `../frontend/out` and Cloudflare
-serves the static build. There is no Worker code, API, or login yet; the frontend runs as
-memory and starts empty. The D1 database is bound (see [Database](#database)) but nothing reads
-it yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
+The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
+everything else is the static build from `../frontend/out`, served by Cloudflare. Only the
+auth API below exists. Recipes and folders have no API yet: the frontend keeps them in
+memory. Run it locally with `npm run dev` (port 8787, after `npm run build` in
 `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
 automatically through Workers Builds (root directory `/`), which builds with
 `cd frontend && npm install && npm run build` and then:
@@ -23,6 +23,27 @@ automatically through Workers Builds (root directory `/`), which builds with
   Worker Preview that doesn't replace the production Worker, but shares its database
   (see the known gap under [Database](#database)). It needs the `"previews": {}` block in
   `wrangler.jsonc`.
+
+Code: `src/index.js` (routes), `src/session.js` (cookies and the `sessions` table),
+`src/password.js` (PBKDF2), `scripts/hash-password.mjs` (makes the admin INSERT: `node scripts/hash-password.mjs <username> <password>`, then run the printed command; the file lands in git-ignored `.wrangler/`). Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
+throwaway local D1 built from `schema.sql`; never touches production or `.wrangler/state`).
+
+## Auth API
+
+JSON in and out. Errors are `{ "error": "<code>" }`. Everything under `/api/*` needs a
+session except the three public auth endpoints; unknown paths are 404 when logged in.
+
+| Endpoint | Purpose | Success | Errors |
+|---|---|---|---|
+| `POST /api/auth/register` `{username, password}` | Create a user (never admin) and log in | 201 `{user}` | 400 `username_invalid` (1-50 chars after trimming), 400 `password_invalid` (1-200 chars), 400 `invalid_request`, 409 `username_taken` (case-insensitive), 403 `user_limit` (50 users) |
+| `POST /api/auth/login` `{username, password}` | Log in on this device | 200 `{user}` | 400 `invalid_request`, 401 `invalid_credentials` (same for wrong password and unknown user) |
+| `POST /api/auth/logout` | Delete this device's session | 200 `{ok}` | none (works without a session) |
+| `GET /api/auth/me` | Who is logged in | 200 `{user}` | 401 `not_logged_in` |
+
+`user` is `{ id, username, is_admin }`. Cookies (both HttpOnly, SameSite=Lax, 10 years,
+`Secure` on https): `device` (random id, kept across logouts) and `session` (random
+secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
+device. Not built yet: login rate limiting, changing passwords, the admin endpoints.
 
 The sections below describe what the backend must do once built.
 
@@ -73,9 +94,9 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
 - Passwords are never stored or logged in plain text: only a salted PBKDF2-SHA256 hash
   (WebCrypto, built into Workers), stored with its iterations and salt so the cost can
   be raised later.
-- Only the admin can add and delete users. There is no sign-up page. The admin sets a
-  user's password when adding them and can set a new one later. Users can change their
-  own password.
+- Anyone can sign up (`/api/auth/register`) while fewer than 50 users exist. Only the admin
+  deletes users (planned). The first admin is created by hand on production (see the top
+  of `schema.sql`). Users can change their own password (planned).
 - Changing or setting a password logs that user out on their other devices.
 - After a successful login the user stays logged in on that device and doesn't see the
   login page again, unless they log out, change their password, or the admin deletes

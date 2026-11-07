@@ -6,9 +6,10 @@ backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 
 ## Current state: UI only
 
-Only the recipe browsing and manual add/edit/delete screens exist. There is **no login
-and no backend API yet**, so the app doesn't read the D1 database: `lib/api.js` keeps
-data in memory, starts empty (no sample recipes), and loses it on reload. Its functions
+The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up and
+guest mode. Recipes and folders have **no backend API yet**: `lib/api.js` keeps them in
+memory, starts empty (no sample recipes), and loses them on reload, for logged-in users
+and guests alike (a logged-in user just sees their username). Its functions
 are async and shaped like the future endpoints, so swapping in real `fetch` calls later
 won't touch the components. Folders are a flat list (no nesting or reordering).
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
@@ -25,13 +26,12 @@ frontend/
 │   ├── manifest.js        # Web app manifest (makes the site installable on Android)
 │   ├── icon.png           # Favicon
 │   ├── page.js            # Home: folders + recipes in the selected folder
-│   ├── login/page.js      # (planned) Username + password         (/login)
 │   ├── admin/page.js      # (planned) Admin: list, add, delete users (/admin)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       ├── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
 │       └── import/page.js # (planned) Paste a video link, compare, save (/recipe/import)
-├── components/            # Shell, Header, Language (context), FolderBar, RecipeCard, HeartButton, ConfirmDialog
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, Language (context), FolderBar, RecipeCard, HeartButton, ConfirmDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer (in-memory for now; later the only fetch())
@@ -48,24 +48,32 @@ frontend/
   pages take the id as a **query parameter** and fetch on the client.
 - Components are client components where they fetch or hold state; keep it simple.
 
-## Login flow (planned)
+## Login flow
 
-- `AuthGate` (in the root layout) asks the backend who is logged in once on load:
-  - logged in → render the app; on `/login`, redirect to home.
-  - 401 → redirect to `/login`.
-- `/login` has two fields ("Username" and "Password") and one button. On success
-  go to home. The login is remembered, so users see this page only the first time on a
-  device, after logging out, or after changing their password on another device.
-- A wrong username or password shows one generic message (never which one was wrong).
-- Any API call returning 401 (e.g. the admin deleted the user) sends the user to `/login`.
-- The current user is kept in a small React context; `is_admin` shows the "Users" link,
-  and `acting_as` (the impersonated user, if any) shows the "Acting as" banner.
+- `Shell` wraps the app in `AuthProvider` (`components/Auth.js`), which asks the backend
+  once on load who is logged in (`GET /api/auth/me`). Status is `loading`, `anonymous`,
+  `guest` or `user`.
+  - `user` or `guest` -> the app. `anonymous` -> `LoginScreen` shown in place of the page
+    (no `/login` route), so after logging in the user is on the page they opened. If the
+    backend can't be reached, the screen still offers "Continue as guest".
+- `LoginScreen`: username and password, a Log in button, a switch to Sign up (same fields),
+  and "Continue as guest". A wrong username or password shows one
+  generic message (never which one was wrong). The login is remembered by cookie, so users
+  see this screen only the first time on a device or after logging out.
+- A thin bar under the header shows "Hello, <username>" and Log out; a guest sees "Guest"
+  and a Log in button (back to the login screen).
+- Every change of who is using the app (log in, sign up, log out, guest) clears the
+  in-memory recipes, so one person's data never shows for the next.
+- Auth cookies need the same origin as the API, so test login on the Worker (:8787, after
+  `npm run build`); on `next dev` (:3000) there is no backend, so only guest mode works.
+- Planned: any API call returning 401 (e.g. the admin deleted the user) sends the user to
+  the login screen; `is_admin` shows the "Users" link and `acting_as` the "Acting as" banner.
 
 ## Screens
 
-Built now: Home, Recipe view, Edit. The rest are planned.
+Built now: Login, Home, Recipe view, Edit. The rest are planned.
 
-1. **Login** (planned): described above.
+1. **Login / Sign up**: described above.
 2. **Home**: folders with recipe counts. On phones only, they are one row of pills that
    scrolls sideways; on desktop, a side list with no scrolling;
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
