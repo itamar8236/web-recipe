@@ -32,9 +32,9 @@ Never work directly on `main`.
 - AI agents end the message with a `Co-Authored-By:` trailer naming the model used.
 
 ## 3. Before pushing
-- Update every `.md` file whose content your change affects (`CLAUDE.md`,
+- Update every `.md` file whose content your change affects (`AGENTS.md`,
   `backend/README.md`, `frontend/README.md`, skills) in the same branch.
-- Run lint and tests for each app you touched (`CLAUDE.md` → Commands); never push
+- Run lint and tests for each app you touched (`AGENTS.md` → Commands); never push
   failing checks.
 
 ## 4. Push and open a PR

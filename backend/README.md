@@ -3,7 +3,7 @@
 The server side of web-recipe: one Cloudflare Worker in plain JavaScript that serves the
 JSON API, stores data in Cloudflare D1, handles login, calls Google's free LLMs to turn
 video links into recipes, and serves the frontend's static build. Read the root
-`CLAUDE.md` first.
+`AGENTS.md` first.
 
 This file describes **what the backend must do**. Implementation details (file layout,
 schema, endpoints) are decided when the code is written, and recorded here in the same PR.

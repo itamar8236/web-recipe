@@ -2,7 +2,7 @@
 
 Next.js app (App Router) in plain JavaScript and CSS Modules, built as a **static export**
 (`output: 'export'` → `out/`) that the backend Worker serves. All data comes from the
-backend's API (see `backend/README.md`). Read the root `CLAUDE.md` first.
+backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 
 ## Current state: UI only
 
