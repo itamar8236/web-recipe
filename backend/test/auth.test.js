@@ -2,27 +2,7 @@ import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
 import { hashPassword, verifyPassword } from '../src/password.js';
-
-const call = (path, { method = 'GET', body, cookie } = {}) =>
-  worker.fetch(
-    new Request(`http://localhost${path}`, {
-      method,
-      headers: { 'Content-Type': 'application/json', ...(cookie && { Cookie: cookie }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-    env,
-  );
-
-// Turns a response's Set-Cookie headers into a Cookie request header, like a browser would.
-const cookiesFrom = (response) =>
-  response.headers
-    .getSetCookie()
-    .map((c) => c.split(';')[0])
-    .filter((c) => !c.endsWith('='))
-    .join('; ');
-
-const register = (username = 'dana', password = 'password123') =>
-  call('/api/auth/register', { method: 'POST', body: { username, password } });
+import { call, cookiesFrom, register } from './helpers.js';
 
 describe('passwords', () => {
   it('verifies the right password and rejects a wrong one', async () => {
