@@ -14,20 +14,16 @@ log-out with remembered sessions plus a guest mode, and the folders/recipes API,
 logged-in user's data is stored in D1 (a guest's stays in browser memory). The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
-There is no issue tracker: this section is where progress and open problems are kept for
-the next agent. Update it in the same PR when you build something on the list, find a bug
-you don't fix, or the owner accepts a trade-off. Keep each line short and link to the
-README section that holds the details.
+## Known bugs and accepted trade-offs
 
-**Not built yet:**
-- Import from a video link (YouTube, Facebook) with the multi-model compare screen.
-- Translation of a recipe written in one language.
-- Changing a password; the admin's Users screen, "act as", and deleting users.
-- Login rate limiting. Backend lint.
+There is no issue tracker, so this list is how the next agent learns about them. Don't
+"fix" an accepted trade-off without asking the owner. Add a line in the same PR when you
+find a bug you don't fix or the owner accepts a trade-off, and remove it when it's
+resolved. One short line each, linking to the README section with the details.
 
-**Known issues and accepted trade-offs (don't "fix" these without asking):**
-- PR previews share the production database (`backend/README.md` → Database).
+- PR previews share the production database (`backend/README.md` → Database). Accepted.
 - Builds made on Windows log harmless prefetch 404s (`frontend/README.md` → Layout).
+  Accepted.
 
 ## The product
 
@@ -187,5 +183,5 @@ Before every push:
 - **Claude Code settings**: `.claude/settings.json` (committed) blocks force-pushes,
   pushes to `main`, and reading secret files. Personal overrides go in
   `.claude/settings.local.json` (git-ignored).
-- Don't commit plans, scratch files, or debug output. Progress and open bugs live in
-  [Status](#status); PR descriptions hold the history of each change.
+- Don't commit plans, scratch files, or debug output. Unfixed bugs and trade-offs
+  go in [Known bugs and accepted trade-offs](#known-bugs-and-accepted-trade-offs).

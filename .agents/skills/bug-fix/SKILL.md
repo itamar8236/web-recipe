@@ -13,7 +13,7 @@ description: Steps for fixing a bug in web-recipe - reproduce, write a failing t
    simple Vitest test in `backend/` too (local D1, never production).
 4. **Smallest fix**: change only what the bug needs. No refactors or unrelated cleanups;
    mention anything else you noticed in the PR's "Notes / follow-ups", and add real bugs
-   you leave unfixed to `AGENTS.md` → Status so the next agent knows.
+   you leave unfixed to `AGENTS.md` → Known bugs and accepted trade-offs.
 5. **Verify**: the new test passes, lint and the app's tests pass, and for UI bugs the
    behavior is correct in the browser (phone + desktop, English + Hebrew if relevant),
    running against the local DB (`local-dev`).
