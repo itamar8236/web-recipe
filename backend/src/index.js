@@ -3,6 +3,8 @@ import { fail, json, readJson } from './http.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { endSession, getSessionUser, startSession } from './session.js';
 
+export { ImportWorkflow } from './import/workflow.js';
+
 const MAX_USERS = 50;
 const MIN_PASSWORD = 1;
 const MAX_PASSWORD = 200;
