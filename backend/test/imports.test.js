@@ -2,6 +2,7 @@ import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import { detectSource, readLink, SOURCES } from '../src/import/sources/index.js';
 import { youtube } from '../src/import/sources/youtube.js';
+import { insertImport, insertUser } from './helpers.js';
 
 const ID = 'dQw4w9WgXcQ';
 const CANONICAL = `https://www.youtube.com/watch?v=${ID}`;
@@ -97,34 +98,6 @@ describe('video length', () => {
 });
 
 describe('imports table rules', () => {
-  const insertUser = async (name) =>
-    (
-      await env.DB.prepare(
-        `INSERT INTO users (username, password_hash) VALUES (?, 'pbkdf2-sha256$1$a$b') RETURNING id`,
-      )
-        .bind(name)
-        .first()
-    ).id;
-
-  const insertImport = (userId, fields = {}) => {
-    const row = {
-      user_id: userId,
-      platform: 'youtube',
-      source_id: ID,
-      source_url: CANONICAL,
-      quota_day: '2026-11-08',
-      created_at: 1,
-      updated_at: 1,
-      ...fields,
-    };
-    const columns = Object.keys(row);
-    return env.DB.prepare(
-      `INSERT INTO imports (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')}) RETURNING *`,
-    )
-      .bind(...Object.values(row))
-      .first();
-  };
-
   it('fills in the defaults a new import needs', async () => {
     const row = await insertImport(await insertUser('dana'));
     expect(row).toMatchObject({ status: 'running', stage: 'meta', attempt: 1, state: '{}', used_best: 0, error: null });
