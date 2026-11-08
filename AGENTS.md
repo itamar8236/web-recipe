@@ -10,7 +10,8 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 
 Built so far: the recipe browsing UI (folders, recipes, favorites, English/Hebrew, manual
 add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
-log-out with remembered sessions plus a guest mode, and the folders/recipes API, so a
+log-out with remembered sessions plus a guest mode, editing your own username and
+password, and the folders/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory). The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 

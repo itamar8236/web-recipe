@@ -13,7 +13,7 @@ here in the same PR that adds them.
 
 The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
 everything else is the static build from `../frontend/out`, served by Cloudflare. The auth
-API and the folders/recipes API below exist; video import, translation, password changes
+API and the folders/recipes API below exist; video import, translation
 and the admin endpoints don't yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
 `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
 automatically through Workers Builds (root directory `/`), which builds with
@@ -42,11 +42,12 @@ session except the three public auth endpoints; unknown paths are 404 when logge
 | `POST /api/auth/login` `{username, password}` | Log in on this device | 200 `{user}` | 400 `invalid_request`, 401 `invalid_credentials` (same for wrong password and unknown user) |
 | `POST /api/auth/logout` | Delete this device's session | 200 `{ok}` | none (works without a session) |
 | `GET /api/auth/me` | Who is logged in | 200 `{user}` | 401 `not_logged_in` |
+| `PUT /api/auth/me` `{username?, password?}` | Change your own username and/or password (at least one; the old password is not asked for). A new password logs you out on your other devices, not this one | 200 `{user}` | 400 `invalid_request`, `username_invalid`, `password_invalid` (same limits as sign-up), 409 `username_taken`, 401 `not_logged_in` |
 
 `user` is `{ id, username, is_admin }`. Cookies (both HttpOnly, SameSite=Lax, 10 years,
 `Secure` on https): `device` (random id, kept across logouts) and `session` (random
 secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
-device. Not built yet: login rate limiting, changing passwords, the admin endpoints.
+device. Not built yet: login rate limiting, the admin endpoints.
 
 ## Folders and recipes API
 
@@ -129,7 +130,10 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   be raised later.
 - Anyone can sign up (`/api/auth/register`) while fewer than 50 users exist. Only the admin
   deletes users (planned). The first admin is created by hand on production (see the top
-  of `schema.sql`). Users can change their own password (planned).
+  of `schema.sql`). Users change their own username and password
+  (`PUT /api/auth/me`), without typing the old password: the owner chose that, since the
+  session already proves who it is. It always changes the real logged-in user, even while
+  the admin is acting as someone else.
 - Changing or setting a password logs that user out on their other devices.
 - After a successful login the user stays logged in on that device and doesn't see the
   login page again, unless they log out, change their password, or the admin deletes

@@ -48,6 +48,10 @@ export function AuthProvider({ children }) {
       await api.logout();
       switchTo({ status: 'anonymous', user: null });
     },
+    async updateAccount(changes) {
+      const user = await api.updateAccount(changes);
+      setAuth({ status: 'user', user });
+    },
     continueAsGuest() {
       switchTo({ status: 'guest', user: null });
     },

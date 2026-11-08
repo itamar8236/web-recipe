@@ -1,11 +1,14 @@
 import { handleData } from './data.js';
 import { fail, json, readJson } from './http.js';
 import { hashPassword, verifyPassword } from './password.js';
-import { endSession, getSessionUser, startSession } from './session.js';
+import { endOtherSessions, endSession, getSessionUser, startSession } from './session.js';
 
 const MAX_USERS = 50;
 const MIN_PASSWORD = 1;
 const MAX_PASSWORD = 200;
+
+const usernameValid = (username) => username.length >= 1 && username.length <= 50;
+const passwordValid = (password) => password.length >= MIN_PASSWORD && password.length <= MAX_PASSWORD;
 
 function publicUser(user) {
   return { id: user.id, username: user.username, is_admin: user.is_admin === 1 };
@@ -47,8 +50,8 @@ async function register(request, env) {
   const credentials = await readCredentials(request);
   if (!credentials) return fail(400, 'invalid_request');
   const { username, password } = credentials;
-  if (username.length < 1 || username.length > 50) return fail(400, 'username_invalid');
-  if (password.length < MIN_PASSWORD || password.length > MAX_PASSWORD) return fail(400, 'password_invalid');
+  if (!usernameValid(username)) return fail(400, 'username_invalid');
+  if (!passwordValid(password)) return fail(400, 'password_invalid');
 
   // The cap is part of the INSERT so two sign-ups at once cannot both take the last slot.
   let row;
@@ -69,6 +72,36 @@ async function register(request, env) {
   return json({ user: publicUser(row) }, 201, await startSession(request, env, row.id));
 }
 
+// Changes the logged-in user's own username and/or password. The old password is not
+// asked for: the owner chose that, since the session already proves who this is. It always
+// changes the real user, never the one the admin is acting as.
+async function updateMe(request, env, user) {
+  const body = await readJson(request);
+  if (!body) return fail(400, 'invalid_request');
+  const { username, password } = body;
+  if (username === undefined && password === undefined) return fail(400, 'invalid_request');
+  if (username !== undefined && typeof username !== 'string') return fail(400, 'invalid_request');
+  if (password !== undefined && typeof password !== 'string') return fail(400, 'invalid_request');
+  const newName = username?.trim();
+  if (newName !== undefined && !usernameValid(newName)) return fail(400, 'username_invalid');
+  if (password !== undefined && !passwordValid(password)) return fail(400, 'password_invalid');
+
+  let row;
+  try {
+    row = await env.DB.prepare(
+      `UPDATE users SET username = COALESCE(?, username), password_hash = COALESCE(?, password_hash)
+        WHERE id = ? RETURNING id, username, is_admin`,
+    )
+      .bind(newName ?? null, password === undefined ? null : await hashPassword(password), user.id)
+      .first();
+  } catch (error) {
+    if (String(error.message).includes('UNIQUE')) return fail(409, 'username_taken');
+    throw error;
+  }
+  if (password !== undefined) await endOtherSessions(request, env, user.id);
+  return json({ user: publicUser(row) });
+}
+
 async function logout(request, env) {
   return json({ ok: true }, 200, await endSession(request, env));
 }
@@ -85,6 +118,7 @@ async function handleApi(request, env, path) {
   if (!user) return fail(401, 'not_logged_in');
 
   if (method === 'GET' && path === '/api/auth/me') return json({ user: publicUser(user) });
+  if (method === 'PUT' && path === '/api/auth/me') return updateMe(request, env, user);
 
   return handleData(request, env, path, user.data_user_id) ?? fail(404, 'not_found');
 }

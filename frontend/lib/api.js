@@ -62,6 +62,12 @@ export async function register(username, password) {
   return (await request('/api/auth/register', 'POST', { username, password })).user;
 }
 
+// Changes the logged-in user's username and/or password; `changes` holds only what
+// changes. Returns the updated user.
+export async function updateAccount(changes) {
+  return (await dataRequest('/api/auth/me', 'PUT', changes)).user;
+}
+
 export async function logout() {
   await request('/api/auth/logout', 'POST');
 }

@@ -93,3 +93,41 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* The user's name opens "My account". It looks like the name with an edit hint, so it
+   stays as quiet as the rest of the bar. */
+.accountButton {
+  min-width: 0;
+  min-height: 44px;
+  padding-inline: 8px;
+  margin-inline-start: -8px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.accountButton:hover {
+  background: var(--accent-soft);
+}
+
+.accountButton .userName {
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.accountIcon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--accent-dark);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
