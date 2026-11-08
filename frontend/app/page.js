@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import FolderBar from '@/components/FolderBar';
+import ImportCards, { useImports } from '@/components/ImportCards';
+import ImportDialog from '@/components/ImportDialog';
 import RecipeCard from '@/components/RecipeCard';
 import SearchBox from '@/components/SearchBox';
+import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
 import { errorMessage } from '@/lib/i18n';
 import { matchesSearch } from '@/lib/search';
@@ -21,6 +24,14 @@ export default function HomePage() {
   const [selected, setSelected] = useState('all');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [query, setQuery] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
+  // Importing needs an account, so a guest goes straight to the manual form.
+  const canImport = useAuth().status === 'user';
+
+  const reloadRecipes = useCallback(() => {
+    api.getRecipes().then(setRecipes).catch(() => {});
+  }, []);
+  const { imports, models, refresh, addImport, removeImport } = useImports(canImport, reloadRecipes);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -120,10 +131,18 @@ export default function HomePage() {
 
       <section className={styles.content}>
         <div className={styles.toolbar}>
-          <Link href={newRecipeHref} className={`button ${styles.add}`}>
-            + {t.addRecipe}
-          </Link>
+          {canImport ? (
+            <button type="button" className={`button ${styles.add}`} onClick={() => setImportOpen(true)}>
+              + {t.addRecipe}
+            </button>
+          ) : (
+            <Link href={newRecipeHref} className={`button ${styles.add}`}>
+              + {t.addRecipe}
+            </Link>
+          )}
         </div>
+
+        {canImport && <ImportCards imports={imports} models={models} refresh={refresh} removeImport={removeImport} />}
 
         <div className={styles.titleRow}>
           <div className={styles.titleText}>
@@ -163,6 +182,19 @@ export default function HomePage() {
           </ul>
         )}
       </section>
+
+      {importOpen && (
+        <ImportDialog
+          models={models}
+          manualHref={newRecipeHref}
+          onModelsStale={refresh}
+          onStarted={(started) => {
+            addImport(started);
+            setImportOpen(false);
+            refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

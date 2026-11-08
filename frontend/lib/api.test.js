@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
-import { errorMessage, pickLanguage, strings } from './i18n';
+import { errorMessage, formatTime, pickLanguage, strings } from './i18n';
 
 const content = (name, ingredients = [], steps = []) => ({ name, ingredients, steps });
 
@@ -233,5 +233,162 @@ describe('errorMessage', () => {
   it('maps known codes and falls back to a generic message', () => {
     expect(errorMessage(strings.en, { code: 'username_taken' })).toBe(strings.en.errUsernameTaken);
     expect(errorMessage(strings.he, { code: 'weird' })).toBe(strings.he.errGeneric);
+  });
+
+  it.each([
+    ['link_invalid', "That doesn't look like a video link"],
+    ['link_unsupported', 'Only YouTube links for now'],
+    ['already_imported', 'You already have this recipe'],
+    ['too_many_imports', 'Wait for current ones, or try tomorrow'],
+    ['video_unavailable', 'Video not found'],
+    ['video_private', 'The video must be public'],
+    ['video_too_long', 'Only short videos for now'],
+    ['no_recipe', 'No recipe found, add it manually'],
+    ['multiple_recipes', 'Pick a video with one recipe'],
+    ['llm_error', 'Temporary problem'],
+    ['bad_result', "Couldn't read a clean recipe"],
+    ['timed_out', 'Something went wrong'],
+  ])('%s has its own message', (code, message) => {
+    expect(errorMessage(strings.en, { code })).toBe(message);
+    expect(errorMessage(strings.he, { code })).not.toBe(strings.he.errGeneric);
+  });
+
+  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'best_model_unavailable', 'import_needs_login'])(
+    '%s has its own message in both languages',
+    (code) => {
+      expect(errorMessage(strings.en, { code })).not.toBe(strings.en.errGeneric);
+      expect(errorMessage(strings.he, { code })).not.toBe(strings.he.errGeneric);
+    },
+  );
+
+  it('says when to try again after a quota failure', () => {
+    const retryAt = Date.UTC(2026, 10, 9, 8, 0);
+    const time = formatTime(strings.en, retryAt);
+    expect(time).not.toBe('');
+    expect(errorMessage(strings.en, { code: 'quota', retryAt })).toBe(`Daily limit reached, try after ${time}`);
+    expect(errorMessage(strings.he, { code: 'quota', retryAt })).toContain(formatTime(strings.he, retryAt));
+  });
+
+  it('still gives a sensible quota message when the time is not known', () => {
+    expect(errorMessage(strings.en, { code: 'quota' })).toBe('Daily limit reached, try again later');
+  });
+});
+
+describe('strings', () => {
+  it('has the same keys in English and Hebrew', () => {
+    expect(Object.keys(strings.he).sort()).toEqual(Object.keys(strings.en).sort());
+  });
+
+  it('has the same kind of value for every key, and none empty', () => {
+    for (const key of Object.keys(strings.en)) {
+      expect(typeof strings.he[key], key).toBe(typeof strings.en[key]);
+      if (typeof strings.en[key] === 'string') expect(strings.he[key], key).not.toBe('');
+    }
+  });
+
+  it('puts the name or time into the messages that need one', () => {
+    for (const lang of ['en', 'he']) {
+      expect(strings[lang].recipeReady('X')).toContain('X');
+      expect(strings[lang].usingBasicModel('10:00')).toContain('10:00');
+      expect(strings[lang].approvalNeeded('10:00')).toContain('10:00');
+      expect(strings[lang].bestLeftToday(4)).toContain('4');
+    }
+  });
+});
+
+describe('formatTime', () => {
+  it('is empty when the time is not known', () => {
+    expect(formatTime(strings.en, null)).toBe('');
+    expect(formatTime(strings.en, undefined)).toBe('');
+  });
+
+  it('shows a clock time with minutes', () => {
+    expect(formatTime(strings.he, Date.UTC(2026, 10, 9, 8, 5))).toMatch(/\d{1,2}:05/);
+  });
+});
+
+describe('guest: imports need an account', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    ['getImports', () => api.getImports()],
+    ['startImport', () => api.startImport('https://youtu.be/dQw4w9WgXcQ')],
+    ['retryImport', () => api.retryImport(1)],
+    ['dismissImport', () => api.dismissImport(1)],
+    ['rerunRecipe', () => api.rerunRecipe(1)],
+  ])('%s is refused and never calls the backend', async (_, action) => {
+    vi.stubGlobal('fetch', vi.fn());
+    await expect(action()).rejects.toMatchObject({ code: 'import_needs_login' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('logged in: imports', () => {
+  const mockFetch = (status, body) =>
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: status < 400, status, json: async () => body })));
+  const lastCall = () => {
+    const [path, options] = fetch.mock.calls.at(-1);
+    return { path, method: options.method, body: options.body && JSON.parse(options.body) };
+  };
+  const card = { id: 5, status: 'running' };
+
+  beforeEach(() => api.setGuestMode(false));
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    api.setLoggedOutHandler(() => {});
+  });
+
+  it('loads the imports and the model state', async () => {
+    const data = { imports: [card], models: { bestAvailable: true } };
+    mockFetch(200, data);
+    expect(await api.getImports()).toEqual(data);
+    expect(lastCall()).toMatchObject({ path: '/api/imports', method: 'GET' });
+  });
+
+  it('sends only the link when starting an import', async () => {
+    mockFetch(202, { import: card });
+    expect(await api.startImport('https://youtu.be/x')).toEqual(card);
+    expect(lastCall()).toEqual({ path: '/api/imports', method: 'POST', body: { url: 'https://youtu.be/x' } });
+  });
+
+  it('adds the approval only when the user gave it', async () => {
+    mockFetch(202, { import: card });
+    await api.startImport('https://youtu.be/x', true);
+    expect(lastCall().body).toEqual({ url: 'https://youtu.be/x', useBasicModel: true });
+  });
+
+  it('retries, with or without the approval', async () => {
+    mockFetch(202, { import: card });
+    await api.retryImport(5);
+    expect(lastCall()).toEqual({ path: '/api/imports/5/retry', method: 'POST', body: {} });
+    await api.retryImport(5, true);
+    expect(lastCall().body).toEqual({ useBasicModel: true });
+  });
+
+  it('dismisses with DELETE', async () => {
+    mockFetch(200, { ok: true });
+    await api.dismissImport(5);
+    expect(lastCall()).toMatchObject({ path: '/api/imports/5', method: 'DELETE' });
+  });
+
+  it('starts a re-run', async () => {
+    mockFetch(202, { import: card });
+    expect(await api.rerunRecipe(7)).toEqual(card);
+    expect(lastCall()).toEqual({ path: '/api/recipes/7/rerun', method: 'POST', body: {} });
+  });
+
+  it('passes on the backend error codes', async () => {
+    mockFetch(400, { error: 'link_unsupported' });
+    await expect(api.startImport('https://example.com')).rejects.toMatchObject({ code: 'link_unsupported' });
+    mockFetch(409, { error: 'model_approval_needed' });
+    await expect(api.startImport('https://youtu.be/x')).rejects.toMatchObject({ code: 'model_approval_needed' });
+  });
+
+  it('reports a lost session while polling, so the login screen comes back', async () => {
+    const loggedOut = vi.fn();
+    api.setLoggedOutHandler(loggedOut);
+    mockFetch(401, { error: 'not_logged_in' });
+    await expect(api.getImports()).rejects.toMatchObject({ status: 401 });
+    expect(loggedOut).toHaveBeenCalled();
   });
 });
