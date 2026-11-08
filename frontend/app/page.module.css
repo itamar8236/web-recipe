@@ -4,6 +4,13 @@
   gap: 18px;
 }
 
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 .content {
   display: flex;
   flex-direction: column;

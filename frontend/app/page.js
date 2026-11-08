@@ -94,6 +94,7 @@ export default function HomePage() {
   return (
     <div className={styles.layout}>
       <aside className={styles.side}>
+        <SearchBox value={query} onChange={setQuery} />
         <FolderBar
           folders={folders}
           recipes={recipes}
@@ -118,8 +119,6 @@ export default function HomePage() {
       </aside>
 
       <section className={styles.content}>
-        <SearchBox value={query} onChange={setQuery} />
-
         <div className={styles.toolbar}>
           <Link href={newRecipeHref} className={`button ${styles.add}`}>
             + {t.addRecipe}

@@ -36,7 +36,7 @@ export default function SearchBox({ value, onChange }) {
         // Results update while typing, so Enter only has to close the phone keyboard.
         onKeyDown={(event) => event.key === 'Enter' && event.currentTarget.blur()}
         onBlur={() => !value && setOpen(false)}
-        placeholder={t.search}
+        placeholder={t.searchPlaceholder}
         aria-label={t.search}
         enterKeyHint="search"
         autoComplete="off"

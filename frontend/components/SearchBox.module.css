@@ -10,7 +10,11 @@
   position: relative;
 }
 
+/* The same height as the closed button, so the folders below don't jump when it closes
+   in the middle of a tap on one of them. */
 .input {
+  min-height: 44px;
+  padding-block: 6px;
   padding-inline: 44px;
   text-overflow: ellipsis;
 }
