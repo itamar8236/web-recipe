@@ -1,0 +1,61 @@
+.box {
+  position: relative;
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.input {
+  padding-inline: 44px;
+  text-overflow: ellipsis;
+}
+
+.input::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+/* The app draws its own clear button, the same in every browser and in RTL. */
+.input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.icon {
+  position: absolute;
+  inset-inline-start: 14px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translateY(-50%);
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.clear {
+  position: absolute;
+  inset-inline-end: 2px;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.clear:hover {
+  color: var(--ink);
+}
+
+@media (min-width: 760px) {
+  .box {
+    flex: 1 1 240px;
+  }
+}

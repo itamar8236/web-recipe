@@ -32,12 +32,14 @@ frontend/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       ├── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
 │       └── import/page.js # (planned) Paste a video link, compare, save (/recipe/import)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), FolderBar, RecipeCard, HeartButton, ConfirmDialog
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), FolderBar, SearchBox, RecipeCard, HeartButton, ConfirmDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
 │   ├── api.test.js        # Vitest tests for api.js and i18n helpers
-│   └── i18n.js            # UI strings in en/he + pickLanguage()
+│   ├── i18n.js            # UI strings in en/he + pickLanguage()
+│   ├── search.js          # matchesSearch(): recipe name/ingredient search
+│   └── search.test.js     # Vitest tests for search.js
 ├── styles/globals.css     # Design tokens (CSS variables), buttons, form fields
 └── next.config.mjs
 ```
@@ -90,7 +92,9 @@ Built now: Login, Home, Recipe view, Edit, My account. The rest are planned.
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
    Only an empty folder can be deleted (Delete looks disabled otherwise; tapping it shows a hint). Big "Add recipe" button. Each card has a
    heart to mark a favorite (each user sees only their own folders, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
-   the selected folder).
+   the selected folder). A search box under "Add recipe" filters the cards while typing, by
+   recipe name or ingredients in both languages (every typed word must match), combined
+   with the selected folder and "Favorites". It runs in the browser on the loaded recipes.
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
 4. **Import**: URL field (YouTube or Facebook; others show "not supported yet"), a folder
    picker, a submit button, then a spinner with "Reading the video..." Then:
