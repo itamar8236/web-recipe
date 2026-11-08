@@ -18,7 +18,7 @@ components before inventing new ones. The app must stay extremely simple to use.
 - Use CSS logical properties (`margin-inline-start`, `text-align: start`) so Hebrew RTL
   works; colors and spacing come from the CSS variables in `styles/globals.css`.
 - Every data screen handles loading, empty, error, and success. Disable submit buttons
-  while a request runs (video import can take up to a minute: show progress text).
+  while a request runs (a video import runs in the background and shows progress on its card).
 - Mobile first: ~360px up, no horizontal scroll, tap targets ≥ 44px.
 - Accessibility: semantic HTML, labeled inputs, visible focus, good contrast.
 

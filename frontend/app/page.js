@@ -31,7 +31,7 @@ export default function HomePage() {
   const reloadRecipes = useCallback(() => {
     api.getRecipes().then(setRecipes).catch(() => {});
   }, []);
-  const { imports, models, refresh, addImport, removeImport } = useImports(canImport, reloadRecipes);
+  const { imports, models, backAt, refresh, addImport, dismissImport } = useImports(canImport, reloadRecipes);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -142,7 +142,9 @@ export default function HomePage() {
           )}
         </div>
 
-        {canImport && <ImportCards imports={imports} models={models} refresh={refresh} removeImport={removeImport} />}
+        {canImport && (
+          <ImportCards imports={imports} backAt={backAt} refresh={refresh} addImport={addImport} dismissImport={dismissImport} />
+        )}
 
         <div className={styles.titleRow}>
           <div className={styles.titleText}>
@@ -186,6 +188,7 @@ export default function HomePage() {
       {importOpen && (
         <ImportDialog
           models={models}
+          backAt={backAt}
           manualHref={newRecipeHref}
           onModelsStale={refresh}
           onStarted={(started) => {

@@ -39,11 +39,11 @@ describe('callModel: the request', () => {
     expect(body.tools).toBeUndefined();
   });
 
-  it('puts the video before the text, at low resolution, when it can be sent', async () => {
+  it('puts the video before the text when it can be sent', async () => {
     respond(interaction('{"status":"none"}'));
     await call({ videoUrl: VIDEO });
     expect(sentBody().input).toEqual([
-      { type: 'video', uri: VIDEO, resolution: 'low' },
+      { type: 'video', uri: VIDEO },
       { type: 'text', text: 'the prompt' },
     ]);
   });

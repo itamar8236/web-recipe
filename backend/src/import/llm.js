@@ -45,7 +45,9 @@ async function quotaErrorFrom(response) {
 
 function requestBody({ model, prompt, schema, videoUrl }) {
   const input = [{ type: 'text', text: prompt }];
-  if (videoUrl) input.unshift({ type: 'video', uri: videoUrl, resolution: 'low' });
+  // No media resolution: Google's docs don't say a YouTube link accepts it, and a refused
+  // field would look like a refused video.
+  if (videoUrl) input.unshift({ type: 'video', uri: videoUrl });
   return { model, input, response_format: { type: 'text', mime_type: 'application/json', schema } };
 }
 

@@ -52,8 +52,9 @@ function pacificOffset(ms) {
   return Date.UTC(year, month - 1, day, hour, minute, second) - Math.floor(ms / 1000) * 1000;
 }
 
-// The next midnight Pacific, in epoch ms. The offset is read about at that midnight, not
-// now, because the clocks may change before it (they change at 02:00, never at midnight).
+// The next midnight Pacific, in epoch ms. Pacific midnight is 7 or 8 hours after UTC midnight
+// of the same date, so 8 hours past that lands at or just after it. The offset is read
+// there, not now, because the clocks may change first (at 02:00, never at midnight).
 export function nextQuotaReset(now) {
   const { year, month, day } = pacificParts(now);
   const midnightAsUtc = Date.UTC(year, month - 1, day + 1);
@@ -65,13 +66,13 @@ export function nextQuotaReset(now) {
 
 // Takes one request from the day's count, in one statement, so two imports can't both
 // take the last one. False means the limit is reached and no request may be sent.
-export async function reserveCall(env, model, limit, now = Date.now()) {
+export async function reserveCall(env, model, limit) {
   const row = await env.DB.prepare(
     `INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, 1)
      ON CONFLICT (day, model) DO UPDATE SET calls = calls + 1 WHERE calls < ?
      RETURNING calls`,
   )
-    .bind(quotaDay(now), model, limit)
+    .bind(quotaDay(Date.now()), model, limit)
     .first();
   return row !== null;
 }
@@ -160,6 +161,9 @@ export function startRefusal(state, { bestOnly = false, countedBest = false } = 
 
 // ---- Calling ----
 
+// Whether this import already holds one of the user's daily best-model uses for `day`.
+export const holdsBestUse = (job, day) => job.used_best === 1 && job.quota_day === day;
+
 // One of the user's daily best-model uses, taken in one statement so imports running at
 // the same time can't go past the cap.
 async function claimBestUse(env, job, day) {
@@ -194,7 +198,7 @@ async function callUnlessOut({ env, llm, model, limit, request }) {
         return { out: true, sent };
       }
       if (tries === 2) {
-        await env.DB.batch([markOutStatement(env, model, now + COOL_DOWN_MS)]);
+        await markOutStatement(env, model, now + COOL_DOWN_MS).run();
         return { out: true, sent };
       }
       await sleep(error.retryDelayMs);
@@ -205,7 +209,7 @@ async function callUnlessOut({ env, llm, model, limit, request }) {
 async function callBest(job, deps, request) {
   const { env, llm } = deps;
   const day = quotaDay(Date.now());
-  const alreadyCounted = job.used_best === 1 && job.quota_day === day;
+  const alreadyCounted = holdsBestUse(job, day);
   if (!alreadyCounted) {
     if (!(await claimBestUse(env, job, day))) return { out: true };
     job.used_best = 1;
@@ -213,7 +217,7 @@ async function callBest(job, deps, request) {
   }
   const result = await callUnlessOut({ env, llm, model: env.LLM_BEST_MODEL, limit: limits(env).bestDaily, request });
   if (result.out && !result.sent && !alreadyCounted) {
-    // Nothing reached Google, so this import didn't use one of the user's five.
+    // Nothing reached Google, so this import didn't take one of the user's daily uses.
     await env.DB.prepare('UPDATE imports SET used_best = 0 WHERE id = ?').bind(job.id).run();
     job.used_best = 0;
   }

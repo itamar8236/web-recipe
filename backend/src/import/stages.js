@@ -10,6 +10,10 @@ import { sourceFor } from './sources/index.js';
 
 const MIN_DESCRIPTION_LENGTH = 80;
 
+// Every write is guarded by this, so a repeated step, a late older attempt or a dismissal
+// changes nothing.
+const isCurrent = `WHERE id = ? AND status = 'running' AND attempt = ?`;
+
 const contentSchema = {
   type: 'object',
   properties: {
@@ -89,7 +93,7 @@ function ask(job, deps, description, videoUrl) {
 
 async function fetchMeta(job, { env, source }) {
   const { title, ...meta } = await source.fetchMeta(job.source_id, env);
-  await env.DB.prepare(`UPDATE imports SET title = ? WHERE id = ? AND status = 'running' AND attempt = ?`)
+  await env.DB.prepare(`UPDATE imports SET title = ? ${isCurrent}`)
     .bind(title, job.id, job.attempt)
     .run();
   return { meta };
@@ -118,8 +122,6 @@ async function extractRecipe(job, deps) {
   throw new ImportError(refused ? 'video_unavailable' : blockedBy ?? 'no_recipe');
 }
 
-// All of these are guarded by the import still running on this attempt, which makes a
-// repeated step, a late older attempt or a dismissal write nothing.
 function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
   return [
     env.DB.prepare(
@@ -127,12 +129,12 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
          name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
          machine_translated_lang, created_at, updated_at)
        SELECT ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-       WHERE EXISTS (SELECT 1 FROM imports WHERE id = ? AND status = 'running' AND attempt = ?)`,
+       WHERE EXISTS (SELECT 1 FROM imports ${isCurrent})`,
     ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, now, now, job.id, job.attempt),
     env.DB.prepare(
       `UPDATE imports SET status = 'done', state = '{}', updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE user_id = ? AND source_url = ? ORDER BY id DESC LIMIT 1)
-       WHERE id = ? AND status = 'running' AND attempt = ?`,
+       ${isCurrent}`,
     ).bind(now, job.user_id, job.source_url, job.id, job.attempt),
   ];
 }
@@ -148,14 +150,14 @@ function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) 
          name_en = ?, ingredients_en = ?, steps_en = ?, name_he = ?, ingredients_he = ?, steps_he = ?,
          machine_translated_lang = ?, updated_at = ?
        WHERE ${sameRecipe}
-         AND EXISTS (SELECT 1 FROM imports WHERE id = ? AND status = 'running' AND attempt = ?)`,
+         AND EXISTS (SELECT 1 FROM imports ${isCurrent})`,
     ).bind(model, ...contentValues(recipe), machineLang, now, ...recipeKey, job.id, job.attempt),
     env.DB.prepare(
       `UPDATE imports SET
          status = CASE WHEN EXISTS (SELECT 1 FROM recipes WHERE ${sameRecipe}) THEN 'done' ELSE 'dismissed' END,
          state = '{}', updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE ${sameRecipe})
-       WHERE id = ? AND status = 'running' AND attempt = ?`,
+       ${isCurrent}`,
     ).bind(...recipeKey, now, ...recipeKey, job.id, job.attempt),
   ];
 }
@@ -175,8 +177,6 @@ export const STAGES = [
   { name: 'save', run: saveRecipe },
 ];
 
-const isCurrent = `WHERE id = ? AND status = 'running' AND attempt = ?`;
-
 // Written before throwing, so nothing depends on how Workflows passes errors along.
 async function saveError(env, importId, attempt, code) {
   await env.DB.prepare(`UPDATE imports SET error = ?, updated_at = ? ${isCurrent}`)
@@ -186,20 +186,23 @@ async function saveError(env, importId, attempt, code) {
 
 async function saveProgress(env, job, stage, patch) {
   const done = [...(job.state.done ?? []), stage.name];
+  // After the last stage the row is already done, so this write changes nothing.
   const next = STAGES[STAGES.findIndex(({ name }) => name === stage.name) + 1]?.name ?? stage.name;
   await env.DB.prepare(`UPDATE imports SET state = ?, stage = ?, error = NULL, updated_at = ? ${isCurrent}`)
     .bind(JSON.stringify({ ...job.state, ...patch, done }), next, Date.now(), job.id, job.attempt)
     .run();
 }
 
-// Runs one stage for one attempt. `overrides` lets a test replace the LLM.
-export async function runStage(env, importId, attempt, stage, overrides = {}) {
+// Runs one stage for one attempt.
+export async function runStage(env, importId, attempt, stage, { llm = callModel } = {}) {
   const job = await env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(importId).first();
   if (!job || job.status !== 'running' || job.attempt !== attempt) return;
   job.state = JSON.parse(job.state);
   if (job.state.done?.includes(stage.name)) return;
+  // A try that times out writes nothing, so an earlier try's code must not stand in for it.
+  if (job.error !== null) await saveError(env, importId, attempt, null);
 
-  const deps = { env, source: sourceFor(job.platform), llm: callModel, ...overrides };
+  const deps = { env, source: sourceFor(job.platform), llm };
   let patch;
   try {
     patch = await stage.run(job, deps);

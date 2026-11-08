@@ -27,7 +27,12 @@ async function fetchMeta(sourceId, env) {
   if (!env.YOUTUBE_API_KEY) throw new ImportError('llm_error');
 
   const query = new URLSearchParams({ part: 'snippet,contentDetails,status', id: sourceId, key: env.YOUTUBE_API_KEY });
-  const response = await fetch(`${VIDEOS_API}?${query}`);
+  let response;
+  try {
+    response = await fetch(`${VIDEOS_API}?${query}`);
+  } catch {
+    throw new ImportError('llm_error', { retryable: true });
+  }
   if (!response.ok) throw new ImportError('llm_error', { retryable: true });
 
   const video = (await response.json()).items?.[0];

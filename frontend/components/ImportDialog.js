@@ -3,14 +3,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from './Language';
-import { bestBackAt } from './ImportCards';
 import { errorMessage, formatTime } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './ImportDialog.module.css';
 
 // What "+ Add recipe" opens for a logged-in user. It asks only for the link: the backend
 // works out the site. Declining the prompt in any way means writing the recipe by hand.
-export default function ImportDialog({ models, manualHref, onStarted, onModelsStale }) {
+export default function ImportDialog({ models, backAt, manualHref, onStarted, onModelsStale }) {
   const { t } = useLanguage();
   const router = useRouter();
   const ref = useRef(null);
@@ -19,7 +18,6 @@ export default function ImportDialog({ models, manualHref, onStarted, onModelsSt
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [askingApproval, setAskingApproval] = useState(false);
-  const backAt = bestBackAt(models);
 
   useEffect(() => {
     ref.current.showModal();

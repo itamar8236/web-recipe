@@ -15,7 +15,8 @@ coverage/
 
 # Environment / secrets
 .env
-.dev.vars
+.dev.vars*
+!.dev.vars.example
 .env.*
 !.env.example
 

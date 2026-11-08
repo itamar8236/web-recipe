@@ -426,6 +426,44 @@ describe('import endpoints', () => {
       expect(await rows()).toEqual([]);
     });
 
+    describe('when another request starts the same video at the same moment', () => {
+      // The database refuses the INSERT, as it would if the other request got there first.
+      const conflictingDb = (beforeRefusing) =>
+        new Proxy(env.DB, {
+          get(target, name) {
+            if (name !== 'prepare') return typeof target[name] === 'function' ? target[name].bind(target) : target[name];
+            return (sql) => {
+              if (!sql.startsWith('INSERT INTO imports')) return target.prepare(sql);
+              return {
+                bind: () => ({
+                  first: async () => {
+                    await beforeRefusing();
+                    throw new Error('UNIQUE constraint failed: imports.user_id');
+                  },
+                }),
+              };
+            };
+          },
+        });
+
+      it('answers 200 with the import that got there first', async () => {
+        const { cookie, userId } = await signUp();
+        testEnv.DB = conflictingDb(() => insertImport(userId, { quota_day: today(), updated_at: Date.now() }));
+        const response = await startImport(cookie);
+        expect(response.status).toBe(200);
+        expect((await response.json()).import.link).toBe(CANONICAL);
+        expect(workflow.create).not.toHaveBeenCalled();
+      });
+
+      it('answers already_imported when that import has already finished', async () => {
+        const { cookie } = await signUp();
+        testEnv.DB = conflictingDb(async () => {});
+        const response = await startImport(cookie);
+        expect(response.status).toBe(409);
+        expect(await errorOf(response)).toBe('already_imported');
+      });
+    });
+
     it('marks the row failed with llm_error when the Workflow cannot start', async () => {
       const { cookie } = await signUp();
       workflow.create.mockRejectedValueOnce(new Error('workflow.not_found'));

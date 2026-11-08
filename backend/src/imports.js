@@ -2,8 +2,9 @@
 // data of the user the session acts for. The work itself happens in import/workflow.js.
 
 import { fail, json, readJson } from './http.js';
-import { quotaDay, readModelState, startRefusal, storeApproval } from './import/models.js';
+import { holdsBestUse, quotaDay, readModelState, startRefusal, storeApproval } from './import/models.js';
 import { readLink } from './import/sources/index.js';
+import { markFailed } from './import/stages.js';
 
 const STUCK_AFTER_MS = 30 * 60 * 1000;
 
@@ -56,9 +57,7 @@ async function startAndRespond(env, userId, id, attempt) {
     await env.IMPORT_WORKFLOW.create({ id: `import-${id}-${attempt}`, params: { importId: id, attempt } });
   } catch (error) {
     console.error(error);
-    await env.DB.prepare(`UPDATE imports SET status = 'failed', error = 'llm_error', updated_at = ? WHERE id = ? AND status = 'running' AND attempt = ?`)
-      .bind(Date.now(), id, attempt)
-      .run();
+    await markFailed(env, id, attempt);
   }
   return json({ import: toImport(await loadImport(env, userId, id)) }, 202);
 }
@@ -107,8 +106,10 @@ async function createImport(request, env, userId) {
       .first();
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
-    // Another tap or device started the same video a moment ago.
-    return json({ import: toImport(await findRunning(env, userId, link)) });
+    // Another tap or device started the same video a moment ago. If it has already
+    // finished by now, there is a recipe for this video.
+    const other = await findRunning(env, userId, link);
+    return other ? json({ import: toImport(other) }) : fail(409, 'already_imported');
   }
   if (!row) return fail(429, 'too_many_imports');
   return startAndRespond(env, userId, row.id, row.attempt);
@@ -149,7 +150,7 @@ async function retryRefusal(env, userId, body, row, now) {
   if (row.extracted_model !== null) return null;
   const bestOnly = row.replace_recipe_id !== null;
   if (body.useBasicModel && !bestOnly) await storeApproval(env, userId, now);
-  const countedBest = row.used_best === 1 && row.quota_day === quotaDay(now);
+  const countedBest = holdsBestUse(row, quotaDay(now));
   return startRefusal(await readModelState(env, userId, now), { bestOnly, countedBest });
 }
 

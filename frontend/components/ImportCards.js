@@ -17,6 +17,7 @@ export function useImports(enabled, onRecipeReady) {
   const [models, setModels] = useState(null);
   const latestRequest = useRef(0);
   const finishedIds = useRef(null); // null until the first answer
+  const dismissedIds = useRef(new Set());
   const notifyReady = useRef(onRecipeReady);
 
   useEffect(() => {
@@ -31,7 +32,8 @@ export function useImports(enabled, onRecipeReady) {
       const finished = new Set(data.imports.filter((i) => i.status === 'done').map((i) => i.id));
       const hasNew = finishedIds.current && [...finished].some((id) => !finishedIds.current.has(id));
       finishedIds.current = finished;
-      setImports(data.imports);
+      // A dismissal the backend hasn't finished yet must not bring its card back.
+      setImports(data.imports.filter((i) => !dismissedIds.current.has(i.id)));
       setModels(data.models);
       if (hasNew) notifyReady.current();
     } catch {
@@ -42,7 +44,6 @@ export function useImports(enabled, onRecipeReady) {
 
   useEffect(() => {
     if (!enabled) return undefined;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') refresh();
@@ -60,22 +61,32 @@ export function useImports(enabled, onRecipeReady) {
     return () => clearInterval(timer);
   }, [enabled, anyRunning, refresh]);
 
-  // Both change the list before the backend answers, so a poll already on its way must
-  // not put the old list back.
+  // A poll already on its way must not put the old list back over this card.
   const addImport = useCallback((added) => {
     latestRequest.current += 1;
     setImports((list) => [added, ...list.filter((i) => i.id !== added.id)]);
   }, []);
-  const removeImport = useCallback((id) => {
-    latestRequest.current += 1;
-    setImports((list) => list.filter((i) => i.id !== id));
-  }, []);
 
-  return { imports, models, refresh, addImport, removeImport };
+  const dismissImport = useCallback(
+    async (id) => {
+      dismissedIds.current.add(id);
+      setImports((list) => list.filter((i) => i.id !== id));
+      try {
+        await api.dismissImport(id);
+      } catch (error) {
+        dismissedIds.current.delete(id);
+        refresh();
+        throw error;
+      }
+    },
+    [refresh],
+  );
+
+  // The moment the best model can be tried again, for the messages that mention it.
+  const backAt = models?.bestAvailableAt ?? models?.resetsAt;
+
+  return { imports, models, backAt, refresh, addImport, dismissImport };
 }
-
-// The moment the best model can be tried again, for the messages that mention it.
-export const bestBackAt = (models) => models?.bestAvailableAt ?? models?.resetsAt;
 
 const stageText = (t, stage) => (stage === 'meta' ? t.importStageMeta : t.importStageExtract);
 
@@ -157,20 +168,17 @@ function ImportCard({ item, backAt, busy, onDismiss, onRetry }) {
   );
 }
 
-export default function ImportCards({ imports, models, refresh, removeImport }) {
+export default function ImportCards({ imports, backAt, refresh, addImport, dismissImport }) {
   const { t } = useLanguage();
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
-  const backAt = bestBackAt(models);
 
   async function dismiss(id) {
     setError('');
-    removeImport(id);
     try {
-      await api.dismissImport(id);
+      await dismissImport(id);
     } catch (err) {
       setError(errorMessage(t, err));
-      refresh();
     }
   }
 
@@ -178,7 +186,7 @@ export default function ImportCards({ imports, models, refresh, removeImport }) 
     setError('');
     setBusyId(id);
     try {
-      await api.retryImport(id, useBasicModel);
+      addImport(await api.retryImport(id, useBasicModel));
     } catch (err) {
       setError(errorMessage(t, { code: err.code, retryAt: backAt }));
     }

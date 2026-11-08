@@ -5,8 +5,8 @@ JSON API, stores data in Cloudflare D1, handles login, calls Google's free LLMs 
 video links into recipes, and serves the frontend's static build. Read the root
 `AGENTS.md` first.
 
-"Current state" and the API tables describe what exists; the sections after them
-describe what the backend must do once built. Record new files, schema and endpoints
+"Current state", the API tables and "Import from a YouTube link" describe what exists; the
+other sections after them describe what the backend must do once built. Record new files, schema and endpoints
 here in the same PR that adds them.
 
 ## Current state
@@ -22,7 +22,7 @@ automatically through Workers Builds (root directory `/`), which builds with
 - on `main`: `cd backend && npm install && npx wrangler deploy` (production).
 - on other branches and PRs: `cd backend && npm install && npx wrangler preview`, a
   Worker Preview that doesn't replace the production Worker, but shares its database
-  (see [Database](#database)). It needs the `"previews": {}` block in
+  (see [Database](#database)). It needs the `previews` block in
   `wrangler.jsonc`.
 
 Code: `src/index.js` (routes and auth), `src/data.js` (folders and recipes),
@@ -113,7 +113,8 @@ All need a session, work only on the data of the user the session acts for, and 
   day it counts against that day. A re-run never offers the basic model: when the best
   model is out it answers `quota`.
 
-The sections below describe what the backend must do once built.
+The sections below describe what the backend must do once built, except "Import from a
+YouTube link", which exists.
 
 ## Data
 

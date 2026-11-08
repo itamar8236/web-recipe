@@ -412,6 +412,17 @@ describe('runStage rules', () => {
     expect(llm).not.toHaveBeenCalled();
   });
 
+  it('forgets an earlier try’s error before trying again', async () => {
+    const row = await atExtract(await insertUser(), {}, { error: 'bad_result' });
+    let errorDuringTheCall;
+    const llm = vi.fn(async () => {
+      errorDuringTheCall = (await reload(row)).error;
+      return ONE;
+    });
+    await runExtract(row, llm);
+    expect(errorDuringTheCall).toBeNull();
+  });
+
   it('writes the error before throwing, and a later success clears it', async () => {
     const row = await atExtract(await insertUser());
     await expectFailure(runExtract(row, fakeLlm({ status: 'maybe' })), row, 'bad_result', { retryable: true });
