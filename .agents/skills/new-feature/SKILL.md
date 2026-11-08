@@ -18,7 +18,7 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
    - Use bound SQL parameters only; keep LLM provider code in one place.
    - New routes require a session (admin routes also the admin check).
    - Validate input, return `{ error }` with the right status code.
-   - Add simple Vitest tests (`@cloudflare/vitest-pool-workers`, local D1) for every
+   - Add simple Vitest tests (`@cloudflare/vitest-plugin`, local D1) for every
      new or changed endpoint: the happy path, bad input, and not logged in / not admin.
      Keep them small: a few clear cases, no elaborate fixtures.
    - Record new endpoints and schema in `backend/README.md`.
@@ -27,7 +27,7 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
 6. **Verify**: lint and tests for every app touched; run the app against the local DB
    (`local-dev` skill, never production) and try the feature end to end in a browser.
 7. **Document**: update every `.md` file the feature makes outdated, in the same PR:
-   `AGENTS.md` (product, stack, commands, rules), `backend/README.md` (schema, API, auth,
+   `AGENTS.md` (product, stack, commands, rules, known bugs and trade-offs), `backend/README.md` (schema, API, auth,
    LLM flow, env), `frontend/README.md` (screens, UX), skills (in `.agents/skills/` only).
 8. **Ship**: commit and open a PR (`git-workflow`). Report what changed, how it was
    tested, and what's left.

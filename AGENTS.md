@@ -11,9 +11,19 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 Built so far: the recipe browsing UI (folders, recipes, favorites, English/Hebrew, manual
 add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, and the folders/recipes API, so a
-logged-in user's data is stored in D1 (a guest's stays in browser memory). LLM import,
-translation, password changes and the admin screens are not built yet; the sections below
-describe the target.
+logged-in user's data is stored in D1 (a guest's stays in browser memory). The sections
+below describe the target; the READMEs' "Current state" sections say what exists.
+
+## Known bugs and accepted trade-offs
+
+There is no issue tracker, so this list is how the next agent learns about them. Don't
+"fix" an accepted trade-off without asking the owner. Add a line in the same PR when you
+find a bug you don't fix or the owner accepts a trade-off, and remove it when it's
+resolved. One short line each, linking to the README section with the details.
+
+- PR previews share the production database (`backend/README.md` → Database). Accepted.
+- Builds made on Windows log harmless prefetch 404s (`frontend/README.md` → Layout).
+  Accepted.
 
 ## The product
 
@@ -173,4 +183,5 @@ Before every push:
 - **Claude Code settings**: `.claude/settings.json` (committed) blocks force-pushes,
   pushes to `main`, and reading secret files. Personal overrides go in
   `.claude/settings.local.json` (git-ignored).
-- Don't commit plans, scratch files, or debug output. Track work in GitHub issues and PRs.
+- Don't commit plans, scratch files, or debug output. Unfixed bugs and trade-offs
+  go in [Known bugs and accepted trade-offs](#known-bugs-and-accepted-trade-offs).
