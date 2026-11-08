@@ -204,6 +204,12 @@ describe('logged in: data goes to the backend', () => {
     expect(lastCall()).toMatchObject({ path: '/api/folders/2', method: 'DELETE' });
   });
 
+  it('updates the account with PUT /api/auth/me', async () => {
+    mockFetch(200, { user: { id: 1, username: 'noa' } });
+    expect((await api.updateAccount({ username: 'noa' })).username).toBe('noa');
+    expect(lastCall()).toEqual({ path: '/api/auth/me', method: 'PUT', body: { username: 'noa' } });
+  });
+
   it('returns null for a missing recipe', async () => {
     mockFetch(404, { error: 'not_found' });
     expect(await api.getRecipe(99)).toBeNull();

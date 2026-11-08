@@ -10,7 +10,8 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 
 Built so far: the recipe browsing UI (folders, recipes, favorites, English/Hebrew, manual
 add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
-log-out with remembered sessions plus a guest mode, and the folders/recipes API, so a
+log-out with remembered sessions plus a guest mode, editing your own username and
+password, and the folders/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory). The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
@@ -44,7 +45,8 @@ resolved. One short line each, linking to the README section with the details.
   **act as any user** to see and manage their data, and deletes users (which deletes all
   of their data). Login is **username plus a password**, and the session is remembered:
   after logging in once, a user never sees the login page again on that device unless they
-  log out, change their password, or the admin deletes them.
+  log out or the admin deletes them. Changing their own username or password keeps them
+  logged in on every device.
 - **Guest mode**: the login screen has "Continue as guest". The app is fully usable, but
   nothing is read from or written to the database; the guest starts empty and loses
   everything on reload.

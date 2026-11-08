@@ -32,7 +32,7 @@ frontend/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       ├── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
 │       └── import/page.js # (planned) Paste a video link, compare, save (/recipe/import)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, Language (context), FolderBar, RecipeCard, HeartButton, ConfirmDialog
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), FolderBar, RecipeCard, HeartButton, ConfirmDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -68,7 +68,8 @@ frontend/
   and "Continue as guest". A wrong username or password shows one
   generic message (never which one was wrong). The login is remembered by cookie, so users
   see this screen only the first time on a device or after logging out.
-- A thin bar under the header shows "Hello, <username>" and Log out; a guest sees "Guest"
+- A thin bar under the header shows "Hello, <username>" (with a person icon; tapping it
+  opens "My account") and Log out; a guest sees "Guest"
   and a Log in button (back to the login screen).
 - Every change of who is using the app (log in, sign up, log out, guest) tells `lib/api.js`
   whether this is a guest (`setGuestMode`) and empties the guest's in-memory data, so one
@@ -81,7 +82,7 @@ frontend/
 
 ## Screens
 
-Built now: Login, Home, Recipe view, Edit. The rest are planned.
+Built now: Login, Home, Recipe view, Edit, My account. The rest are planned.
 
 1. **Login / Sign up**: described above.
 2. **Home**: folders with recipe counts. On phones only, they are one row of pills that
@@ -111,8 +112,11 @@ Built now: Login, Home, Recipe view, Edit. The rest are planned.
    "Act as" opens Home showing that user's folders and recipes; every screen then works
    on their data, and a banner on every page says "Acting as <name>" with a "Stop"
    button that returns the admin to their own data.
-8. **Change password** (planned): current password, new password, and Save. Reached
-   from the header.
+8. **My account** (`components/AccountDialog`, a popup): opened by tapping the name in
+   the header. Username (filled in) and New password (empty = keep it), then Save, which
+   asks "Save the changes to your account?" first. No old password and no typing the new
+   one twice (the owner's choice). The user stays logged in everywhere after a
+   change. Saving with nothing changed shows a hint instead.
 
 ## UX rules
 
@@ -141,7 +145,7 @@ Built now: Login, Home, Recipe view, Edit. The rest are planned.
 
 ## API client
 
-`lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`,
+`lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`, `updateAccount`,
 `logout`), folders (`getFolders`, `createFolder`, `renameFolder`, `deleteFolder`) and
 recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setFavorite`, `deleteRecipe`). For a
 guest the folder and recipe functions use memory instead, with the same checks and error

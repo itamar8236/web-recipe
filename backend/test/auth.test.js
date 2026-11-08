@@ -168,3 +168,44 @@ describe('session', () => {
     expect((await call('/api/nope', { cookie })).status).toBe(404);
   });
 });
+
+describe('edit my account', () => {
+  const login = (username, password, cookie) =>
+    call('/api/auth/login', { method: 'POST', body: { username, password }, cookie });
+  const updateMe = (body, cookie) => call('/api/auth/me', { method: 'PUT', body, cookie });
+
+  it('changes the username', async () => {
+    const cookie = cookiesFrom(await register('dana', 'password123'));
+    const response = await updateMe({ username: ' Dana Levi ' }, cookie);
+    expect(response.status).toBe(200);
+    expect((await response.json()).user.username).toBe('Dana Levi');
+    expect((await login('dana levi', 'password123')).status).toBe(200);
+  });
+
+  it('changes the password and keeps every device logged in', async () => {
+    const here = cookiesFrom(await register('dana', 'password123'));
+    const other = cookiesFrom(await login('dana', 'password123'));
+    expect((await updateMe({ password: 'new-pass', username: 'dana2' }, here)).status).toBe(200);
+
+    expect((await call('/api/auth/me', { cookie: here })).status).toBe(200);
+    expect((await (await call('/api/auth/me', { cookie: other })).json()).user.username).toBe('dana2');
+    expect((await login('dana2', 'password123')).status).toBe(401);
+    expect((await login('dana2', 'new-pass')).status).toBe(200);
+  });
+
+  it('rejects bad input and a taken username', async () => {
+    await register('noa');
+    const cookie = cookiesFrom(await register('dana'));
+    expect((await updateMe({}, cookie)).status).toBe(400);
+    expect((await updateMe({ username: 5 }, cookie)).status).toBe(400);
+    expect((await (await updateMe({ username: '  ' }, cookie)).json()).error).toBe('username_invalid');
+    expect((await (await updateMe({ password: '' }, cookie)).json()).error).toBe('password_invalid');
+    const taken = await updateMe({ username: 'NOA' }, cookie);
+    expect(taken.status).toBe(409);
+    expect((await taken.json()).error).toBe('username_taken');
+  });
+
+  it('requires a login', async () => {
+    expect((await updateMe({ username: 'x' })).status).toBe(401);
+  });
+});
