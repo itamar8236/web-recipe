@@ -1,14 +1,14 @@
 import { env } from 'cloudflare:test';
 import worker from '../src/index.js';
 
-export const call = (path, { method = 'GET', body, cookie } = {}) =>
+export const call = (path, { method = 'GET', body, cookie, env: testEnv = env } = {}) =>
   worker.fetch(
     new Request(`http://localhost${path}`, {
       method,
       headers: { 'Content-Type': 'application/json', ...(cookie && { Cookie: cookie }) },
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
-    env,
+    testEnv,
   );
 
 // Turns a response's Set-Cookie headers into a Cookie request header, like a browser would.

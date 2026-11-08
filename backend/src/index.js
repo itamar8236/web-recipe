@@ -1,4 +1,5 @@
 import { handleData } from './data.js';
+import { handleImports } from './imports.js';
 import { fail, json, readJson } from './http.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { endSession, getSessionUser, startSession } from './session.js';
@@ -122,7 +123,11 @@ async function handleApi(request, env, path) {
   if (method === 'GET' && path === '/api/auth/me') return json({ user: publicUser(user) });
   if (method === 'PUT' && path === '/api/auth/me') return updateMe(request, env, user);
 
-  return handleData(request, env, path, user.data_user_id) ?? fail(404, 'not_found');
+  return (
+    handleImports(request, env, path, user.data_user_id) ??
+    handleData(request, env, path, user.data_user_id) ??
+    fail(404, 'not_found')
+  );
 }
 
 export default {
