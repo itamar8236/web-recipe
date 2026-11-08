@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import FolderBar from '@/components/FolderBar';
 import RecipeCard from '@/components/RecipeCard';
+import SearchBox from '@/components/SearchBox';
 import { useLanguage } from '@/components/Language';
 import { errorMessage } from '@/lib/i18n';
+import { matchesSearch } from '@/lib/search';
 import * as api from '@/lib/api';
 import styles from './page.module.css';
 
@@ -18,6 +20,7 @@ export default function HomePage() {
   const [savingFavorite, setSavingFavorite] = useState(new Set()); // recipe ids
   const [selected, setSelected] = useState('all');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [query, setQuery] = useState('');
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -48,6 +51,7 @@ export default function HomePage() {
 
   const visible = recipes.filter((r) => {
     if (favoritesOnly && !r.favorite) return false;
+    if (!matchesSearch(r, query)) return false;
     if (selected === 'all') return true;
     return r.folderId === (selected === 'none' ? null : selected);
   });
@@ -59,6 +63,11 @@ export default function HomePage() {
   const folderName = (id) => folders.find((f) => f.id === id)?.name;
   const viewTitle = selected === 'all' ? t.allRecipes : selected === 'none' ? t.noFolder : folderName(selected);
   const newRecipeHref = typeof selected === 'number' ? `/recipe/edit?folder=${selected}` : '/recipe/edit';
+  const [emptyTitle, emptyHint] = query.trim()
+    ? [t.emptySearch, t.emptySearchHint]
+    : favoritesOnly
+      ? [t.emptyFavorites, t.emptyFavoritesHint]
+      : [t.emptyRecipes, t.emptyHint];
 
   // The heart changes at once and changes back if saving fails, so a tap feels instant.
   async function toggleFavorite(recipe) {
@@ -85,6 +94,7 @@ export default function HomePage() {
   return (
     <div className={styles.layout}>
       <aside className={styles.side}>
+        <SearchBox value={query} onChange={setQuery} />
         <FolderBar
           folders={folders}
           recipes={recipes}
@@ -135,8 +145,8 @@ export default function HomePage() {
 
         {visible.length === 0 ? (
           <div className={styles.empty}>
-            <p className={styles.emptyTitle}>{favoritesOnly ? t.emptyFavorites : t.emptyRecipes}</p>
-            <p>{favoritesOnly ? t.emptyFavoritesHint : t.emptyHint}</p>
+            <p className={styles.emptyTitle}>{emptyTitle}</p>
+            <p>{emptyHint}</p>
           </div>
         ) : (
           <ul className={styles.grid}>

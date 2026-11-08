@@ -1,0 +1,71 @@
+.openButton {
+  align-self: flex-start;
+  gap: 6px;
+  min-height: 44px;
+  padding-inline: 14px;
+  font-size: 15px;
+}
+
+.box {
+  position: relative;
+}
+
+/* The same height as the closed button, so the folders below don't jump when it closes
+   in the middle of a tap on one of them. */
+.input {
+  min-height: 44px;
+  padding-block: 6px;
+  padding-inline: 44px;
+  text-overflow: ellipsis;
+}
+
+.input::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+/* The app draws its own close button, the same in every browser and in RTL. */
+.input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.box .icon {
+  position: absolute;
+  inset-inline-start: 14px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translateY(-50%);
+  color: var(--ink-soft);
+  pointer-events: none;
+}
+
+.close {
+  position: absolute;
+  inset-inline-end: 2px;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--ink);
+}
