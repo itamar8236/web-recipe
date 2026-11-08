@@ -62,14 +62,6 @@ export async function startSession(request, env, userId) {
   return [cookie(request, 'device', device, TEN_YEARS), cookie(request, 'session', token, TEN_YEARS)];
 }
 
-// Logs the user out on every device except this one (after a password change).
-export async function endOtherSessions(request, env, userId) {
-  const token = readCookies(request).session ?? '';
-  await env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?')
-    .bind(userId, await sha256Hex(token))
-    .run();
-}
-
 // Logs this device out. The device cookie stays, so the next login reuses the same row.
 export async function endSession(request, env) {
   const token = readCookies(request).session;

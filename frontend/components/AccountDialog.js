@@ -93,9 +93,7 @@ export default function AccountDialog({ onClose }) {
             autoComplete="new-password"
             onChange={(e) => setPassword(e.target.value)}
           />
-          <p className="hint">
-            {t.newPasswordHint} {t.passwordChangedNote}
-          </p>
+          <p className="hint">{t.newPasswordHint}</p>
         </div>
 
         {error && (

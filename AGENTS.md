@@ -45,7 +45,8 @@ resolved. One short line each, linking to the README section with the details.
   **act as any user** to see and manage their data, and deletes users (which deletes all
   of their data). Login is **username plus a password**, and the session is remembered:
   after logging in once, a user never sees the login page again on that device unless they
-  log out, change their password, or the admin deletes them.
+  log out or the admin deletes them. Changing their own username or password keeps them
+  logged in on every device.
 - **Guest mode**: the login screen has "Continue as guest". The app is fully usable, but
   nothing is read from or written to the database; the guest starts empty and loses
   everything on reload.

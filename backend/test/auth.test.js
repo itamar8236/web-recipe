@@ -182,15 +182,15 @@ describe('edit my account', () => {
     expect((await login('dana levi', 'password123')).status).toBe(200);
   });
 
-  it('changes the password, keeps this device and logs out the others', async () => {
+  it('changes the password and keeps every device logged in', async () => {
     const here = cookiesFrom(await register('dana', 'password123'));
     const other = cookiesFrom(await login('dana', 'password123'));
-    expect((await updateMe({ password: 'new-pass' }, here)).status).toBe(200);
+    expect((await updateMe({ password: 'new-pass', username: 'dana2' }, here)).status).toBe(200);
 
     expect((await call('/api/auth/me', { cookie: here })).status).toBe(200);
-    expect((await call('/api/auth/me', { cookie: other })).status).toBe(401);
-    expect((await login('dana', 'password123')).status).toBe(401);
-    expect((await login('dana', 'new-pass')).status).toBe(200);
+    expect((await (await call('/api/auth/me', { cookie: other })).json()).user.username).toBe('dana2');
+    expect((await login('dana2', 'password123')).status).toBe(401);
+    expect((await login('dana2', 'new-pass')).status).toBe(200);
   });
 
   it('rejects bad input and a taken username', async () => {

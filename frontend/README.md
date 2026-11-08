@@ -115,8 +115,8 @@ Built now: Login, Home, Recipe view, Edit, My account. The rest are planned.
 8. **My account** (`components/AccountDialog`, a popup): opened by tapping the name in
    the header. Username (filled in) and New password (empty = keep it), then Save, which
    asks "Save the changes to your account?" first. No old password and no typing the new
-   one twice (the owner's choice). A new password logs the user out on their other
-   devices. Saving with nothing changed shows a hint instead.
+   one twice (the owner's choice). The user stays logged in everywhere after a
+   change. Saving with nothing changed shows a hint instead.
 
 ## UX rules
 

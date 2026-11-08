@@ -42,7 +42,7 @@ session except the three public auth endpoints; unknown paths are 404 when logge
 | `POST /api/auth/login` `{username, password}` | Log in on this device | 200 `{user}` | 400 `invalid_request`, 401 `invalid_credentials` (same for wrong password and unknown user) |
 | `POST /api/auth/logout` | Delete this device's session | 200 `{ok}` | none (works without a session) |
 | `GET /api/auth/me` | Who is logged in | 200 `{user}` | 401 `not_logged_in` |
-| `PUT /api/auth/me` `{username?, password?}` | Change your own username and/or password (at least one; the old password is not asked for). A new password logs you out on your other devices, not this one | 200 `{user}` | 400 `invalid_request`, `username_invalid`, `password_invalid` (same limits as sign-up), 409 `username_taken`, 401 `not_logged_in` |
+| `PUT /api/auth/me` `{username?, password?}` | Change your own username and/or password (at least one; the old password is not asked for). Every existing login stays, on this device and the others | 200 `{user}` | 400 `invalid_request`, `username_invalid`, `password_invalid` (same limits as sign-up), 409 `username_taken`, 401 `not_logged_in` |
 
 `user` is `{ id, username, is_admin }`. Cookies (both HttpOnly, SameSite=Lax, 10 years,
 `Secure` on https): `device` (random id, kept across logouts) and `session` (random
@@ -134,9 +134,10 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   (`PUT /api/auth/me`), without typing the old password: the owner chose that, since the
   session already proves who it is. It always changes the real logged-in user, even while
   the admin is acting as someone else.
-- Changing or setting a password logs that user out on their other devices.
+- Changing your own username or password keeps every login you already have (on all
+  devices); the new details are needed only for the next login.
 - After a successful login the user stays logged in on that device and doesn't see the
-  login page again, unless they log out, change their password, or the admin deletes
+  login page again, unless they log out or the admin deletes
   them. Logins don't expire.
 - **One session row per device**: the first login on a browser gives it a long-lived
   device id cookie (kept across logouts). Logging in again on that device replaces its

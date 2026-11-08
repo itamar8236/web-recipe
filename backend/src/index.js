@@ -1,7 +1,7 @@
 import { handleData } from './data.js';
 import { fail, json, readJson } from './http.js';
 import { hashPassword, verifyPassword } from './password.js';
-import { endOtherSessions, endSession, getSessionUser, startSession } from './session.js';
+import { endSession, getSessionUser, startSession } from './session.js';
 
 const MAX_USERS = 50;
 const MIN_PASSWORD = 1;
@@ -73,7 +73,8 @@ async function register(request, env) {
 }
 
 // Changes the logged-in user's own username and/or password. The old password is not
-// asked for: the owner chose that, since the session already proves who this is. It always
+// asked for, and every existing login stays (the owner chose both): the session already
+// proves who this is, and the new details are only needed for the next login. It always
 // changes the real user, never the one the admin is acting as.
 async function updateMe(request, env, user) {
   const body = await readJson(request);
@@ -98,7 +99,6 @@ async function updateMe(request, env, user) {
     if (String(error.message).includes('UNIQUE')) return fail(409, 'username_taken');
     throw error;
   }
-  if (password !== undefined) await endOtherSessions(request, env, user.id);
   return json({ user: publicUser(row) });
 }
 
