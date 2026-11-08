@@ -13,7 +13,7 @@ here in the same PR that adds them.
 
 The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
 everything else is the static build from `../frontend/out`, served by Cloudflare. The auth
-API and the folders/recipes API below exist; video import, translation
+API, the folders/recipes API and the YouTube import below exist; translation
 and the admin endpoints don't yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
 `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
 automatically through Workers Builds (root directory `/`), which builds with
@@ -26,8 +26,11 @@ automatically through Workers Builds (root directory `/`), which builds with
   `wrangler.jsonc`.
 
 Code: `src/index.js` (routes and auth), `src/data.js` (folders and recipes),
-`src/http.js` (JSON helpers), `src/session.js` (cookies and the `sessions` table),
-`src/password.js` (PBKDF2). Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
+`src/imports.js` (import endpoints), `src/http.js` (JSON helpers), `src/session.js`
+(cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
+`workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
+choice, usage counting, approvals, reset time), `llm.js` (the only file that knows
+Gemini's format), `errors.js`, and `sources/` (link detection and the YouTube adapter). Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
 throwaway local D1 built from `schema.sql`; never touches production or `.wrangler/state`).
 
 ## Auth API
@@ -71,12 +74,44 @@ with the wrong method answers 405 `method_not_allowed`.
 | `PUT /api/recipes/:id/favorite` `{favorite: true\|false}` | Set (not toggle) the favorite | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `DELETE /api/recipes/:id` | Delete | 200 `{ok}` | 404 |
 
-`recipe` is `{ id, folderId, favorite, link, en, he }`, where `en` and `he` are
+`recipe` is `{ id, folderId, favorite, link, sourceModel, en, he }`, where `en` and `he` are
 `{ name, ingredients: [string], steps: [string] }`, `link` is the source video (`''` for
-manual recipes) and `folderId` is `null` for "No folder". The backend trims names and
+manual recipes), `sourceModel` is the LLM that produced it (`null` for manual recipes) and
+`folderId` is `null` for "No folder". The backend trims names and
 lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ingredients
 or steps per language, 2000 chars per line. Editing a language the LLM filled in clears
 `machine_translated_lang`.
+
+## Import API
+
+All need a session, work only on the data of the user the session acts for, and answer
+404 for another user's import or recipe, like the API above. POST bodies must be JSON.
+
+| Endpoint | Purpose | Success | Errors |
+|---|---|---|---|
+| `POST /api/imports` `{url, useBasicModel?}` | Start an import | 202 `{import}`, or 200 with the one already running | 400 `invalid_request`, `link_invalid`, `link_unsupported`; 409 `already_imported`, `model_approval_needed`; 429 `too_many_imports`, `quota` |
+| `GET /api/imports` | Cards plus model state | 200 `{imports, models}` | |
+| `POST /api/imports/:id/retry` `{useBasicModel?}` | Try a failed import again | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_retryable`, `model_approval_needed`; 429 `quota` |
+| `DELETE /api/imports/:id` | Dismiss the card | 200 `{ok}` | 404 |
+| `POST /api/recipes/:id/rerun` `{}` | Re-run a basic-model recipe with the best model | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_rerunnable`; 429 `best_model_unavailable` |
+
+- `import` is `{ id, status, stage, link, title, error, retryable, recipeId, recipeName }`.
+  `recipeName` is `{ en, he }`, or `null` until there is a recipe. `error` is set only when
+  `status` is `failed`.
+- `GET` returns `running`, `failed` and `done` rows, newest first, never `dismissed`, and
+  never reads `state`. It also marks `running` rows with no update for 30 minutes as failed
+  with `timed_out`.
+- `models` is `{ bestAvailable, bestLeftToday, bestLeftForUser, basicModel, basicApproved,
+  bestAvailableAt, resetsAt }`, times in epoch ms. `bestAvailable` is false when the model
+  is out or this user has used their 5. `bestAvailableAt` is `null` while it is available.
+- `useBasicModel: true` stores an approval until the next reset.
+- POST checks in this order: body, link, a running duplicate, `already_imported`
+  (`recipes.source_url`), caps, model state, then insert and start.
+- Caps, counted from `imports` for today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running),
+  `IMPORT_DAILY_LIMIT` (10 a day) and `IMPORT_BEST_DAILY_PER_USER` (5 on the best model).
+- A Retry answers `not_retryable` if the same video is already running or saved. On a later
+  day it counts against that day. A re-run never offers the basic model: when the best
+  model is out it answers `quota`.
 
 The sections below describe what the backend must do once built.
 
@@ -94,9 +129,11 @@ The sections below describe what the backend must do once built.
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
   and Hebrew** so either version can be edited. A recipe sits in one of its owner's
   folders (or none). A favorite is a flag on the recipe, since only its owner sees it.
-- **Imports** are not stored: the models' results go back to the browser for the
-  compare screen, and only the recipe the user saves is written (with the model it came
-  from).
+- **Imports** are stored in their own `imports` table, so an unfinished one never appears
+  as a recipe. A row stays after it finishes, because the daily caps count it. Three small
+  tables hold the shared model state: `llm_model_status` (models Google said are out, and
+  until when), `llm_usage` (the app's own count per Pacific day and model) and
+  `llm_basic_model_approvals` (who accepted the basic model, until when).
 
 Every table, column and constraint is in [`schema.sql`](schema.sql), with comments on why.
 
@@ -148,18 +185,76 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   folder endpoints use the impersonated user; user management still checks the real
   user (the admin), and the admin can't change the user's password while acting as them.
 
-## Import from a video link
+## Import from a YouTube link
 
-- Supported now: **YouTube and Facebook** links. Other sites get a clear "not supported
-  yet" message.
-- The backend sends the video to **Google's free-tier LLMs**, which return the recipe in
-  English and Hebrew.
-- The models to use are configurable. With one model the user gets one result; with
-  several, all of them run and the user compares the results and picks one to save.
-- If a video has no recipe or can't be read, the user gets a clear message and can add
-  the recipe manually. Nothing is saved until the user confirms.
-- Provider-specific code stays in one place, so models (or another free provider) can be
-  swapped without touching the rest of the backend.
+Users paste a link and go back to YouTube, and a normal request stops when they leave, so
+imports run in a **Cloudflare Workflow**. The recipe is written once, complete, with no
+folder and no review: the user can edit or delete it afterwards.
+
+```
+POST /api/imports {url}
+  parse link → guards → choose model → insert imports row → start Workflow → 202
+
+Workflow: each stage is one retried step, and saves its result to the row
+  meta     YouTube Data API: title, description, duration, privacy (no LLM)
+  extract  One call with the description and, if it can be sent, the video
+  save     One D1 batch: insert the recipe, or replace it on a re-run, + mark the import done
+```
+
+**Links.** Only the backend decides which site a link is (`sources/index.js`); the Worker
+never fetches the pasted URL. A new platform is one adapter added to `SOURCES`. Every other
+site answers `link_unsupported`.
+
+**Extract.** The video is sent if it's at most `IMPORT_MAX_VIDEO_MINUTES` (3) and public.
+The description counts if it's at least 80 characters. If neither can be sent, it fails
+with no LLM call. One call with whatever can be sent returns the recipe in both languages,
+with the video's own language written first. Everything the model returns is untrusted and
+is validated before it's stored.
+
+**Models.** `LLM_BEST_MODEL` and `LLM_BASIC_MODEL` are config, so changing one needs no code
+change. The best model is tried first whenever it isn't out, up to 5 imports a day per
+user. When it's out or the user has used their 5, the user is asked; once they approve, the
+basic model is used automatically until the next reset. A re-run never uses the basic model.
+
+**Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
+way to ask how many requests are left, so `llm_usage` counts them: every real call first
+reserves one, in one atomic statement, up to `LLM_BEST_DAILY_LIMIT` (20) and
+`LLM_BASIC_DAILY_LIMIT` (500). A failed call still counts. A 429 naming a per-day quota marks
+the model out until the reset and sets its count to the limit. Any other 429 waits (Google's
+delay, at most 60 s, otherwise 20 s) and retries once, then marks the model out for 15
+minutes. Quota errors never use Workflow retries.
+
+**Failures.** `error` is written to the row before a stage throws.
+
+| Case | Code | Automatic retry | User can Retry |
+|---|---|---|---|
+| Removed, or Gemini refused the video and nothing else had the recipe | `video_unavailable` | no | no |
+| Private or unlisted, description not enough | `video_private` | no | no |
+| Too long, description not enough | `video_too_long` | no | no |
+| No recipe | `no_recipe` | no | no |
+| Several recipes | `multiple_recipes` | no | no |
+| 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
+| Invalid output | `bad_result` | yes, 3 tries per stage | yes |
+| Best out, no approval | `model_approval_needed` | no | yes |
+| Both out, or a re-run with the best out | `quota` | no | yes |
+| Stuck for 30 minutes | `timed_out` | no | yes |
+
+A Retry bumps `attempt` and starts a new Workflow. Finished stages are skipped through
+`state.done`, so it doesn't depend on how long Workflows keeps its history. Every write is
+guarded by `status = 'running'` and the attempt, so a repeated step, a late older attempt or
+a dismissal writes nothing, and a recipe is never saved twice.
+
+**Provider.** Everything about Gemini's request format is in `llm.js`, so another free
+provider can be swapped in without touching the rest of the backend.
+
+**Limits to keep in mind.** Quota is per Google project and shared by all users, about 20
+best-model imports a day in total, and Google says the limits aren't guaranteed. PR previews
+can't exercise any of this: a preview's binding uses the Workflow already deployed to
+production, and gives `workflow.not_found` before the first deploy.
+
+**Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
+request. Agents never run a real import, even locally (see the `local-dev` skill); the owner
+does that with real keys in `.dev.vars`.
 
 ## Translation
 
@@ -168,8 +263,10 @@ LLM. The user can correct either version.
 
 ## Secrets
 
-The LLM API key exists only in the Worker (a Worker secret, `.dev.vars` locally). Never
-send it to the frontend or commit it.
+`GEMINI_API_KEY` and `YOUTUBE_API_KEY` exist only in the Worker (Worker secrets;
+`.dev.vars` locally, with placeholders in `.dev.vars.example`). Never send them to the
+frontend or commit them. Without a key, `llm.js` and `sources/youtube.js` fail at once and
+send nothing.
 
 ## Deploy
 

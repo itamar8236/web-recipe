@@ -23,6 +23,19 @@ local copy, so agents can't reach production even by accident.
   the PR (e.g. "run `npx wrangler d1 execute recipes-db --remote --file=schema.sql`").
 - `backend/.wrangler/prod-dump.sql` contains real user data: never commit it (`.wrangler/`
   is gitignored), copy it elsewhere, or paste its contents in PRs, issues, or chat.
+- Never read `backend/.dev.vars` or `.env`. `wrangler dev` loads the owner's real keys from
+  `.dev.vars`, so using the import feature spends real quota even though you never see the
+  keys. An agent must **never**:
+  - submit a YouTube link in the import dialog, or `POST /api/imports` with one, by any
+    means;
+  - press Retry or "Use basic model" on a card, or "Re-run with best model", or call those
+    endpoints;
+  - start the Workflow directly, or call Gemini or the YouTube API.
+
+  You may open the dialog, submit a malformed or non-YouTube link (refused before any
+  external call), and check every card state from rows inserted into the **local** D1. Say
+  in the PR that real imports were not run. Only the owner runs real imports. If
+  `backend/.dev.vars` exists when you need to run the app, ask the owner to rename it first.
 
 ## 1. Check the local copy
 From `backend/`:
