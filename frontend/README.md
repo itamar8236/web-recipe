@@ -92,9 +92,10 @@ Built now: Login, Home, Recipe view, Edit, My account. The rest are planned.
    recipes of the selected folder as cards. Create, rename, and delete folders inline.
    Only an empty folder can be deleted (Delete looks disabled otherwise; tapping it shows a hint). Big "Add recipe" button. Each card has a
    heart to mark a favorite (each user sees only their own folders, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
-   the selected folder). A search box under "Add recipe" filters the cards while typing, by
-   recipe name or ingredients in both languages (every typed word must match), combined
-   with the selected folder and "Favorites". It runs in the browser on the loaded recipes.
+   the selected folder). A small "Search" button above "Add recipe" opens a search box
+   (× or leaving it empty closes it again) that filters the cards while typing, by recipe
+   name or ingredients in both languages (every typed word must match), combined with the
+   selected folder and "Favorites". It runs in the browser on the loaded recipes.
 3. **Add recipe**: two choices, "Paste video link" or "Write manually".
 4. **Import**: URL field (YouTube or Facebook; others show "not supported yet"), a folder
    picker, a submit button, then a spinner with "Reading the video..." Then:

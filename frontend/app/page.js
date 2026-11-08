@@ -118,11 +118,12 @@ export default function HomePage() {
       </aside>
 
       <section className={styles.content}>
+        <SearchBox value={query} onChange={setQuery} />
+
         <div className={styles.toolbar}>
           <Link href={newRecipeHref} className={`button ${styles.add}`}>
             + {t.addRecipe}
           </Link>
-          <SearchBox value={query} onChange={setQuery} />
         </div>
 
         <div className={styles.titleRow}>

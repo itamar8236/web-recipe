@@ -1,7 +1,13 @@
+.openButton {
+  align-self: flex-start;
+  gap: 6px;
+  min-height: 44px;
+  padding-inline: 14px;
+  font-size: 15px;
+}
+
 .box {
   position: relative;
-  flex: 1 1 100%;
-  min-width: 0;
 }
 
 .input {
@@ -14,27 +20,33 @@
   opacity: 1;
 }
 
-/* The app draws its own clear button, the same in every browser and in RTL. */
+/* The app draws its own close button, the same in every browser and in RTL. */
 .input::-webkit-search-cancel-button {
   -webkit-appearance: none;
   appearance: none;
 }
 
 .icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.box .icon {
   position: absolute;
   inset-inline-start: 14px;
   top: 50%;
   width: 20px;
   height: 20px;
   transform: translateY(-50%);
-  fill: none;
-  stroke: var(--ink-soft);
-  stroke-width: 2.2;
-  stroke-linecap: round;
+  color: var(--ink-soft);
   pointer-events: none;
 }
 
-.clear {
+.close {
   position: absolute;
   inset-inline-end: 2px;
   top: 50%;
@@ -50,12 +62,6 @@
   cursor: pointer;
 }
 
-.clear:hover {
+.close:hover {
   color: var(--ink);
-}
-
-@media (min-width: 760px) {
-  .box {
-    flex: 1 1 240px;
-  }
 }
