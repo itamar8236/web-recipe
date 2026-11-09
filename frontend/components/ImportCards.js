@@ -187,12 +187,12 @@ export default function ImportCards({ imports, backAt, refresh, addImport, dismi
     setError('');
     setBusyId(id);
     try {
-      addImport(await api.retryImport(id, useBasicModel));
+      const restarted = await api.retryImport(id, useBasicModel);
+      setRetriesAskingApproval((ids) => new Set([...ids].filter((other) => other !== id)));
+      addImport(restarted);
     } catch (err) {
       if (err.code === 'model_approval_needed') setRetriesAskingApproval((ids) => new Set(ids).add(id));
       else setError(errorMessage(t, { code: err.code, retryAt: backAt }));
-      // It can never work now: the recipe exists, or the video is running on another card.
-      if (err.code === 'not_retryable') dismissImport(id).catch(() => {});
     }
     await refresh();
     setBusyId(null);
