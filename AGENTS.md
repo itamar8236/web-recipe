@@ -30,6 +30,10 @@ resolved. One short line each, linking to the README section with the details.
   production (`backend/README.md` → Import from a YouTube link). Accepted.
 - The free-tier model quota is shared by all users, about 20 best-model imports a day in
   total (`backend/README.md` → Import from a YouTube link). Accepted.
+- A few rare import edge cases are left as they are (`backend/README.md` → Import from a
+  YouTube link → Known small gaps).
+- `ConfirmDialog` opens with focus on its confirm button, not Cancel (`frontend/README.md` →
+  UX rules).
 
 ## The product
 

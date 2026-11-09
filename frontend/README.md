@@ -156,7 +156,8 @@ The rest are planned.
     changes back with a message if saving failed.
 - Destructive actions ask for confirmation with `components/ConfirmDialog` (an in-page
   dialog). Don't use `window.confirm()`: some browsers and in-app views block it and it
-  silently returns false.
+  silently returns false. Known, not fixed: it asks for focus on Cancel with `autoFocus`, but
+  `showModal()` then moves focus to the first button, the confirm one, so Enter confirms.
 
 ## Bilingual (English / Hebrew)
 

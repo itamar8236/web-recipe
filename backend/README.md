@@ -253,6 +253,17 @@ best-model imports a day in total, and Google says the limits aren't guaranteed.
 can't exercise any of this: a preview's binding uses the Workflow already deployed to
 production, and gives `workflow.not_found` before the first deploy.
 
+**Known small gaps**, all rare and harmless:
+
+- The re-run button can still show while that re-run is running; tapping it answers
+  `not_rerunnable`.
+- A Retry that can no longer work says so and leaves the card for the user to dismiss.
+- A card left over after the best model is back names the next reset as its time.
+- Home can miss one recipe-list reload if an import finishes in the instant between its first
+  two requests. Opening the ready card still works.
+- A running import dismissed through the raw API (the UI has no × on running cards) may still
+  finish its LLM call, but saves nothing.
+
 **Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
 request. Agents never run a real import, even locally (see the `local-dev` skill); the owner
 does that with real keys in `.dev.vars`.
