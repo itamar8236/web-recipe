@@ -195,7 +195,7 @@ export default function ImportCards({ imports, backAt, refresh, addImport, dismi
       else setError(errorMessage(t, { code: err.code, retryAt: backAt }));
     }
     await refresh();
-    setBusyId(null);
+    setBusyId((current) => (current === id ? null : current));
   }
 
   // A finished import whose recipe was deleted since has nothing left to show.
