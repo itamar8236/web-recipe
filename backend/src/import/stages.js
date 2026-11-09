@@ -188,7 +188,7 @@ async function saveProgress(env, job, stage, patch) {
   const done = [...(job.state.done ?? []), stage.name];
   // After the last stage the row is already done, so this write changes nothing.
   const next = STAGES[STAGES.findIndex(({ name }) => name === stage.name) + 1]?.name ?? stage.name;
-  await env.DB.prepare(`UPDATE imports SET state = ?, stage = ?, error = NULL, updated_at = ? ${isCurrent}`)
+  await env.DB.prepare(`UPDATE imports SET state = ?, stage = ?, updated_at = ? ${isCurrent}`)
     .bind(JSON.stringify({ ...job.state, ...patch, done }), next, Date.now(), job.id, job.attempt)
     .run();
 }

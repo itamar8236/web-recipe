@@ -116,7 +116,8 @@ The rest are planned.
    - Ready: "Recipe ready: <name>" with Open (which also dismisses) and ×. Needed because
      the recipe list is oldest-first.
    - Failed: red, the message, Retry when it can help, ×.
-   - Needs approval: says when the best model is back, with "Use basic model" and ×.
+   - Needs approval: says when the best model is back, with "Use basic model" and ×. A
+     Retry that finds the best model out turns its card into this one.
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
 5. **Recipe view**: name, source link (opens the video), ingredients, steps. Heart, Edit

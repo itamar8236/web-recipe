@@ -475,7 +475,7 @@ describe('what the API reports and the checks before starting', () => {
     const userId = await insertUser();
     await approve(userId, EARLIER());
     expect((await stateFor(userId)).models.basicApproved).toBe(false);
-    await storeApproval(env, userId);
+    await storeApproval(env, userId, Date.now());
     expect((await stateFor(userId)).models.basicApproved).toBe(true);
   });
 

@@ -103,7 +103,7 @@ async function isMarkedOut(env, model, now) {
 
 // ---- Approvals ----
 
-export async function storeApproval(env, userId, now = Date.now()) {
+export async function storeApproval(env, userId, now) {
   await env.DB.prepare(
     `INSERT INTO llm_basic_model_approvals (user_id, approved_until) VALUES (?, ?)
      ON CONFLICT (user_id) DO UPDATE SET approved_until = excluded.approved_until`,
@@ -218,7 +218,9 @@ async function callBest(job, deps, request) {
   const result = await callUnlessOut({ env, llm, model: env.LLM_BEST_MODEL, limit: limits(env).bestDaily, request });
   if (result.out && !result.sent && !alreadyCounted) {
     // Nothing reached Google, so this import didn't take one of the user's daily uses.
-    await env.DB.prepare('UPDATE imports SET used_best = 0 WHERE id = ?').bind(job.id).run();
+    await env.DB.prepare(`UPDATE imports SET used_best = 0 WHERE id = ? AND status = 'running' AND attempt = ?`)
+      .bind(job.id, job.attempt)
+      .run();
     job.used_best = 0;
   }
   return result;

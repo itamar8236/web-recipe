@@ -102,7 +102,7 @@ function CloseButton({ label, disabled, onClick }) {
   );
 }
 
-function ImportCard({ item, backAt, busy, onDismiss, onRetry }) {
+function ImportCard({ item, backAt, busy, asksApproval, onDismiss, onRetry }) {
   const { lang, t } = useLanguage();
   const close = <CloseButton label={t.dismissImport} disabled={busy} onClick={() => onDismiss(item.id)} />;
 
@@ -134,7 +134,7 @@ function ImportCard({ item, backAt, busy, onDismiss, onRetry }) {
     );
   }
 
-  if (item.error === 'model_approval_needed') {
+  if (asksApproval) {
     return (
       <li className={`${styles.card} ${styles.approval}`}>
         <div className={styles.body}>
@@ -172,6 +172,7 @@ export default function ImportCards({ imports, backAt, refresh, addImport, dismi
   const { t } = useLanguage();
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
+  const [retriesAskingApproval, setRetriesAskingApproval] = useState(new Set());
 
   async function dismiss(id) {
     setError('');
@@ -188,7 +189,10 @@ export default function ImportCards({ imports, backAt, refresh, addImport, dismi
     try {
       addImport(await api.retryImport(id, useBasicModel));
     } catch (err) {
-      setError(errorMessage(t, { code: err.code, retryAt: backAt }));
+      if (err.code === 'model_approval_needed') setRetriesAskingApproval((ids) => new Set(ids).add(id));
+      else setError(errorMessage(t, { code: err.code, retryAt: backAt }));
+      // It can never work now: the recipe exists, or the video is running on another card.
+      if (err.code === 'not_retryable') dismissImport(id).catch(() => {});
     }
     await refresh();
     setBusyId(null);
@@ -203,7 +207,15 @@ export default function ImportCards({ imports, backAt, refresh, addImport, dismi
       {cards.length > 0 && (
         <ul className={styles.list}>
           {cards.map((item) => (
-            <ImportCard key={item.id} item={item} backAt={backAt} busy={busyId === item.id} onDismiss={dismiss} onRetry={retry} />
+            <ImportCard
+              key={item.id}
+              item={item}
+              backAt={backAt}
+              busy={busyId === item.id}
+              asksApproval={item.error === 'model_approval_needed' || retriesAskingApproval.has(item.id)}
+              onDismiss={dismiss}
+              onRetry={retry}
+            />
           ))}
         </ul>
       )}
