@@ -126,7 +126,7 @@ async function handleApi(request, env, path) {
 
   return (
     handleImports(request, env, path, user.data_user_id) ??
-    handleTranslate(request, env, path) ??
+    handleTranslate(request, env, path, user.data_user_id) ??
     handleData(request, env, path, user.data_user_id) ??
     fail(404, 'not_found')
   );

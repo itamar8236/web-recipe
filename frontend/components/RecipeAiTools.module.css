@@ -16,6 +16,14 @@
   font-size: 19px;
 }
 
+/* Each action: its button, then its own small model choice beside it (below on narrow phones). */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
 /* A small choice, so it sits on one line with its label instead of taking a full row. */
 .model {
   display: flex;

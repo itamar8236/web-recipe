@@ -112,7 +112,8 @@ All need a session, work only on the data of the user the session acts for, and 
 - POST checks in this order: body, link, a running duplicate, `already_imported`
   (`recipes.source_url`), caps, model state, then insert and start.
 - Caps, counted from `imports` for today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running),
-  `IMPORT_DAILY_LIMIT` (10 a day) and `IMPORT_BEST_DAILY_PER_USER` (5 on the best model).
+  `IMPORT_DAILY_LIMIT` (10 a day) and `IMPORT_BEST_DAILY_PER_USER` (5 on the best model,
+  counting best-model translations too).
 - A Retry answers `not_retryable` if the same video is already running or saved (for a
   re-scan: if its recipe was deleted). On a later day it counts against that day.
 
@@ -148,6 +149,8 @@ YouTube link", which exists.
   tables hold the shared model state: `llm_model_status` (models Google said are out, and
   until when), `llm_usage` (the app's own count per Pacific day and model) and
   `llm_basic_model_approvals` (who accepted the basic model, until when).
+  `translation_best_uses` counts each user's best-model translations per Pacific day, since
+  they share the 5 daily best-model uses with imports.
 
 Every table, column and constraint is in [`schema.sql`](schema.sql), with comments on why.
 
@@ -329,11 +332,16 @@ the user taps Save. It works for any recipe, manual ones too, but needs an accou
 
 - One plain request, not a Workflow: the user waits for it, and a text-only call takes
   seconds. No video and no link are sent.
-- The user picks the model, as for an import. A translation takes one request from the
-  shared daily count (`llm_usage`, so a busy 503 is given back), but **not** from the
-  user's 5 best-model imports, needs no approval and never switches model: when the
-  picked one is out it answers `best_model_unavailable` or `quota`, and the UI suggests
-  Basic.
+- The user picks the model; Basic is the default (the API's and the UI's). A translation
+  takes one request from the shared daily count (`llm_usage`). On the best model it also
+  takes one of the user's **5 daily best-model uses**, the same 5 imports use: it is counted
+  in `translation_best_uses` (a translation has no `imports` row), and every check of the 5
+  adds both (`BEST_USES_OF_USER` in `models.js`). Like an import's, the use is given back
+  when the model was busy (503) or nothing reached Google, and kept otherwise, even for a
+  `bad_result`.
+- It needs no approval and never switches model: when the picked one is out, or the user
+  has used their 5, it answers `best_model_unavailable` (or `quota` for basic), and the UI
+  suggests Basic.
 - The answer is untrusted: it must pass the same checks as a recipe's text, and must keep
   each part (name, ingredients, steps) the original had, or it's `bad_result`.
 

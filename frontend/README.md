@@ -129,8 +129,10 @@ The rest are planned.
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other
    language with a "not written yet" note.
-   - **AI tools** (`components/RecipeAiTools`, a box above Save, logged-in users only): one
-     "Model" choice, Best (default) or Basic, for both buttons.
+   - **AI tools** (`components/RecipeAiTools`, a box above Save, logged-in users only): each
+     button has its own small "Model" choice beside it (below it on phones): Basic by
+     default for Translate, since a best-model translation uses one of the 5 daily
+     best-model uses, and Best by default for the scan, like an import.
    - **"Translate to Hebrew" / "תרגום לאנגלית"** translates the language being written into
      the other one and fills it in (shown after saving and switching language); a note says
      to tap Save to keep it. It asks first if the other language already has text. Works on

@@ -11,8 +11,9 @@ import styles from './RecipeAiTools.module.css';
 const hasText = (content) => Boolean(content.name.trim() || [...content.ingredients, ...content.steps].some((line) => line.trim()));
 
 // The AI actions on the edit form, for a logged-in user: translate the language being
-// written into the other one, and, for an imported recipe, scan its video again. One
-// model choice serves both, like the add-recipe dialog.
+// written into the other one, and, for an imported recipe, scan its video again. Each has
+// its own model choice: a translation is simple text work, so it starts on Basic and
+// leaves the user's 5 daily best-model uses alone; a scan starts on Best, like an import.
 // `content` is the language being written ({ name, ingredients[], steps[] }); the
 // translation is handed to `onTranslated` and saved only with the form. `rescanId` is the
 // recipe's id when it has a video link, otherwise null. `onBusyChange(true/false)` lets
@@ -20,7 +21,7 @@ const hasText = (content) => Boolean(content.name.trim() || [...content.ingredie
 export default function RecipeAiTools({ from, content, otherHasText, rescanId, onTranslated, onBusyChange }) {
   const { t } = useLanguage();
   const router = useRouter();
-  const [model, setModel] = useState('best');
+  const [models, setModels] = useState({ translate: 'basic', rescan: 'best' });
   const [busy, setBusyState] = useState(null); // null | 'translate' | 'rescan'
   const [confirming, setConfirming] = useState(null); // null | 'translate' | 'rescan'
   const [askingApproval, setAskingApproval] = useState(false);
@@ -44,7 +45,7 @@ export default function RecipeAiTools({ from, content, otherHasText, rescanId, o
     clearMessages();
     setBusy('translate');
     try {
-      onTranslated(await api.translateRecipe(from, content, model));
+      onTranslated(await api.translateRecipe(from, content, models.translate));
       setNote(t.translated);
     } catch (err) {
       setError(errorMessage(t, err));
@@ -59,7 +60,7 @@ export default function RecipeAiTools({ from, content, otherHasText, rescanId, o
     clearMessages();
     setBusy('rescan');
     try {
-      await api.rerunRecipe(rescanId, useBasicModel, model);
+      await api.rerunRecipe(rescanId, useBasicModel, models.rescan);
       router.push('/');
     } catch (err) {
       if (err.code === 'model_approval_needed') {
@@ -73,25 +74,30 @@ export default function RecipeAiTools({ from, content, otherHasText, rescanId, o
     }
   }
 
-  return (
-    <section className={styles.tools} aria-labelledby="ai-tools-title">
-      <h2 id="ai-tools-title" className={styles.title}>{t.aiTools}</h2>
-
+  function modelChoice(action) {
+    const id = `ai-model-${action}`;
+    return (
       <div className={styles.model}>
-        <label className="label" htmlFor="ai-model">{t.modelChoice}</label>
+        <label className="label" htmlFor={id}>{t.modelChoice}</label>
         <select
-          id="ai-model"
+          id={id}
           className={`field ${styles.modelSelect}`}
-          value={model}
+          value={models[action]}
           disabled={busy !== null}
-          onChange={(event) => setModel(event.target.value)}
+          onChange={(event) => setModels({ ...models, [action]: event.target.value })}
         >
           <option value="best">{t.modelBest}</option>
           <option value="basic">{t.modelBasic}</option>
         </select>
       </div>
+    );
+  }
 
-      <div className={styles.actions}>
+  return (
+    <section className={styles.tools} aria-labelledby="ai-tools-title">
+      <h2 id="ai-tools-title" className={styles.title}>{t.aiTools}</h2>
+
+      <div className={styles.row}>
         <button
           type="button"
           className="button secondary"
@@ -100,12 +106,17 @@ export default function RecipeAiTools({ from, content, otherHasText, rescanId, o
         >
           {busy === 'translate' ? t.translating : t.translate}
         </button>
-        {rescanId !== null && (
+        {modelChoice('translate')}
+      </div>
+
+      {rescanId !== null && (
+        <div className={styles.row}>
           <button type="button" className="button secondary" disabled={busy !== null} onClick={() => setConfirming('rescan')}>
             {busy === 'rescan' ? t.importStarting : t.rescan}
           </button>
-        )}
-      </div>
+          {modelChoice('rescan')}
+        </div>
+      )}
 
       {note && <p className="hint" role="status">{note}</p>}
       {error && <p className="error" role="alert">{error}</p>}

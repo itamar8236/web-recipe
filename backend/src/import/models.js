@@ -121,6 +121,11 @@ export async function storeApproval(env, userId, now) {
 
 // ---- What's available ----
 
+// The user's daily best-model uses for day ?1 and user ?2: imports on the best model plus
+// translations on it. One SQL expression, so every check counts both the same way.
+const BEST_USES_OF_USER = `((SELECT COUNT(*) FROM imports WHERE user_id = ?2 AND quota_day = ?1 AND used_best = 1)
+  + COALESCE((SELECT uses FROM translation_best_uses WHERE user_id = ?2 AND day = ?1), 0))`;
+
 // The `models` object the API returns, plus whether each model itself is open: the
 // frontend needs only the first, the checks before starting need both.
 export async function readModelState(env, userId, now = Date.now()) {
@@ -131,7 +136,7 @@ export async function readModelState(env, userId, now = Date.now()) {
   const [marked, usage, used, approval] = await env.DB.batch([
     env.DB.prepare('SELECT model, unavailable_until FROM llm_model_status WHERE model IN (?, ?) AND unavailable_until > ?').bind(best, basic, now),
     env.DB.prepare('SELECT model, calls FROM llm_usage WHERE day = ? AND model IN (?, ?)').bind(day, best, basic),
-    env.DB.prepare('SELECT COUNT(*) AS n FROM imports WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, day),
+    env.DB.prepare(`SELECT ${BEST_USES_OF_USER} AS n`).bind(day, userId),
     env.DB.prepare('SELECT 1 FROM llm_basic_model_approvals WHERE user_id = ? AND approved_until > ?').bind(userId, now),
   ]);
   const callsOf = (model) => usage.results.find((row) => row.model === model)?.calls ?? 0;
@@ -178,11 +183,11 @@ export const holdsBestUse = (job, day) => job.used_best === 1 && job.quota_day =
 async function claimBestUse(env, job, day) {
   const row = await env.DB.prepare(
     `UPDATE imports SET used_best = 1, quota_day = ?1
-      WHERE id = ?2 AND status = 'running' AND attempt = ?3
-        AND (SELECT COUNT(*) FROM imports WHERE user_id = ?4 AND quota_day = ?1 AND used_best = 1) < ?5
+      WHERE id = ?3 AND status = 'running' AND attempt = ?4
+        AND ${BEST_USES_OF_USER} < ?5
       RETURNING id`,
   )
-    .bind(day, job.id, job.attempt, job.user_id, limits(env).bestPerUser)
+    .bind(day, job.user_id, job.id, job.attempt, limits(env).bestPerUser)
     .first();
   return row !== null;
 }
@@ -285,16 +290,51 @@ export async function callChosenModel(job, deps, request) {
   return { output: basic.output, model };
 }
 
+// One of the user's daily best-model uses for a translation, taken in one statement so
+// it can't pass the cap together with an import. False when the user has used all 5.
+async function claimTranslationUse(env, userId, day) {
+  const row = await env.DB.prepare(
+    `INSERT INTO translation_best_uses (user_id, day, uses)
+     SELECT ?2, ?1, 1 WHERE ${BEST_USES_OF_USER} < ?3
+     ON CONFLICT (user_id, day) DO UPDATE SET uses = uses + 1
+     RETURNING uses`,
+  )
+    .bind(day, userId, limits(env).bestPerUser)
+    .first();
+  return row !== null;
+}
+
+async function giveBackTranslationUse(env, userId, day) {
+  await env.DB.prepare('UPDATE translation_best_uses SET uses = uses - 1 WHERE user_id = ? AND day = ? AND uses > 0')
+    .bind(userId, day)
+    .run();
+}
+
 // One request to the model the user picked (`choice` is 'best' or 'basic'), outside any
-// import, for work the user waits for (translation). It takes from the shared daily count
-// but not from the user's 5 best-model imports, needs no approval and never switches
-// model. Returns the output. Throws ImportError quota when that model is out, otherwise
-// what callModel throws.
-export async function callPickedModel(env, choice, request, llm) {
-  const best = choice === 'best';
-  const model = best ? env.LLM_BEST_MODEL : env.LLM_BASIC_MODEL;
-  const limit = best ? limits(env).bestDaily : limits(env).basicDaily;
-  const result = await callUnlessOut({ env, llm, model, limit, request });
-  if (result.out) throw new ImportError('quota');
+// import, for work the user waits for (translation). It takes from the shared daily count;
+// on the best model it also takes one of the user's 5 daily best-model uses, given back,
+// like an import's, when the model was busy or nothing reached Google. It needs no
+// approval and never switches model. Returns the output. Throws ImportError quota when
+// that model is out or the user has used their 5, otherwise what callModel throws.
+export async function callPickedModel(env, userId, choice, request, llm) {
+  if (choice !== 'best') {
+    const result = await callUnlessOut({ env, llm, model: env.LLM_BASIC_MODEL, limit: limits(env).basicDaily, request });
+    if (result.out) throw new ImportError('quota');
+    return result.output;
+  }
+
+  const day = quotaDay(Date.now());
+  if (!(await claimTranslationUse(env, userId, day))) throw new ImportError('quota');
+  let result;
+  try {
+    result = await callUnlessOut({ env, llm, model: env.LLM_BEST_MODEL, limit: limits(env).bestDaily, request });
+  } catch (error) {
+    if (error instanceof ModelBusyError) await giveBackTranslationUse(env, userId, day);
+    throw error;
+  }
+  if (result.out) {
+    if (!result.sent) await giveBackTranslationUse(env, userId, day);
+    throw new ImportError('quota');
+  }
   return result.output;
 }

@@ -2,9 +2,9 @@ import { env } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
 import { ImportError } from '../src/import/errors.js';
 import { ModelBusyError } from '../src/import/llm.js';
-import { quotaDay } from '../src/import/models.js';
+import { quotaDay, readModelState } from '../src/import/models.js';
 import { handleTranslate } from '../src/translate.js';
-import { call, cookiesFrom, register } from './helpers.js';
+import { call, cookiesFrom, insertImport, insertUser, register } from './helpers.js';
 
 const BEST = env.LLM_BEST_MODEL;
 const BASIC = env.LLM_BASIC_MODEL;
@@ -19,13 +19,21 @@ const answering = (result) =>
     return result;
   });
 
-const translate = (body, llm) =>
+const translate = async (body, llm, userId) =>
   handleTranslate(
     new Request('http://localhost/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
     env,
     '/api/translate',
+    userId ?? (await insertUser()),
     llm,
   );
+const bestUses = async (userId) =>
+  (await env.DB.prepare('SELECT uses FROM translation_best_uses WHERE user_id = ? AND day = ?').bind(userId, today()).first())?.uses ?? 0;
+const useUpBestImports = async (userId, count) => {
+  for (let i = 0; i < count; i++) {
+    await insertImport(userId, { source_id: `video${String(i).padStart(6, '0')}`, status: 'done', used_best: 1, quota_day: today() });
+  }
+};
 const usage = async (model) =>
   (await env.DB.prepare('SELECT calls FROM llm_usage WHERE day = ? AND model = ?').bind(today(), model).first())?.calls ?? 0;
 const markOut = (model) =>
@@ -60,6 +68,50 @@ describe('POST /api/translate', () => {
     expect((await translate({ from: 'he', content: HEBREW, model: 'best' }, llm)).status).toBe(200);
     expect(llm.mock.calls[0][0].model).toBe(BEST);
     expect(llm.mock.calls[0][0].prompt).toContain('from Hebrew to English');
+  });
+
+  describe('the user’s 5 daily best-model uses', () => {
+    it('a best-model translation takes one, and the import checks see it', async () => {
+      const userId = await insertUser();
+      await useUpBestImports(userId, 3);
+      await translate({ from: 'en', content: SOURCE, model: 'best' }, answering(HEBREW), userId);
+      expect(await bestUses(userId)).toBe(1);
+      expect((await readModelState(env, userId)).models.bestLeftForUser).toBe(1);
+    });
+
+    it('a basic-model translation takes none', async () => {
+      const userId = await insertUser();
+      await translate({ from: 'en', content: SOURCE }, answering(HEBREW), userId);
+      expect(await bestUses(userId)).toBe(0);
+    });
+
+    it('answers best_model_unavailable at 5, counting imports and translations, without calling the model', async () => {
+      const userId = await insertUser();
+      await useUpBestImports(userId, 4);
+      expect((await translate({ from: 'en', content: SOURCE, model: 'best' }, answering(HEBREW), userId)).status).toBe(200);
+      const llm = answering(HEBREW);
+      const response = await translate({ from: 'en', content: SOURCE, model: 'best' }, llm, userId);
+      expect(response.status).toBe(429);
+      expect((await response.json()).error).toBe('best_model_unavailable');
+      expect(llm).not.toHaveBeenCalled();
+      expect(await bestUses(userId)).toBe(1);
+      expect((await readModelState(env, userId)).models.bestAvailable).toBe(false);
+    });
+
+    it('gives the use back when the model is busy or nothing was sent', async () => {
+      const userId = await insertUser();
+      await translate({ from: 'en', content: SOURCE, model: 'best' }, answering(new ModelBusyError('busy')), userId);
+      expect(await bestUses(userId)).toBe(0);
+      await markOut(BEST);
+      await translate({ from: 'en', content: SOURCE, model: 'best' }, answering(HEBREW), userId);
+      expect(await bestUses(userId)).toBe(0);
+    });
+
+    it('keeps the use when Google answered, even with a bad result', async () => {
+      const userId = await insertUser();
+      await translate({ from: 'en', content: SOURCE, model: 'best' }, answering({ text: 'hi' }), userId);
+      expect(await bestUses(userId)).toBe(1);
+    });
   });
 
   it.each([

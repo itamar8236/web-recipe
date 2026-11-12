@@ -47,14 +47,15 @@ resolved. One short line each, linking to the README section with the details.
   The user can edit or delete it afterwards. Supported now: **YouTube** only, and only
   short videos are sent to the LLM (a longer one still works when its description holds
   the recipe). Other platforms may come later; don't build for them until asked.
-- An import uses the **best model**, up to 5 a day per user. When it runs out, the user
+- An import uses the **best model**, up to 5 a day per user (best-model translations count
+  toward the same 5). When it runs out, the user
   is told and can **approve the basic model** until the quota resets, after which the app
   returns to the best model by itself. If the best model is still **busy** after one short
   retry, the import switches to the basic model by itself, with no approval.
-- The **edit form** holds the AI tools, with the same Best/Basic choice: **translate** the
-  language being written into the other one (any recipe, manual ones too; nothing is saved
-  until Save), and, for an imported recipe, **scan its video again**, which runs like a new
-  import and replaces the recipe's text.
+- The **edit form** holds the AI tools, each with its own Best/Basic choice: **translate**
+  the language being written into the other one (Basic by default; any recipe, manual ones
+  too; nothing is saved until Save), and, for an imported recipe, **scan its video again**
+  (Best by default), which runs like a new import and replaces the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**

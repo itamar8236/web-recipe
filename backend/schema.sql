@@ -228,6 +228,16 @@ CREATE TABLE IF NOT EXISTS llm_usage (
   PRIMARY KEY (day, model)
 );
 
+-- Translations a user ran on the best model, per Pacific day. They count toward the same
+-- 5 daily best-model uses as imports (imports.used_best), but a translation is not an
+-- import, so it has no imports row. A new day is a new row, so the count restarts by itself.
+CREATE TABLE IF NOT EXISTS translation_best_uses (
+  user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  day     TEXT    NOT NULL,
+  uses    INTEGER NOT NULL CHECK (uses >= 0),
+  PRIMARY KEY (user_id, day)
+);
+
 -- "When the best model is out, I accept the basic one, until the next reset." One row per
 -- user; an expired row is simply ignored and replaced by the next approval.
 CREATE TABLE IF NOT EXISTS llm_basic_model_approvals (

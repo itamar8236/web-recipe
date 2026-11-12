@@ -56,8 +56,9 @@ function failure(error, choice) {
 }
 
 // POST /api/translate { from: 'en'|'he', content: { name, ingredients, steps }, model? }
-// answers { content } in the other language. `model` is 'best' or 'basic' (default).
-async function translate(request, env, llm) {
+// answers { content } in the other language. `model` is 'best' or 'basic' (default); a
+// best-model translation counts as one of the user's 5 daily best-model uses.
+async function translate(request, env, userId, llm) {
   const body = await readJson(request);
   const choice = body?.model ?? 'basic';
   if (!['en', 'he'].includes(body?.from) || !['best', 'basic'].includes(choice)) return fail(400, 'invalid_request');
@@ -70,15 +71,17 @@ async function translate(request, env, llm) {
   // The prompt holds the user's own text, so llm.js must not log it.
   const llmRequest = { prompt: buildPrompt(body.from, to, source.value), schema: SCHEMA, logPrompt: false };
   try {
-    const output = await callPickedModel(env, choice, llmRequest, llm);
+    const output = await callPickedModel(env, userId, choice, llmRequest, llm);
     return json({ content: readTranslation(output, source.value) });
   } catch (error) {
     return failure(error, choice);
   }
 }
 
-// Routes /api/translate. Returns null for any other path. `llm` is swapped in tests.
-export function handleTranslate(request, env, path, llm = callModel) {
+// Routes /api/translate. Returns null for any other path. `userId` is the user the
+// session acts for, whose daily best-model uses a best-model translation takes. `llm` is
+// swapped in tests.
+export function handleTranslate(request, env, path, userId, llm = callModel) {
   if (path !== '/api/translate') return null;
-  return request.method === 'POST' ? translate(request, env, llm) : fail(405, 'method_not_allowed');
+  return request.method === 'POST' ? translate(request, env, userId, llm) : fail(405, 'method_not_allowed');
 }
