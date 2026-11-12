@@ -238,7 +238,8 @@ in `error_detail` (never sent to the browser).
 | Too long, description not enough | `video_too_long` | no | no |
 | No recipe | `no_recipe` | no | no |
 | Several recipes | `multiple_recipes` | no | no |
-| 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
+| Gemini busy (503) | `llm_error` | yes, 4 tries, 5 minutes apart | yes |
+| Other 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
 | Invalid output | `bad_result` | yes, 3 tries per stage | yes |
 | Best out, no approval | `model_approval_needed` | no | yes |
 | Both out, or a re-run with the best out | `quota` | no | yes |
@@ -246,6 +247,11 @@ in `error_detail` (never sent to the browser).
 
 Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
 overlaps a call that is still running (video calls have taken over 5 minutes).
+
+A busy Gemini (503, "high demand") lasts minutes, longer than those quick retries, so it
+skips them: the stage ends without failing, the Workflow sleeps 5 minutes (`step.sleep`)
+and runs it again, up to 3 times. The card shows the import as still running meanwhile.
+Every try still counts toward the day's quota.
 
 A Retry bumps `attempt` and starts a new Workflow. Finished stages are skipped through
 `state.done`, so it doesn't depend on how long Workflows keeps its history. Every write is

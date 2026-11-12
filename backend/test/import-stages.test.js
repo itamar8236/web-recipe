@@ -2,7 +2,7 @@ import { env, introspectWorkflow } from 'cloudflare:test';
 import { NonRetryableError } from 'cloudflare:workflows';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImportError } from '../src/import/errors.js';
-import { QuotaError, VideoRefusedError } from '../src/import/llm.js';
+import { ModelBusyError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 import { quotaDay } from '../src/import/models.js';
 import { youtube } from '../src/import/sources/youtube.js';
 import { markFailed, runStage, STAGES } from '../src/import/stages.js';
@@ -346,6 +346,17 @@ describe('stage: extract', () => {
     expect(JSON.parse((await reload(row)).state).recipe).toBeUndefined();
   });
 
+  it('leaves a busy model to the Workflow’s longer wait, without failing the step', async () => {
+    const row = await atExtract(await insertUser());
+    const llm = fakeLlm(new ModelBusyError('Gemini 503: high demand'));
+    expect(await runExtract(row, llm)).toEqual({ busy: true });
+
+    const after = await reload(row);
+    expect(after).toMatchObject({ status: 'running', stage: 'extract', error: 'llm_error', error_detail: 'Gemini 503: high demand' });
+    expect(JSON.parse(after.state).done).toEqual(['meta']);
+    expect(llm).toHaveBeenCalledTimes(1);
+  });
+
   it('asks for approval without a Workflow retry when the best model runs out', async () => {
     const row = await atExtract(await insertUser());
     const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }));
@@ -679,6 +690,7 @@ describe('the Workflow, end to end', () => {
     await using introspector = await introspectWorkflow(env.IMPORT_WORKFLOW);
     await introspector.modifyAll(async (m) => {
       await m.disableRetryDelays();
+      await m.disableSleeps();
     });
     await env.IMPORT_WORKFLOW.create({ id: `import-${row.id}-${attempt}`, params: { importId: row.id, attempt } });
     const [instance] = await introspector.get();
@@ -709,7 +721,7 @@ describe('the Workflow, end to end', () => {
   });
 
   it('retries a temporary failure 3 times in all, then fails with llm_error', async () => {
-    fakeGoogle({ gemini: () => jsonResponse({ error: {} }, 503) });
+    fakeGoogle({ gemini: () => jsonResponse({ error: {} }, 500) });
     const row = await newImport();
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'failed', error: 'llm_error' });
@@ -718,10 +730,32 @@ describe('the Workflow, end to end', () => {
 
   it('recovers when a retry works', async () => {
     let tries = 0;
-    fakeGoogle({ gemini: () => (++tries === 1 ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE))) });
+    fakeGoogle({ gemini: () => (++tries === 1 ? jsonResponse({ error: {} }, 500) : jsonResponse(geminiReply(ONE))) });
     const row = await newImport();
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'done', error: null });
+    expect(tries).toBe(2);
+  });
+
+  it('waits and tries again while Gemini is busy, 4 tries in all, then fails with llm_error', async () => {
+    const busy = { error: { code: 503, message: 'This model is currently experiencing high demand.' } };
+    fakeGoogle({ gemini: () => jsonResponse(busy, 503) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({
+      status: 'failed',
+      error: 'llm_error',
+      error_detail: 'Gemini 503: This model is currently experiencing high demand.',
+    });
+    expect(calls('generativelanguage')).toHaveLength(4);
+  });
+
+  it('saves the recipe when Gemini is no longer busy after a wait', async () => {
+    let tries = 0;
+    fakeGoogle({ gemini: () => (++tries === 1 ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE))) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
     expect(tries).toBe(2);
   });
 
