@@ -176,7 +176,8 @@ CREATE INDEX IF NOT EXISTS recipes_user_folder ON recipes (user_id, folder_id);
 -- state holds what finished stages produced, so a Retry skips them without depending on
 -- how long Workflows keeps its own history.
 -- error is written before a stage throws, so nothing depends on how Workflows passes
--- errors along.
+-- errors along. error_detail says why in words (e.g. Google's message), for debugging
+-- only: it is never sent to the browser.
 -- replace_recipe_id is set on a re-run. It deliberately has no foreign key: ON DELETE SET
 -- NULL would turn a re-run of a deleted recipe into a new recipe.
 -- used_best says this import already took one of the user's daily best-model uses, so
@@ -194,6 +195,7 @@ CREATE TABLE IF NOT EXISTS imports (
   attempt    INTEGER NOT NULL DEFAULT 1,
   state      TEXT    NOT NULL DEFAULT '{}' CHECK (json_valid(state)),
   error      TEXT,
+  error_detail TEXT,
   recipe_id  INTEGER REFERENCES recipes (id) ON DELETE SET NULL,
   replace_recipe_id INTEGER,
   used_best  INTEGER NOT NULL DEFAULT 0 CHECK (used_best IN (0, 1)),

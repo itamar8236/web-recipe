@@ -228,7 +228,8 @@ the model out until the reset and sets its count to the limit. Any other 429 wai
 delay, at most 60 s, otherwise 20 s) and retries once, then marks the model out for 15
 minutes. Quota errors never use Workflow retries.
 
-**Failures.** `error` is written to the row before a stage throws.
+**Failures.** `error` is written to the row before a stage throws, with the reason in words
+in `error_detail` (never sent to the browser).
 
 | Case | Code | Automatic retry | User can Retry |
 |---|---|---|---|
@@ -272,8 +273,9 @@ production, and gives `workflow.not_found` before the first deploy.
 
 **Logging.** `llm.js` logs each Gemini request (the model, the video link and the full
 prompt) and each failure (the status and Google's error text), never the key. Prompts hold only our instructions and a public video description;
-stop logging them if one ever carries a user's own text. Production doesn't store these
-lines (no `observability` in `wrangler.jsonc`); `npx wrangler tail` shows them live.
+stop logging them if one ever carries a user's own text. Production keeps the logs for 3
+days (Workers Logs, `observability` in `wrangler.jsonc`), and `npx wrangler tail` shows
+them live. A failed import also keeps the reason in `imports.error_detail`.
 
 **Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
 request. Real imports run locally on the dev keys in `.dev.vars`, which use a test quota;

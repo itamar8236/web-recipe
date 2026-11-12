@@ -605,6 +605,19 @@ describe('import endpoints', () => {
     const retry = (cookie, id, body = {}) => post(cookie, `/api/imports/${id}/retry`, body);
     const reload = (row) => env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(row.id).first();
 
+    it('clears the old failure reason', async () => {
+      const { cookie, userId } = await signUp();
+      const row = await failedImport(userId, { error_detail: 'Gemini 503: high demand' });
+      expect((await retry(cookie, row.id)).status).toBe(202);
+      expect((await reload(row)).error_detail).toBeNull();
+    });
+
+    it('never sends the failure reason to the browser', async () => {
+      const { cookie, userId } = await signUp();
+      await failedImport(userId, { error_detail: 'Gemini 503: high demand' });
+      expect(JSON.stringify(await list(cookie))).not.toContain('high demand');
+    });
+
     it('bumps the attempt, restarts the import and keeps its state', async () => {
       const { cookie, userId } = await signUp();
       const row = await failedImport(userId, { state: '{"done":["meta"],"meta":{}}', stage: 'extract' });

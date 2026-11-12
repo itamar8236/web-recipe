@@ -178,9 +178,9 @@ export const STAGES = [
 ];
 
 // Written before throwing, so nothing depends on how Workflows passes errors along.
-async function saveError(env, importId, attempt, code) {
-  await env.DB.prepare(`UPDATE imports SET error = ?, updated_at = ? ${isCurrent}`)
-    .bind(code, Date.now(), importId, attempt)
+async function saveError(env, importId, attempt, code, detail = null) {
+  await env.DB.prepare(`UPDATE imports SET error = ?, error_detail = ?, updated_at = ? ${isCurrent}`)
+    .bind(code, detail, Date.now(), importId, attempt)
     .run();
 }
 
@@ -207,7 +207,8 @@ export async function runStage(env, importId, attempt, stage, { llm = callModel 
   try {
     patch = await stage.run(job, deps);
   } catch (error) {
-    await saveError(env, importId, attempt, error instanceof ImportError ? error.code : 'llm_error');
+    if (error instanceof ImportError) await saveError(env, importId, attempt, error.code, error.detail);
+    else await saveError(env, importId, attempt, 'llm_error', `${error.name}: ${error.message}`.slice(0, 500));
     if (error instanceof ImportError && !error.retryable) throw new NonRetryableError(error.code);
     throw error;
   }
@@ -217,7 +218,11 @@ export async function runStage(env, importId, attempt, stage, { llm = callModel 
 // Ends a failed import with the error its stage wrote. llm_error covers a step that
 // timed out and so wrote nothing.
 export async function markFailed(env, importId, attempt) {
-  await env.DB.prepare(`UPDATE imports SET status = 'failed', error = COALESCE(error, 'llm_error'), updated_at = ? ${isCurrent}`)
+  await env.DB.prepare(
+    `UPDATE imports SET status = 'failed',
+       error_detail = CASE WHEN error IS NULL THEN 'Stopped without an error, most likely the step timeout' ELSE error_detail END,
+       error = COALESCE(error, 'llm_error'), updated_at = ? ${isCurrent}`,
+  )
     .bind(Date.now(), importId, attempt)
     .run();
 }

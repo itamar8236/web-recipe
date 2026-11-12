@@ -30,10 +30,11 @@ async function fetchMeta(sourceId, env) {
   let response;
   try {
     response = await fetch(`${VIDEOS_API}?${query}`);
-  } catch {
-    throw new ImportError('llm_error', { retryable: true });
+  } catch (error) {
+    // The request URL holds the key and an error message might quote it, so only the name is kept.
+    throw new ImportError('llm_error', { retryable: true, detail: `YouTube request failed: ${error.name}` });
   }
-  if (!response.ok) throw new ImportError('llm_error', { retryable: true });
+  if (!response.ok) throw new ImportError('llm_error', { retryable: true, detail: `YouTube ${response.status}` });
 
   const video = (await response.json()).items?.[0];
   if (!video) throw new ImportError('video_unavailable');

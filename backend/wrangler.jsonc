@@ -20,6 +20,8 @@
       "database_id": "960675bb-9caa-4787-816d-89783cd505b6"
     }
   ],
+  // Keeps the Worker's logs (including every Gemini call and failure) for 3 days, free.
+  "observability": { "enabled": true },
   // Runs an import in the background, so it keeps going after the user leaves the app.
   "workflows": [
     { "name": "recipe-import", "binding": "IMPORT_WORKFLOW", "class_name": "ImportWorkflow" }

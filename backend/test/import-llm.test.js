@@ -153,6 +153,11 @@ describe('callModel: failures', () => {
     expect(line).not.toContain('fake-gemini-key');
   });
 
+  it('gives the failure a short reason to keep on the import', async () => {
+    respond({ error: { message: 'The model is overloaded.' } }, 503);
+    expect(await call().catch((e) => e)).toMatchObject({ detail: 'Gemini 503: The model is overloaded.' });
+  });
+
   it('treats a network failure as temporary', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down'); }));
     await expect(call()).rejects.toMatchObject({ code: 'llm_error', retryable: true });

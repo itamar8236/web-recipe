@@ -190,7 +190,7 @@ async function retryImport(request, env, userId, id) {
   let restarted;
   try {
     restarted = await env.DB.prepare(
-      `UPDATE imports SET status = 'running', attempt = attempt + 1, error = NULL, updated_at = ?1,
+      `UPDATE imports SET status = 'running', attempt = attempt + 1, error = NULL, error_detail = NULL, updated_at = ?1,
          used_best = CASE WHEN quota_day = ?2 THEN used_best ELSE 0 END, quota_day = ?2
        WHERE id = ?3 AND user_id = ?4 AND status = 'failed'
        RETURNING attempt`,

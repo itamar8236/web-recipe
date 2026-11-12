@@ -423,6 +423,19 @@ describe('runStage rules', () => {
     expect(errorDuringTheCall).toBeNull();
   });
 
+  it('keeps the reason in words next to the error code', async () => {
+    const row = await atExtract(await insertUser());
+    const llm = fakeLlm(new ImportError('llm_error', { retryable: true, detail: 'Gemini 503: high demand' }));
+    await runExtract(row, llm).catch(() => {});
+    expect(await reload(row)).toMatchObject({ error: 'llm_error', error_detail: 'Gemini 503: high demand' });
+  });
+
+  it('describes an unexpected failure by its name and message', async () => {
+    const row = await atExtract(await insertUser());
+    await runExtract(row, fakeLlm(new TypeError('boom'))).catch(() => {});
+    expect((await reload(row)).error_detail).toBe('TypeError: boom');
+  });
+
   it('writes the error before throwing, and a later success clears it', async () => {
     const row = await atExtract(await insertUser());
     await expectFailure(runExtract(row, fakeLlm({ status: 'maybe' })), row, 'bad_result', { retryable: true });
@@ -618,10 +631,11 @@ describe('markFailed', () => {
     expect(await reload(row)).toMatchObject({ status: 'failed', error: 'no_recipe' });
   });
 
-  it('defaults to llm_error when nothing was written', async () => {
+  it('defaults to llm_error when nothing was written, and says it was likely a timeout', async () => {
     const row = await insertImport(await insertUser());
     await markFailed(env, row.id, row.attempt);
     expect(await reload(row)).toMatchObject({ status: 'failed', error: 'llm_error' });
+    expect((await reload(row)).error_detail).toContain('timeout');
   });
 
   it('changes nothing for an older attempt or a finished import', async () => {

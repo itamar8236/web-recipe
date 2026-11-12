@@ -83,11 +83,23 @@ function parseOutput(text) {
   throw new ImportError('bad_result', { retryable: true });
 }
 
+// Google's own words for an error, short enough to keep on the import row.
+function googleReason(status, text) {
+  let message = text;
+  try {
+    message = JSON.parse(text)?.error?.message ?? text;
+  } catch {
+    // Not JSON: keep the raw text.
+  }
+  return `Gemini ${status}: ${message}`.slice(0, 500);
+}
+
 function failureFrom(status, text, videoUrl) {
   if (status === 429) return quotaErrorFrom(text);
+  const detail = googleReason(status, text);
   // A rejected request won't get better by itself, so only a server error is tried again.
-  if (status >= 500) return new ImportError('llm_error', { retryable: true });
-  return videoUrl ? new VideoRefusedError() : new ImportError('llm_error');
+  if (status >= 500) return new ImportError('llm_error', { retryable: true, detail });
+  return videoUrl ? new VideoRefusedError() : new ImportError('llm_error', { detail });
 }
 
 // Sends one request and returns the model's answer as parsed JSON. Throws QuotaError,
@@ -95,7 +107,7 @@ function failureFrom(status, text, videoUrl) {
 // answer that can't be read).
 export async function callModel({ env, model, prompt, schema, videoUrl }) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
-  if (!env.GEMINI_API_KEY) throw new ImportError('llm_error');
+  if (!env.GEMINI_API_KEY) throw new ImportError('llm_error', { detail: 'GEMINI_API_KEY is not set' });
 
   // One line per real request, so a bad result can be traced to what the model was sent.
   // Never add the key or the headers. Prompts hold only our instructions and a public video
@@ -115,8 +127,9 @@ export async function callModel({ env, model, prompt, schema, videoUrl }) {
       body: JSON.stringify(requestBody({ model, prompt, schema, videoUrl })),
     });
   } catch (error) {
-    console.log(`LLM call failed: model=${model} ${error.name}: ${error.message}`);
-    throw new ImportError('llm_error', { retryable: true });
+    const detail = `Gemini request failed: ${error.name}: ${error.message}`;
+    console.log(`LLM call failed: model=${model} ${detail}`);
+    throw new ImportError('llm_error', { retryable: true, detail });
   }
   if (!response.ok) {
     // Google's error text says why; it never contains the key.
@@ -127,8 +140,9 @@ export async function callModel({ env, model, prompt, schema, videoUrl }) {
 
   const interaction = await response.json().catch(() => null);
   if (interaction?.status && interaction.status !== 'completed') {
-    console.log(`LLM call failed: model=${model} interaction status=${interaction.status}`);
-    throw new ImportError('llm_error', { retryable: true });
+    const detail = `Gemini answered with status ${interaction.status}`;
+    console.log(`LLM call failed: model=${model} ${detail}`);
+    throw new ImportError('llm_error', { retryable: true, detail });
   }
   return parseOutput(outputText(interaction));
 }
