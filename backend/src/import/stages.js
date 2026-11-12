@@ -195,7 +195,8 @@ async function saveProgress(env, job, stage, patch) {
 
 // Runs one stage for one attempt. Returns { busy: true } when the model was busy, for the
 // Workflow to wait and run the stage again; its error stays on the row in case it gives up.
-export async function runStage(env, importId, attempt, stage, { llm = callModel } = {}) {
+// `busyWaits` is how many of those waits came before this run.
+export async function runStage(env, importId, attempt, stage, { llm = callModel, busyWaits = 0 } = {}) {
   const job = await env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(importId).first();
   if (!job || job.status !== 'running' || job.attempt !== attempt) return;
   job.state = JSON.parse(job.state);
@@ -203,7 +204,7 @@ export async function runStage(env, importId, attempt, stage, { llm = callModel 
   // A try that times out writes nothing, so an earlier try's code must not stand in for it.
   if (job.error !== null) await saveError(env, importId, attempt, null);
 
-  const deps = { env, source: sourceFor(job.platform), llm };
+  const deps = { env, source: sourceFor(job.platform), llm, busyWaits };
   let patch;
   try {
     patch = await stage.run(job, deps);

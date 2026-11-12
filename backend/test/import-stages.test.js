@@ -346,15 +346,15 @@ describe('stage: extract', () => {
     expect(JSON.parse((await reload(row)).state).recipe).toBeUndefined();
   });
 
-  it('leaves a busy basic model to the Workflow’s longer wait, without failing the step', async () => {
+  it('leaves a busy model to the Workflow’s wait, without failing the step', async () => {
     const row = await atExtract(await insertUser());
     const llm = fakeLlm(new ModelBusyError('Gemini 503: high demand'));
     expect(await runExtract(row, llm)).toEqual({ busy: true });
 
     const after = await reload(row);
     expect(after).toMatchObject({ status: 'running', stage: 'extract', error: 'llm_error', error_detail: 'Gemini 503: high demand' });
-    expect(JSON.parse(after.state)).toMatchObject({ done: ['meta'], bestBusyAttempt: 1 });
-    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, BASIC]);
+    expect(JSON.parse(after.state).done).toEqual(['meta']);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST]);
   });
 
   it('asks for approval without a Workflow retry when the best model runs out', async () => {
@@ -741,17 +741,32 @@ describe('the Workflow, end to end', () => {
   const savedModel = async (row) =>
     (await env.DB.prepare('SELECT source_model FROM recipes WHERE id = ?').bind((await reload(row)).recipe_id).first()).source_model;
 
-  it('moves to the basic model at once when the best one is busy, with no approval', async () => {
+  const busyFor = (count) => {
     let tries = 0;
-    fakeGoogle({ gemini: () => (++tries === 1 ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE))) });
+    return () => (++tries <= count ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE)));
+  };
+  const totalCounted = async () => (await env.DB.prepare('SELECT COALESCE(SUM(calls), 0) AS n FROM llm_usage').first()).n;
+
+  it('tries a busy best model again after a short wait, and keeps it when it is free', async () => {
+    fakeGoogle({ gemini: busyFor(1) });
     const row = await newImport();
     await runWorkflow(row);
-    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
-    expect(sentModels()).toEqual([BEST, BASIC]);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 1 });
+    expect(sentModels()).toEqual([BEST, BEST]);
+    expect(await savedModel(row)).toBe(BEST);
+    expect(await totalCounted()).toBe(1);
+  });
+
+  it('moves to the basic model, with no approval, when the best one is still busy on its retry', async () => {
+    fakeGoogle({ gemini: busyFor(2) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 0 });
+    expect(sentModels()).toEqual([BEST, BEST, BASIC]);
     expect(await savedModel(row)).toBe(BASIC);
   });
 
-  it('waits and tries the basic model again while it is busy too, 4 basic tries in all, then fails with llm_error', async () => {
+  it('waits longer each time while the basic model is busy too, then fails with llm_error and counts nothing', async () => {
     const busy = { error: { code: 503, message: 'This model is currently experiencing high demand.' } };
     fakeGoogle({ gemini: () => jsonResponse(busy, 503) });
     const row = await newImport();
@@ -760,17 +775,18 @@ describe('the Workflow, end to end', () => {
       status: 'failed',
       error: 'llm_error',
       error_detail: 'Gemini 503: This model is currently experiencing high demand.',
+      used_best: 0,
     });
-    expect(sentModels()).toEqual([BEST, BASIC, BASIC, BASIC, BASIC]);
+    expect(sentModels()).toEqual([BEST, BEST, BASIC, BASIC, BASIC]);
+    expect(await totalCounted()).toBe(0);
   });
 
   it('saves the recipe when the basic model is no longer busy after a wait', async () => {
-    let tries = 0;
-    fakeGoogle({ gemini: () => (++tries <= 2 ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE))) });
+    fakeGoogle({ gemini: busyFor(3) });
     const row = await newImport();
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
-    expect(sentModels()).toEqual([BEST, BASIC, BASIC]);
+    expect(sentModels()).toEqual([BEST, BEST, BASIC, BASIC]);
     expect(await savedModel(row)).toBe(BASIC);
   });
 

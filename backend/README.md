@@ -218,8 +218,8 @@ is validated before it's stored.
 change. The best model is tried first whenever it isn't out, up to 5 imports a day per
 user. When it's out or the user has used their 5, the user is asked; once they approve, the
 basic model is used automatically until the next reset. The user can also pick the basic model
-for one import. If the best model answers busy (503), that import moves to the basic model at
-once, with no approval (see Failures). A re-run never uses the basic model.
+for one import. If the best model is still busy (503) after one short retry, that import moves
+to the basic model, with no approval (see Failures). A re-run never uses the basic model.
 
 Every retry keeps the model the import is on: a basic choice (`state.basicChosen`) holds
 through Workflow retries, busy waits and a Retry, and never touches the best model.
@@ -227,8 +227,10 @@ through Workflow retries, busy waits and a Retry, and never touches the best mod
 **Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
 way to ask how many requests are left, so `llm_usage` counts them: every real call first
 reserves one, in one atomic statement, up to `LLM_BEST_DAILY_LIMIT` (20) and
-`LLM_BASIC_DAILY_LIMIT` (500). A failed call still counts, a 503 included: Google says a 503
-isn't caused by quota but hasn't said whether it's counted, and users report it is. A 429
+`LLM_BASIC_DAILY_LIMIT` (500). A failed call still counts, because Google may have counted
+it, except a 503: Google says a 503 is "unrelated to your quota", so its request is given
+back, and so is the user's best-model use if that try took it. Some users report Google
+counts them anyway; if so, Google's per-day 429 below sets the count right. A 429
 naming a per-day quota marks the model out until the reset and sets its count to the limit.
 Any other 429 waits (Google's delay, at most 60 s, otherwise 20 s) and retries once, then
 marks the model out for 15 minutes. Quota errors never use Workflow retries.
@@ -253,16 +255,24 @@ in `error_detail` (never sent to the browser).
 Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
 overlaps a call that is still running (video calls have taken over 5 minutes).
 
-A busy model (503, "high demand") can stay busy for hours, longer than those quick retries,
-so it skips them:
+A busy model (503, "high demand") can stay busy for minutes or hours, so it skips those
+quick retries and follows Google's advice instead: back off and retry, short at first and
+longer after. The stage ends without failing, and the Workflow sleeps (`step.sleep`) **30
+seconds, then 2 minutes, then 8 minutes** before each new run, so 4 runs in all; still busy
+after that, it fails with `llm_error`. The card shows the import as still running
+meanwhile. The Workflow passes the number of waits so far to the stage (`busyWaits`), which
+picks the model:
 
-- **Best model busy:** the import moves to the basic model in the same step, with no
-  approval, and remembers it for this attempt (`state.bestBusyAttempt`), so later tries
-  don't spend another best-model request. A Retry, a new attempt, tries the best model
-  again. The recipe is saved as a basic-model one, so it can be re-run later.
-- **Basic model busy, or the best one on a re-run** (a re-run never falls back): the stage
-  ends without failing, the Workflow sleeps 5 minutes (`step.sleep`) and runs it again, up
-  to 3 times. The card shows the import as still running meanwhile.
+- **Best model:** its first retry, after 30 seconds, stays on the best model. If it's still
+  busy, the import moves to the basic model in that same run, with no approval, and stays
+  on it for later runs. The recipe is saved as a basic-model one, so it can be re-run later.
+  A Retry starts a new Workflow, so it tries the best model first again.
+- **Basic model** (chosen, approved, or after the switch above), **or a re-run** (which
+  never falls back): every run stays on that model.
+
+No wait has jitter: there are too few users for their retries to pile up, and a Workflow
+must sleep the same on every replay. Google's Batch API is not used: its results can take
+hours, and imports should land in minutes.
 
 A Retry bumps `attempt` and starts a new Workflow. Finished stages are skipped through
 `state.done`, so it doesn't depend on how long Workflows keeps its history. Every write is
