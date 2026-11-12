@@ -22,12 +22,13 @@ function toRecipe(row) {
     folderId: row.folder_id,
     favorite: row.is_favorite === 1,
     link: row.source_url ?? '',
+    sourceModel: row.source_model,
     en: content('en'),
     he: content('he'),
   };
 }
 
-const RECIPE_COLUMNS = `id, folder_id, is_favorite, source_url,
+const RECIPE_COLUMNS = `id, folder_id, is_favorite, source_url, source_model,
   name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he`;
 
 // Returns { value } for a valid folder name, or { error } with the code to send.
@@ -45,7 +46,7 @@ function readLines(value) {
   return value.map((line) => line.trim()).filter(Boolean);
 }
 
-function readContent(value) {
+export function readContent(value) {
   if (typeof value?.name !== 'string') return { error: 'invalid_request' };
   const ingredients = readLines(value.ingredients);
   const steps = readLines(value.steps);
@@ -84,7 +85,7 @@ async function readRecipe(request, env, userId) {
 }
 
 // The bound values for the content columns, in RECIPE_COLUMNS order (en, then he).
-const contentValues = (recipe) =>
+export const contentValues = (recipe) =>
   LANGS.flatMap((lang) => [
     recipe[lang].name,
     JSON.stringify(recipe[lang].ingredients),

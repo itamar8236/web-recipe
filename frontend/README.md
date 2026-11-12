@@ -6,15 +6,15 @@ backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 
 ## Current state
 
-The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up and
-guest mode. A logged-in user's folders, recipes and favorites are loaded from and saved
+The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up, guest
+mode and creating a recipe from a YouTube link. A logged-in user's folders, recipes and favorites are loaded from and saved
 to the backend (D1). A **guest's** live only in memory in `lib/api.js`: nothing is sent
 to the backend, the app starts empty and everything is gone on reload. Components call
 the same `lib/api.js` functions in both modes. Folders are a flat list (no nesting or
 reordering).
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
 recipe has a `link`, otherwise plain "Added manually" text. The link is not editable in the
-UI; it will be filled by video import.
+UI; it is filled by video import.
 
 ## Layout
 
@@ -30,9 +30,8 @@ frontend/
 │   ├── admin/page.js      # (planned) Admin: list, add, delete users (/admin)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
-│       ├── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-│       └── import/page.js # (planned) Paste a video link, compare, save (/recipe/import)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), FolderBar, SearchBox, RecipeCard, HeartButton, ConfirmDialog
+│       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), FolderBar, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -84,7 +83,8 @@ frontend/
 
 ## Screens
 
-Built now: Login, Home, Recipe view, Edit, My account. The rest are planned.
+Built now: Login, Home (with the import dialog and cards), Recipe view, Edit, My account.
+The rest are planned.
 
 1. **Login / Sign up**: described above.
 2. **Home**: folders with recipe counts. On phones only, they are one row of pills that
@@ -96,15 +96,36 @@ Built now: Login, Home, Recipe view, Edit, My account. The rest are planned.
    (× or leaving it empty closes it again) that filters the cards while typing, by recipe
    name or ingredients in both languages (every typed word must match), combined with the
    selected folder and "Favorites". It runs in the browser on the loaded recipes.
-3. **Add recipe**: two choices, "Paste video link" or "Write manually".
-4. **Import**: URL field (YouTube or Facebook; others show "not supported yet"), a folder
-   picker, a submit button, then a spinner with "Reading the video..." Then:
-   - one candidate → show it as an editable preview with "Save".
-   - several candidates → show them side by side (stacked on phones) with the model name
-     and time taken; failed models show their error. The user taps "Use this one",
-     can edit, then saves.
+3. **Add recipe** (`components/ImportDialog`, a popup, no route): "+ Add recipe" opens it
+   for a logged-in user. A guest goes straight to the manual form, since importing needs
+   an account. One focused link field; it asks only for the link, never the site.
+   - **Import** submits it: the dialog closes and a card shows at once.
+   - **"Write it manually"**, **×**, **Escape** and **tapping outside** all open the manual
+     form (`/recipe/edit`, keeping the selected folder): declining the prompt means writing
+     the recipe by hand. The manual form's Cancel returns to Home.
+   - An invalid or unsupported link keeps the dialog open with the error under the field.
+   - A small "Model" choice, Best (default) or Basic, picks the model for this import.
+   - It shows "Best-model imports left today: N", and "Using the basic model until <time>"
+     while on the basic model.
+   - If the best model is out and the user hasn't approved the basic one, it asks, with
+     "Use basic model" (sends the link again with the approval) and "Not now" (keeps the
+     link in the field).
+4. **Import cards** (`components/ImportCards`, at the top of the content section, in every
+   folder view, not filtered by search):
+   - Running: gray with a gentle pulse, the title or link, and "Getting the video
+     details..." or "Reading the recipe...".
+   - Ready: "Recipe ready: <name>" with Open (which also dismisses) and ×. Needed because
+     the recipe list is oldest-first.
+   - Failed: red, the message, Retry when it can help, ×.
+   - Needs approval: says when the best model is back, with "Use basic model" and ×. A
+     Retry that finds the best model out turns its card into this one.
+   - `useImports` polls every 4 s only while something is running and the page is visible,
+     and at once when the page becomes visible. A card turning ready reloads the recipes.
 5. **Recipe view**: name, source link (opens the video), ingredients, steps. Heart, Edit
-   and Delete buttons (delete asks for confirmation).
+   and Delete buttons (delete asks for confirmation). A recipe made by the basic model also
+   shows "Re-run with best model" while that model is available: it asks with
+   `ConfirmDialog` first, because it replaces the recipe's text including any edits, then
+   returns to Home, where the usual card shows.
 6. **Edit**: name, ingredients, and steps (one per line) in the app's current language,
    plus a folder picker. A short note explains that to write the other language you
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
@@ -136,7 +157,8 @@ Built now: Login, Home, Recipe view, Edit, My account. The rest are planned.
     changes back with a message if saving failed.
 - Destructive actions ask for confirmation with `components/ConfirmDialog` (an in-page
   dialog). Don't use `window.confirm()`: some browsers and in-app views block it and it
-  silently returns false.
+  silently returns false. Known, not fixed: it asks for focus on Cancel with `autoFocus`, but
+  `showModal()` then moves focus to the first button, the confirm one, so Enter confirms.
 
 ## Bilingual (English / Hebrew)
 
@@ -151,10 +173,12 @@ Built now: Login, Home, Recipe view, Edit, My account. The rest are planned.
 ## API client
 
 `lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`, `updateAccount`,
-`logout`), folders (`getFolders`, `createFolder`, `renameFolder`, `deleteFolder`) and
-recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setFavorite`, `deleteRecipe`). For a
+`logout`), folders (`getFolders`, `createFolder`, `renameFolder`, `deleteFolder`),
+recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setFavorite`, `deleteRecipe`) and imports
+(`getImports`, `startImport`, `retryImport`, `dismissImport`, `rerunRecipe`). For a
 guest the folder and recipe functions use memory instead, with the same checks and error
-codes as the backend.
+codes as the backend, and the import functions throw `import_needs_login` without calling
+the backend.
 
 - Requests go to the same origin (`/api/...`), so the session cookie is sent without any
   extra setup. There is no API base URL or CORS: test anything that needs the backend on

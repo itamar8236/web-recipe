@@ -11,8 +11,9 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 Built so far: the recipe browsing UI (folders, recipes, favorites, English/Hebrew, manual
 add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, editing your own username and
-password, and the folders/recipes API, so a
-logged-in user's data is stored in D1 (a guest's stays in browser memory). The sections
+password, the folders/recipes API, so a
+logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
+a recipe from a YouTube link in the background with a Cloudflare Workflow. The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
 ## Known bugs and accepted trade-offs
@@ -25,18 +26,30 @@ resolved. One short line each, linking to the README section with the details.
 - PR previews share the production database (`backend/README.md` → Database). Accepted.
 - Builds made on Windows log harmless prefetch 404s (`frontend/README.md` → Layout).
   Accepted.
+- PR previews can't exercise the import Workflow: they use the one already deployed to
+  production (`backend/README.md` → Import from a YouTube link). Accepted.
+- The free-tier model quota is shared by all users, about 20 best-model imports a day in
+  total (`backend/README.md` → Import from a YouTube link). Accepted.
+- A few rare import edge cases are left as they are (`backend/README.md` → Import from a
+  YouTube link → Known small gaps).
+- `ConfirmDialog` opens with focus on its confirm button, not Cancel (`frontend/README.md` →
+  UX rules).
 
 ## The product
 
 **web-recipe** is a small personal web app for a handful of people to keep their recipes.
 
 - Recipes live in **folders** (a flat list) the user creates, renames, and deletes.
-- Add, edit, and delete recipes **manually**, or **from a short-video link**: the
-  backend sends the link to Google's free LLMs, which extract the recipe, and the user
-  saves it. Supported now: **YouTube and Facebook** only. Other platforms may come later;
-  don't build for them until asked.
-- When several LLM models are configured, an import runs all of them and the user
-  **compares the results side by side** and picks one to save.
+- Add, edit, and delete recipes **manually**, or **from a YouTube link**: the backend
+  sends the video and its description to Google's free LLMs in the background, so it keeps
+  going after the user leaves the app, and **saves the recipe by itself**, with no folder.
+  The user can edit or delete it afterwards. Supported now: **YouTube** only, and only
+  short videos are sent to the LLM (a longer one still works when its description holds
+  the recipe). Other platforms may come later; don't build for them until asked.
+- An import uses the **best model**, up to 5 a day per user. When it runs out, the user
+  is told and can **approve the basic model** until the quota resets, after which the app
+  returns to the best model by itself. A recipe made by the basic model can be **re-run
+  with the best model** later.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**
@@ -49,13 +62,13 @@ resolved. One short line each, linking to the README section with the details.
   logged in on every device.
 - **Guest mode**: the login screen has "Continue as guest". The app is fully usable, but
   nothing is read from or written to the database; the guest starts empty and loses
-  everything on reload.
+  everything on reload. Importing from a link needs an account.
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not
 
-- Not built to scale. A few users, a few hundred recipes. No queues, caches, microservices,
-  or multi-tenant design.
+- Not built to scale. A few users, a few hundred recipes. No caches, microservices, or
+  multi-tenant design, and no queues beyond the one Cloudflare Workflow that runs imports.
 - Not paid. Every service must have a **free tier** that covers this usage (hosting, DB,
   LLM). Never add anything that needs a credit card to work.
 
@@ -78,7 +91,8 @@ resolved. One short line each, linking to the README section with the details.
 | Frontend  | Next.js (App Router), React, plain JavaScript, CSS Modules | Static export (`output: 'export'`), no TypeScript, no UI library |
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Node-style JS on the Workers runtime (`nodejs_compat`); no web framework |
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
-| LLM       | Google's free-tier LLMs                            | One or more models, set by config; key in a Worker secret |
+| Background jobs | Cloudflare Workflows                         | Imports only; free on this plan                    |
+| LLM       | Google's free-tier LLMs                            | A best and a basic model, set by config; keys in Worker secrets |
 | Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); admin manages users; stays logged in |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-plugin`           |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |
@@ -92,8 +106,10 @@ Browser
    │
    ▼
 One Cloudflare Worker  (backend/)
-├── /api/*   → JSON API (login required) ──► D1 (users, folders, recipes)
-│                                        └──► Google LLMs (video → recipe, translation)
+├── /api/*   → JSON API (login required) ──► D1 (users, folders, recipes, imports)
+│                                        └──► Workflow (import, in the background)
+│                                               ├──► YouTube Data API (video details)
+│                                               └──► Google LLMs (video → recipe)
 └── /*       → static files built from frontend/ (frontend/out)
 ```
 
@@ -141,6 +157,7 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
   `.env.example` with placeholder values instead.
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
+- Run a real video import on a link the owner didn't give in the chat (`local-dev`).
 - Add an API endpoint that skips the login check (only sign-up, login and logout are public), or an
   admin action that skips the admin check.
 - Add a paid service or anything outside the free tiers above.

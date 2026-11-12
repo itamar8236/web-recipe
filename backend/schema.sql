@@ -129,8 +129,8 @@ CREATE INDEX IF NOT EXISTS folders_user_id ON folders (user_id);
 -- folder_id NULL means "No folder". source_url NULL means added manually.
 -- is_favorite is a plain column because only the owner ever sees a recipe, so "my
 -- favorite" and "favorite" are the same thing.
--- source_model is the LLM whose result the user picked on the compare screen (NULL for
--- manual recipes); it is all an import needs to remember once the recipe is saved.
+-- source_model is the LLM that produced an imported recipe (NULL for manual recipes); it
+-- is how a recipe made by the basic model can be offered a re-run with the best one.
 -- machine_translated_lang names the language the LLM filled in, so the UI can label it;
 -- the backend clears it when the user edits that language, since it is then human text.
 CREATE TABLE IF NOT EXISTS recipes (
@@ -163,3 +163,74 @@ CREATE TABLE IF NOT EXISTS recipes (
 );
 
 CREATE INDEX IF NOT EXISTS recipes_user_folder ON recipes (user_id, folder_id);
+
+-- One row per link a user asked to import. A separate table rather than unfinished rows
+-- in recipes: recipes requires a real name, and every list and search would otherwise
+-- need a "ready?" filter.
+-- Rows stay after finishing (dismissing only sets the status), because the daily caps
+-- count them.
+-- platform has no CHECK, so adding a source needs no table rebuild.
+-- stage is the stage running now or next, so the card can say what is happening.
+-- attempt goes up on every Retry. Each stage's writes are guarded by it, so a late write
+-- from an older attempt changes nothing.
+-- state holds what finished stages produced, so a Retry skips them without depending on
+-- how long Workflows keeps its own history.
+-- error is written before a stage throws, so nothing depends on how Workflows passes
+-- errors along. error_detail says why in words (e.g. Google's message), for debugging
+-- only: it is never sent to the browser.
+-- replace_recipe_id is set on a re-run. It deliberately has no foreign key: ON DELETE SET
+-- NULL would turn a re-run of a deleted recipe into a new recipe.
+-- used_best says this import already took one of the user's daily best-model uses, so
+-- retrying it doesn't take another. quota_day is the Pacific date those uses count for.
+CREATE TABLE IF NOT EXISTS imports (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  platform   TEXT    NOT NULL,
+  source_id  TEXT    NOT NULL,
+  source_url TEXT    NOT NULL,
+  title      TEXT,
+  status     TEXT    NOT NULL DEFAULT 'running'
+             CHECK (status IN ('running', 'done', 'failed', 'dismissed')),
+  stage      TEXT    NOT NULL DEFAULT 'meta',
+  attempt    INTEGER NOT NULL DEFAULT 1,
+  state      TEXT    NOT NULL DEFAULT '{}' CHECK (json_valid(state)),
+  error      TEXT,
+  error_detail TEXT,
+  recipe_id  INTEGER REFERENCES recipes (id) ON DELETE SET NULL,
+  replace_recipe_id INTEGER,
+  used_best  INTEGER NOT NULL DEFAULT 0 CHECK (used_best IN (0, 1)),
+  quota_day  TEXT    NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS imports_user_status ON imports (user_id, status);
+
+-- A user can't run the same video twice at once. This is what makes a double tap or a
+-- second device show the existing card instead of spending another request.
+CREATE UNIQUE INDEX IF NOT EXISTS imports_one_running
+  ON imports (user_id, platform, source_id) WHERE status = 'running';
+
+-- Models Google said are out of quota, and until when. Shared by all users, because
+-- Google's limits are per project.
+CREATE TABLE IF NOT EXISTS llm_model_status (
+  model             TEXT    PRIMARY KEY,
+  unavailable_until INTEGER NOT NULL
+);
+
+-- The app's own count of requests per Pacific day and model: Google offers no documented
+-- way to ask how many are left. A new day is a new row, so the count restarts at Google's
+-- reset by itself.
+CREATE TABLE IF NOT EXISTS llm_usage (
+  day   TEXT    NOT NULL,
+  model TEXT    NOT NULL,
+  calls INTEGER NOT NULL,
+  PRIMARY KEY (day, model)
+);
+
+-- "When the best model is out, I accept the basic one, until the next reset." One row per
+-- user; an expired row is simply ignored and replaced by the next approval.
+CREATE TABLE IF NOT EXISTS llm_basic_model_approvals (
+  user_id        INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+  approved_until INTEGER NOT NULL
+);

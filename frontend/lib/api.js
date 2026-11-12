@@ -193,3 +193,42 @@ export async function deleteRecipe(id) {
   }
   await dataRequest(`/api/recipes/${id}`, 'DELETE');
 }
+
+// ---- Imports from a video link ----
+// An import is { id, status, stage, link, title, error, retryable, recipeId, recipeName }.
+// Importing needs an account, so a guest is refused here and never reaches the backend.
+
+function refuseGuest() {
+  if (guest) throw new ApiError(403, 'import_needs_login');
+}
+
+// Returns { imports, models }.
+export async function getImports() {
+  refuseGuest();
+  return dataRequest('/api/imports');
+}
+
+// Only the link is sent: the backend works out which site it is.
+// `model` is 'best' or 'basic'; `useBasicModel` approves falling back to basic when best is out.
+export async function startImport(url, useBasicModel = false, model = 'best') {
+  refuseGuest();
+  const body = { url };
+  if (useBasicModel) body.useBasicModel = true;
+  if (model === 'basic') body.model = 'basic';
+  return (await dataRequest('/api/imports', 'POST', body)).import;
+}
+
+export async function retryImport(id, useBasicModel = false) {
+  refuseGuest();
+  return (await dataRequest(`/api/imports/${id}/retry`, 'POST', useBasicModel ? { useBasicModel } : {})).import;
+}
+
+export async function dismissImport(id) {
+  refuseGuest();
+  await dataRequest(`/api/imports/${id}`, 'DELETE');
+}
+
+export async function rerunRecipe(id) {
+  refuseGuest();
+  return (await dataRequest(`/api/recipes/${id}/rerun`, 'POST', {})).import;
+}

@@ -1,0 +1,122 @@
+/* An empty live region stays on the page so screen readers announce new cards; this
+   cancels the gap it would otherwise add above the title. */
+.area:empty {
+  margin-block-end: -14px;
+}
+
+.area :global(.error) {
+  margin: 0 0 8px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-inline-start-width: 5px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.title,
+.text {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.title {
+  font-weight: 700;
+}
+
+.text {
+  font-size: 16px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block-start: 10px;
+}
+
+.close {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  margin-block-start: -6px;
+  margin-inline-end: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.close:hover {
+  background: rgba(43, 38, 34, 0.08);
+}
+
+.close:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.running {
+  border-inline-start-color: #a89f95;
+  background: #f1eeea;
+  animation: pulse 1.8s ease-in-out infinite;
+}
+
+.running .text {
+  color: var(--ink-soft);
+}
+
+.ready {
+  border-inline-start-color: #2f7d4f;
+  background: #eef7f1;
+}
+
+.approval {
+  border-inline-start-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.failed {
+  border-inline-start-color: var(--danger);
+  background: #fdecea;
+}
+
+.failed .text {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.72;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .running {
+    animation: none;
+  }
+}

@@ -23,6 +23,12 @@ local copy, so agents can't reach production even by accident.
   the PR (e.g. "run `npx wrangler d1 execute recipes-db --remote --file=schema.sql`").
 - `backend/.wrangler/prod-dump.sql` contains real user data: never commit it (`.wrangler/`
   is gitignored), copy it elsewhere, or paste its contents in PRs, issues, or chat.
+- Never read `backend/.dev.vars` or `.env`. `.dev.vars` holds the owner's dev keys, which
+  use a test quota, not production's.
+- You may test real imports yourself on the local app, but only on links the owner gives
+  in the chat. Pick **Basic** in the dialog's model choice, so testing doesn't use up the
+  best model's 20 requests a day. Automated tests always use fake keys and stubs. List in
+  the PR the real imports you ran.
 
 ## 1. Check the local copy
 From `backend/`:
