@@ -346,15 +346,15 @@ describe('stage: extract', () => {
     expect(JSON.parse((await reload(row)).state).recipe).toBeUndefined();
   });
 
-  it('leaves a busy model to the Workflow’s longer wait, without failing the step', async () => {
+  it('leaves a busy basic model to the Workflow’s longer wait, without failing the step', async () => {
     const row = await atExtract(await insertUser());
     const llm = fakeLlm(new ModelBusyError('Gemini 503: high demand'));
     expect(await runExtract(row, llm)).toEqual({ busy: true });
 
     const after = await reload(row);
     expect(after).toMatchObject({ status: 'running', stage: 'extract', error: 'llm_error', error_detail: 'Gemini 503: high demand' });
-    expect(JSON.parse(after.state).done).toEqual(['meta']);
-    expect(llm).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(after.state)).toMatchObject({ done: ['meta'], bestBusyAttempt: 1 });
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, BASIC]);
   });
 
   it('asks for approval without a Workflow retry when the best model runs out', async () => {
@@ -737,7 +737,21 @@ describe('the Workflow, end to end', () => {
     expect(tries).toBe(2);
   });
 
-  it('waits and tries again while Gemini is busy, 4 tries in all, then fails with llm_error', async () => {
+  const sentModels = () => calls('generativelanguage').map(([, options]) => JSON.parse(options.body).model);
+  const savedModel = async (row) =>
+    (await env.DB.prepare('SELECT source_model FROM recipes WHERE id = ?').bind((await reload(row)).recipe_id).first()).source_model;
+
+  it('moves to the basic model at once when the best one is busy, with no approval', async () => {
+    let tries = 0;
+    fakeGoogle({ gemini: () => (++tries === 1 ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE))) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
+    expect(sentModels()).toEqual([BEST, BASIC]);
+    expect(await savedModel(row)).toBe(BASIC);
+  });
+
+  it('waits and tries the basic model again while it is busy too, 4 basic tries in all, then fails with llm_error', async () => {
     const busy = { error: { code: 503, message: 'This model is currently experiencing high demand.' } };
     fakeGoogle({ gemini: () => jsonResponse(busy, 503) });
     const row = await newImport();
@@ -747,16 +761,45 @@ describe('the Workflow, end to end', () => {
       error: 'llm_error',
       error_detail: 'Gemini 503: This model is currently experiencing high demand.',
     });
-    expect(calls('generativelanguage')).toHaveLength(4);
+    expect(sentModels()).toEqual([BEST, BASIC, BASIC, BASIC, BASIC]);
   });
 
-  it('saves the recipe when Gemini is no longer busy after a wait', async () => {
+  it('saves the recipe when the basic model is no longer busy after a wait', async () => {
     let tries = 0;
-    fakeGoogle({ gemini: () => (++tries === 1 ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE))) });
+    fakeGoogle({ gemini: () => (++tries <= 2 ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE))) });
     const row = await newImport();
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
-    expect(tries).toBe(2);
+    expect(sentModels()).toEqual([BEST, BASIC, BASIC]);
+    expect(await savedModel(row)).toBe(BASIC);
+  });
+
+  it('keeps quick retries for other errors on the best model', async () => {
+    let tries = 0;
+    fakeGoogle({ gemini: () => (++tries <= 2 ? jsonResponse({ error: {} }, 500) : jsonResponse(geminiReply(ONE))) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(sentModels()).toEqual([BEST, BEST, BEST]);
+    expect(await savedModel(row)).toBe(BEST);
+  });
+
+  it('keeps every retry on the basic model when the user chose it', async () => {
+    // Built when asked for: the Workflow can't read a body made in the test's own request.
+    const replies = [() => jsonResponse({ error: {} }, 500), () => jsonResponse({ error: {} }, 503), () => jsonResponse(geminiReply(ONE))];
+    fakeGoogle({ gemini: () => replies.shift()() });
+    const row = await insertImport(await insertUser(), { quota_day: today(), state: JSON.stringify({ basicChosen: true }) });
+    await runWorkflow(row);
+
+    expect(sentModels()).toEqual([BASIC, BASIC, BASIC]);
+    expect(await reload(row)).toMatchObject({ status: 'done', used_best: 0 });
+    expect(await savedModel(row)).toBe(BASIC);
+  });
+
+  it('keeps the basic choice through a Retry, a new attempt', async () => {
+    fakeGoogle();
+    const row = await atExtract(await insertUser(), {}, { attempt: 2, state: JSON.stringify({ meta: meta(), done: ['meta'], basicChosen: true }) });
+    await runWorkflow(row, 2);
+    expect(sentModels()).toEqual([BASIC]);
   });
 
   it('retries invalid output, then fails with bad_result', async () => {

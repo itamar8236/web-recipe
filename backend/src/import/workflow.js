@@ -6,9 +6,10 @@ import { markFailed, runStage, STAGES } from './stages.js';
 
 const RETRY = { retries: { limit: 2, delay: '15 seconds', backoff: 'exponential' }, timeout: '15 minutes' };
 
-// A busy Gemini (503) stays busy for minutes, past the quick retries above, so the stage
-// is run again after a wait instead. Each wait is far below the 30 minutes after which a
-// quiet import counts as stuck (imports.js).
+// A busy model (503) stays busy for minutes, past the quick retries above. When the busy
+// one is the basic model, or the best one on a re-run, the stage is run again after a wait
+// instead. Each wait is far below the 30 minutes after which a quiet import counts as
+// stuck (imports.js).
 const BUSY_WAIT = '5 minutes';
 const BUSY_WAITS = 3;
 

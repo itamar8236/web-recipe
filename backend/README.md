@@ -218,15 +218,20 @@ is validated before it's stored.
 change. The best model is tried first whenever it isn't out, up to 5 imports a day per
 user. When it's out or the user has used their 5, the user is asked; once they approve, the
 basic model is used automatically until the next reset. The user can also pick the basic model
-for one import. A re-run never uses the basic model.
+for one import. If the best model answers busy (503), that import moves to the basic model at
+once, with no approval (see Failures). A re-run never uses the basic model.
+
+Every retry keeps the model the import is on: a basic choice (`state.basicChosen`) holds
+through Workflow retries, busy waits and a Retry, and never touches the best model.
 
 **Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
 way to ask how many requests are left, so `llm_usage` counts them: every real call first
 reserves one, in one atomic statement, up to `LLM_BEST_DAILY_LIMIT` (20) and
-`LLM_BASIC_DAILY_LIMIT` (500). A failed call still counts. A 429 naming a per-day quota marks
-the model out until the reset and sets its count to the limit. Any other 429 waits (Google's
-delay, at most 60 s, otherwise 20 s) and retries once, then marks the model out for 15
-minutes. Quota errors never use Workflow retries.
+`LLM_BASIC_DAILY_LIMIT` (500). A failed call still counts, a 503 included: Google says a 503
+isn't caused by quota but hasn't said whether it's counted, and users report it is. A 429
+naming a per-day quota marks the model out until the reset and sets its count to the limit.
+Any other 429 waits (Google's delay, at most 60 s, otherwise 20 s) and retries once, then
+marks the model out for 15 minutes. Quota errors never use Workflow retries.
 
 **Failures.** `error` is written to the row before a stage throws, with the reason in words
 in `error_detail` (never sent to the browser).
@@ -238,7 +243,7 @@ in `error_detail` (never sent to the browser).
 | Too long, description not enough | `video_too_long` | no | no |
 | No recipe | `no_recipe` | no | no |
 | Several recipes | `multiple_recipes` | no | no |
-| Gemini busy (503) | `llm_error` | yes, 4 tries, 5 minutes apart | yes |
+| Gemini busy (503) | `llm_error` | yes, see below | yes |
 | Other 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
 | Invalid output | `bad_result` | yes, 3 tries per stage | yes |
 | Best out, no approval | `model_approval_needed` | no | yes |
@@ -248,10 +253,16 @@ in `error_detail` (never sent to the browser).
 Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
 overlaps a call that is still running (video calls have taken over 5 minutes).
 
-A busy Gemini (503, "high demand") lasts minutes, longer than those quick retries, so it
-skips them: the stage ends without failing, the Workflow sleeps 5 minutes (`step.sleep`)
-and runs it again, up to 3 times. The card shows the import as still running meanwhile.
-Every try still counts toward the day's quota.
+A busy model (503, "high demand") can stay busy for hours, longer than those quick retries,
+so it skips them:
+
+- **Best model busy:** the import moves to the basic model in the same step, with no
+  approval, and remembers it for this attempt (`state.bestBusyAttempt`), so later tries
+  don't spend another best-model request. A Retry, a new attempt, tries the best model
+  again. The recipe is saved as a basic-model one, so it can be re-run later.
+- **Basic model busy, or the best one on a re-run** (a re-run never falls back): the stage
+  ends without failing, the Workflow sleeps 5 minutes (`step.sleep`) and runs it again, up
+  to 3 times. The card shows the import as still running meanwhile.
 
 A Retry bumps `attempt` and starts a new Workflow. Finished stages are skipped through
 `state.done`, so it doesn't depend on how long Workflows keeps its history. Every write is

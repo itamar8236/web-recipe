@@ -3,7 +3,7 @@
 // user's daily best-model uses and their approval of the basic model.
 
 import { ImportError } from './errors.js';
-import { QuotaError } from './llm.js';
+import { ModelBusyError, QuotaError } from './llm.js';
 
 const COOL_DOWN_MS = 15 * 60 * 1000;
 
@@ -228,21 +228,48 @@ async function callBest(job, deps, request) {
   return result;
 }
 
+// Whether this attempt already found the best model busy. Kept on the row, so the tries
+// after a Workflow wait go straight to the basic model, while a Retry tries the best again.
+const foundBestBusy = (job) => job.state?.bestBusyAttempt === job.attempt;
+
+async function rememberBestBusy(env, job) {
+  await env.DB.prepare(
+    `UPDATE imports SET state = json_set(state, '$.bestBusyAttempt', ?1) WHERE id = ?2 AND status = 'running' AND attempt = ?1`,
+  )
+    .bind(job.attempt, job.id)
+    .run();
+  job.state = { ...job.state, bestBusyAttempt: job.attempt };
+}
+
+// A busy best model (503) can stay busy for hours, and each try may cost one of the day's
+// few best-model requests, so the import moves to the basic model at once, approved or
+// not. The recipe keeps its re-run button for when the best model is free again.
+async function callBestUnlessBusy(job, deps, request) {
+  try {
+    return await callBest(job, deps, request);
+  } catch (error) {
+    if (!(error instanceof ModelBusyError) || job.replace_recipe_id !== null) throw error;
+    await rememberBestBusy(deps.env, job);
+    return { busy: true };
+  }
+}
+
 // Sends `request` ({ prompt, schema, videoUrl }) to the model policy allows: the best one
-// when it can be used, otherwise the basic one if the user approved it. Returns
-// { output, model }. Throws ImportError quota or model_approval_needed when neither can
-// run. A re-run never falls back: replacing a recipe with a basic-model answer is what it
-// exists to undo.
+// when it can be used, otherwise the basic one if the user approved it or the best one is
+// busy. Returns { output, model }. Throws ImportError quota or model_approval_needed when
+// neither can run, and ModelBusyError when the model it ends up on is busy. A re-run never
+// falls back: replacing a recipe with a basic-model answer is what it exists to undo.
 export async function callChosenModel(job, deps, request) {
   const { env, llm } = deps;
-  if (!job.state?.basicChosen) {
-    const best = await callBest(job, deps, request);
-    if (!best.out) return { output: best.output, model: env.LLM_BEST_MODEL };
-    if (job.replace_recipe_id !== null) throw new ImportError('quota');
-
-    const state = await readModelState(env, job.user_id);
-    if (!state.basicOpen) throw new ImportError('quota');
-    if (!state.models.basicApproved) throw new ImportError('model_approval_needed');
+  if (!job.state?.basicChosen && !foundBestBusy(job)) {
+    const best = await callBestUnlessBusy(job, deps, request);
+    if (!best.out && !best.busy) return { output: best.output, model: env.LLM_BEST_MODEL };
+    if (best.out) {
+      if (job.replace_recipe_id !== null) throw new ImportError('quota');
+      const state = await readModelState(env, job.user_id);
+      if (!state.basicOpen) throw new ImportError('quota');
+      if (!state.models.basicApproved) throw new ImportError('model_approval_needed');
+    }
   }
 
   const model = env.LLM_BASIC_MODEL;
