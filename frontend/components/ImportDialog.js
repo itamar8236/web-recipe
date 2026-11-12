@@ -8,8 +8,9 @@ import * as api from '@/lib/api';
 import styles from './ImportDialog.module.css';
 
 // What "+ Add recipe" opens for a logged-in user. It asks only for the link: the backend
-// works out the site. Declining the prompt in any way means writing the recipe by hand.
-export default function ImportDialog({ models, backAt, manualHref, onStarted, onModelsStale }) {
+// works out the site. Only "Write it manually" opens the manual form; closing the dialog
+// in any other way leaves the user on Home.
+export default function ImportDialog({ models, backAt, manualHref, onClose, onStarted, onModelsStale }) {
   const { t } = useLanguage();
   const router = useRouter();
   const ref = useRef(null);
@@ -28,6 +29,10 @@ export default function ImportDialog({ models, backAt, manualHref, onStarted, on
 
   function writeManually() {
     if (!busy) router.push(manualHref);
+  }
+
+  function close() {
+    if (!busy) onClose();
   }
 
   async function start(useBasicModel) {
@@ -58,17 +63,17 @@ export default function ImportDialog({ models, backAt, manualHref, onStarted, on
       aria-labelledby="import-title"
       onCancel={(event) => {
         event.preventDefault();
-        writeManually();
+        close();
       }}
       // Only a tap on the backdrop lands on the dialog itself; its content has a wrapper.
       onClick={(event) => {
-        if (event.target === event.currentTarget) writeManually();
+        if (event.target === event.currentTarget) close();
       }}
     >
       <div className={styles.content}>
         <div className={styles.head}>
           <h2 id="import-title" className={styles.title}>{t.addFromVideo}</h2>
-          <button type="button" className={styles.close} aria-label={t.close} disabled={busy} onClick={writeManually}>
+          <button type="button" className={styles.close} aria-label={t.close} disabled={busy} onClick={close}>
             ×
           </button>
         </div>

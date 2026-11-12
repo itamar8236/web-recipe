@@ -100,9 +100,9 @@ The rest are planned.
    for a logged-in user. A guest goes straight to the manual form, since importing needs
    an account. One focused link field; it asks only for the link, never the site.
    - **Import** submits it: the dialog closes and a card shows at once.
-   - **"Write it manually"**, **×**, **Escape** and **tapping outside** all open the manual
-     form (`/recipe/edit`, keeping the selected folder): declining the prompt means writing
-     the recipe by hand. The manual form's Cancel returns to Home.
+   - **"Write it manually"** opens the manual form (`/recipe/edit`, keeping the selected
+     folder). The manual form's Cancel returns to Home.
+   - **×**, **Escape** and **tapping outside** close the dialog and stay on Home.
    - An invalid or unsupported link keeps the dialog open with the error under the field.
    - A small "Model" choice, Best (default) or Basic, picks the model for this import.
    - It shows "Best-model imports left today: N", and "Using the basic model until <time>"

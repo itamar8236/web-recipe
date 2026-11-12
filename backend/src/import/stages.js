@@ -4,7 +4,7 @@
 import { NonRetryableError } from 'cloudflare:workflows';
 import { contentValues, readContent } from '../data.js';
 import { ImportError } from './errors.js';
-import { callModel, VideoRefusedError } from './llm.js';
+import { callModel, ModelBusyError, VideoRefusedError } from './llm.js';
 import { callChosenModel } from './models.js';
 import { sourceFor } from './sources/index.js';
 
@@ -193,8 +193,10 @@ async function saveProgress(env, job, stage, patch) {
     .run();
 }
 
-// Runs one stage for one attempt.
-export async function runStage(env, importId, attempt, stage, { llm = callModel } = {}) {
+// Runs one stage for one attempt. Returns { busy: true } when the model was busy, for the
+// Workflow to wait and run the stage again; its error stays on the row in case it gives up.
+// `busyWaits` is how many of those waits came before this run.
+export async function runStage(env, importId, attempt, stage, { llm = callModel, busyWaits = 0 } = {}) {
   const job = await env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(importId).first();
   if (!job || job.status !== 'running' || job.attempt !== attempt) return;
   job.state = JSON.parse(job.state);
@@ -202,11 +204,15 @@ export async function runStage(env, importId, attempt, stage, { llm = callModel 
   // A try that times out writes nothing, so an earlier try's code must not stand in for it.
   if (job.error !== null) await saveError(env, importId, attempt, null);
 
-  const deps = { env, source: sourceFor(job.platform), llm };
+  const deps = { env, source: sourceFor(job.platform), llm, busyWaits };
   let patch;
   try {
     patch = await stage.run(job, deps);
   } catch (error) {
+    if (error instanceof ModelBusyError) {
+      await saveError(env, importId, attempt, 'llm_error', error.detail);
+      return { busy: true };
+    }
     if (error instanceof ImportError) await saveError(env, importId, attempt, error.code, error.detail);
     else await saveError(env, importId, attempt, 'llm_error', `${error.name}: ${error.message}`.slice(0, 500));
     if (error instanceof ImportError && !error.retryable) throw new NonRetryableError(error.code);

@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
 import { ImportError } from '../src/import/errors.js';
-import { QuotaError, VideoRefusedError } from '../src/import/llm.js';
+import { ModelBusyError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 import {
   callChosenModel,
   nextQuotaReset,
@@ -382,6 +382,71 @@ describe('when the user chose the basic model', () => {
     const llm = answering(ANSWER);
     await expect(run(await basicJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
     expect(llm).not.toHaveBeenCalled();
+  });
+});
+
+describe('when the best model is busy', () => {
+  const busy = () => new ModelBusyError('Gemini 503: high demand');
+  // `busyWaits` is how many Workflow waits came before this run of the stage.
+  const runAfterWaits = (job, llm, busyWaits) =>
+    callChosenModel(job, { env, llm, busyWaits }, { prompt: 'p', schema: {}, videoUrl: null });
+
+  it('leaves the first busy answer to a Workflow wait, giving back the request and the user’s use', async () => {
+    const userId = await insertUser();
+    const job = await newJob(userId);
+    const llm = answering(busy());
+    await expect(runAfterWaits(job, llm, 0)).rejects.toBeInstanceOf(ModelBusyError);
+    expect(modelsUsed(llm)).toEqual([BEST]);
+    expect(await usage(BEST)).toBe(0);
+    expect((await reload(job)).used_best).toBe(0);
+  });
+
+  it('keeps the best model’s answer when it is free again on its retry', async () => {
+    const userId = await insertUser();
+    const job = await newJob(userId);
+    expect(await runAfterWaits(job, answering(ANSWER), 1)).toEqual({ output: ANSWER, model: BEST });
+    expect((await reload(job)).used_best).toBe(1);
+  });
+
+  it('moves to the basic model when the best one is still busy on its retry, with no approval', async () => {
+    const userId = await insertUser();
+    const job = await newJob(userId);
+    const llm = answering(busy(), ANSWER);
+    expect(await runAfterWaits(job, llm, 1)).toEqual({ output: ANSWER, model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
+    expect(await usage(BEST)).toBe(0);
+    expect(await usage(BASIC)).toBe(1);
+    expect((await reload(job)).used_best).toBe(0);
+  });
+
+  it('goes straight to the basic model after that', async () => {
+    const userId = await insertUser();
+    const llm = answering(ANSWER);
+    expect(await runAfterWaits(await newJob(userId), llm, 2)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
+  });
+
+  it('leaves a busy basic model to the Workflow wait too, giving back its request', async () => {
+    const userId = await insertUser();
+    const llm = answering(busy(), busy());
+    await expect(runAfterWaits(await newJob(userId), llm, 1)).rejects.toBeInstanceOf(ModelBusyError);
+    expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
+    expect(await usage(BASIC)).toBe(0);
+  });
+
+  it('keeps a user’s use that an earlier try already spent', async () => {
+    const userId = await insertUser();
+    const job = await newJob(userId, { used_best: 1 });
+    await expect(runAfterWaits(job, answering(busy()), 0)).rejects.toBeInstanceOf(ModelBusyError);
+    expect((await reload(job)).used_best).toBe(1);
+  });
+
+  it('a re-run keeps waiting for the best model, even with an approval', async () => {
+    const userId = await insertUser();
+    await approve(userId);
+    const llm = answering(busy());
+    await expect(runAfterWaits(await newJob(userId, { replace_recipe_id: 12345 }), llm, 3)).rejects.toBeInstanceOf(ModelBusyError);
+    expect(modelsUsed(llm)).toEqual([BEST]);
   });
 });
 

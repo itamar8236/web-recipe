@@ -2,7 +2,7 @@ import { env, introspectWorkflow } from 'cloudflare:test';
 import { NonRetryableError } from 'cloudflare:workflows';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImportError } from '../src/import/errors.js';
-import { QuotaError, VideoRefusedError } from '../src/import/llm.js';
+import { ModelBusyError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 import { quotaDay } from '../src/import/models.js';
 import { youtube } from '../src/import/sources/youtube.js';
 import { markFailed, runStage, STAGES } from '../src/import/stages.js';
@@ -346,6 +346,17 @@ describe('stage: extract', () => {
     expect(JSON.parse((await reload(row)).state).recipe).toBeUndefined();
   });
 
+  it('leaves a busy model to the Workflow’s wait, without failing the step', async () => {
+    const row = await atExtract(await insertUser());
+    const llm = fakeLlm(new ModelBusyError('Gemini 503: high demand'));
+    expect(await runExtract(row, llm)).toEqual({ busy: true });
+
+    const after = await reload(row);
+    expect(after).toMatchObject({ status: 'running', stage: 'extract', error: 'llm_error', error_detail: 'Gemini 503: high demand' });
+    expect(JSON.parse(after.state).done).toEqual(['meta']);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST]);
+  });
+
   it('asks for approval without a Workflow retry when the best model runs out', async () => {
     const row = await atExtract(await insertUser());
     const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }));
@@ -679,6 +690,7 @@ describe('the Workflow, end to end', () => {
     await using introspector = await introspectWorkflow(env.IMPORT_WORKFLOW);
     await introspector.modifyAll(async (m) => {
       await m.disableRetryDelays();
+      await m.disableSleeps();
     });
     await env.IMPORT_WORKFLOW.create({ id: `import-${row.id}-${attempt}`, params: { importId: row.id, attempt } });
     const [instance] = await introspector.get();
@@ -709,7 +721,7 @@ describe('the Workflow, end to end', () => {
   });
 
   it('retries a temporary failure 3 times in all, then fails with llm_error', async () => {
-    fakeGoogle({ gemini: () => jsonResponse({ error: {} }, 503) });
+    fakeGoogle({ gemini: () => jsonResponse({ error: {} }, 500) });
     const row = await newImport();
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'failed', error: 'llm_error' });
@@ -718,11 +730,92 @@ describe('the Workflow, end to end', () => {
 
   it('recovers when a retry works', async () => {
     let tries = 0;
-    fakeGoogle({ gemini: () => (++tries === 1 ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE))) });
+    fakeGoogle({ gemini: () => (++tries === 1 ? jsonResponse({ error: {} }, 500) : jsonResponse(geminiReply(ONE))) });
     const row = await newImport();
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'done', error: null });
     expect(tries).toBe(2);
+  });
+
+  const sentModels = () => calls('generativelanguage').map(([, options]) => JSON.parse(options.body).model);
+  const savedModel = async (row) =>
+    (await env.DB.prepare('SELECT source_model FROM recipes WHERE id = ?').bind((await reload(row)).recipe_id).first()).source_model;
+
+  const busyFor = (count) => {
+    let tries = 0;
+    return () => (++tries <= count ? jsonResponse({ error: {} }, 503) : jsonResponse(geminiReply(ONE)));
+  };
+  const totalCounted = async () => (await env.DB.prepare('SELECT COALESCE(SUM(calls), 0) AS n FROM llm_usage').first()).n;
+
+  it('tries a busy best model again after a short wait, and keeps it when it is free', async () => {
+    fakeGoogle({ gemini: busyFor(1) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 1 });
+    expect(sentModels()).toEqual([BEST, BEST]);
+    expect(await savedModel(row)).toBe(BEST);
+    expect(await totalCounted()).toBe(1);
+  });
+
+  it('moves to the basic model, with no approval, when the best one is still busy on its retry', async () => {
+    fakeGoogle({ gemini: busyFor(2) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 0 });
+    expect(sentModels()).toEqual([BEST, BEST, BASIC]);
+    expect(await savedModel(row)).toBe(BASIC);
+  });
+
+  it('waits longer each time while the basic model is busy too, then fails with llm_error and counts nothing', async () => {
+    const busy = { error: { code: 503, message: 'This model is currently experiencing high demand.' } };
+    fakeGoogle({ gemini: () => jsonResponse(busy, 503) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({
+      status: 'failed',
+      error: 'llm_error',
+      error_detail: 'Gemini 503: This model is currently experiencing high demand.',
+      used_best: 0,
+    });
+    expect(sentModels()).toEqual([BEST, BEST, BASIC, BASIC, BASIC]);
+    expect(await totalCounted()).toBe(0);
+  });
+
+  it('saves the recipe when the basic model is no longer busy after a wait', async () => {
+    fakeGoogle({ gemini: busyFor(3) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
+    expect(sentModels()).toEqual([BEST, BEST, BASIC, BASIC]);
+    expect(await savedModel(row)).toBe(BASIC);
+  });
+
+  it('keeps quick retries for other errors on the best model', async () => {
+    let tries = 0;
+    fakeGoogle({ gemini: () => (++tries <= 2 ? jsonResponse({ error: {} }, 500) : jsonResponse(geminiReply(ONE))) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(sentModels()).toEqual([BEST, BEST, BEST]);
+    expect(await savedModel(row)).toBe(BEST);
+  });
+
+  it('keeps every retry on the basic model when the user chose it', async () => {
+    // Built when asked for: the Workflow can't read a body made in the test's own request.
+    const replies = [() => jsonResponse({ error: {} }, 500), () => jsonResponse({ error: {} }, 503), () => jsonResponse(geminiReply(ONE))];
+    fakeGoogle({ gemini: () => replies.shift()() });
+    const row = await insertImport(await insertUser(), { quota_day: today(), state: JSON.stringify({ basicChosen: true }) });
+    await runWorkflow(row);
+
+    expect(sentModels()).toEqual([BASIC, BASIC, BASIC]);
+    expect(await reload(row)).toMatchObject({ status: 'done', used_best: 0 });
+    expect(await savedModel(row)).toBe(BASIC);
+  });
+
+  it('keeps the basic choice through a Retry, a new attempt', async () => {
+    fakeGoogle();
+    const row = await atExtract(await insertUser(), {}, { attempt: 2, state: JSON.stringify({ meta: meta(), done: ['meta'], basicChosen: true }) });
+    await runWorkflow(row, 2);
+    expect(sentModels()).toEqual([BASIC]);
   });
 
   it('retries invalid output, then fails with bad_result', async () => {

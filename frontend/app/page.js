@@ -190,6 +190,7 @@ export default function HomePage() {
           models={models}
           backAt={backAt}
           manualHref={newRecipeHref}
+          onClose={() => setImportOpen(false)}
           onModelsStale={refresh}
           onStarted={(started) => {
             addImport(started);

@@ -33,6 +33,17 @@ export class VideoRefusedError extends Error {
   }
 }
 
+// Google said the model is overloaded (503). That lasts minutes or more, longer than the
+// quick Workflow retries, so the Workflow waits and tries again (workflow.js), and a best
+// model that stays busy is swapped for the basic one (models.js).
+export class ModelBusyError extends Error {
+  constructor(detail) {
+    super('model_busy');
+    this.name = 'ModelBusyError';
+    this.detail = detail;
+  }
+}
+
 function retryDelayFrom(details) {
   const retryInfo = details.find((detail) => String(detail?.['@type']).endsWith('RetryInfo'));
   const seconds = Number.parseFloat(retryInfo?.retryDelay);
@@ -97,14 +108,15 @@ function googleReason(status, text) {
 function failureFrom(status, text, videoUrl) {
   if (status === 429) return quotaErrorFrom(text);
   const detail = googleReason(status, text);
+  if (status === 503) return new ModelBusyError(detail);
   // A rejected request won't get better by itself, so only a server error is tried again.
   if (status >= 500) return new ImportError('llm_error', { retryable: true, detail });
   return videoUrl ? new VideoRefusedError() : new ImportError('llm_error', { detail });
 }
 
 // Sends one request and returns the model's answer as parsed JSON. Throws QuotaError,
-// VideoRefusedError, or ImportError (llm_error for temporary problems, bad_result for an
-// answer that can't be read).
+// ModelBusyError, VideoRefusedError, or ImportError (llm_error for other temporary
+// problems, bad_result for an answer that can't be read).
 export async function callModel({ env, model, prompt, schema, videoUrl }) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
   if (!env.GEMINI_API_KEY) throw new ImportError('llm_error', { detail: 'GEMINI_API_KEY is not set' });

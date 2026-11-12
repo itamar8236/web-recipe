@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { callModel, QuotaError, VideoRefusedError } from '../src/import/llm.js';
+import { callModel, ModelBusyError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 
 const VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 const SCHEMA = { type: 'object' };
@@ -132,9 +132,16 @@ describe('callModel: reading the answer', () => {
 });
 
 describe('callModel: failures', () => {
-  it.each([500, 503])('treats %i as temporary', async (status) => {
+  it.each([500, 502, 504])('treats %i as temporary', async (status) => {
     respond({ error: {} }, status);
     await expect(call({ videoUrl: VIDEO })).rejects.toMatchObject({ code: 'llm_error', retryable: true });
+  });
+
+  it('reports a 503 as the model being busy, with Google’s reason', async () => {
+    respond({ error: { message: 'This model is currently experiencing high demand.' } }, 503);
+    const error = await call({ videoUrl: VIDEO }).catch((e) => e);
+    expect(error).toBeInstanceOf(ModelBusyError);
+    expect(error.detail).toBe('Gemini 503: This model is currently experiencing high demand.');
   });
 
   it('gives up on a request that takes too long, so a retry never overlaps it', async () => {

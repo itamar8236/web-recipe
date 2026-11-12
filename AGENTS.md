@@ -48,8 +48,9 @@ resolved. One short line each, linking to the README section with the details.
   the recipe). Other platforms may come later; don't build for them until asked.
 - An import uses the **best model**, up to 5 a day per user. When it runs out, the user
   is told and can **approve the basic model** until the quota resets, after which the app
-  returns to the best model by itself. A recipe made by the basic model can be **re-run
-  with the best model** later.
+  returns to the best model by itself. If the best model is still **busy** after one short
+  retry, the import switches to the basic model by itself, with no approval. A recipe made
+  by the basic model can be **re-run with the best model** later.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**
