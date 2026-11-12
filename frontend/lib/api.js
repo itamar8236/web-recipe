@@ -209,9 +209,13 @@ export async function getImports() {
 }
 
 // Only the link is sent: the backend works out which site it is.
-export async function startImport(url, useBasicModel = false) {
+// `model` is 'best' or 'basic'; `useBasicModel` approves falling back to basic when best is out.
+export async function startImport(url, useBasicModel = false, model = 'best') {
   refuseGuest();
-  return (await dataRequest('/api/imports', 'POST', useBasicModel ? { url, useBasicModel } : { url })).import;
+  const body = { url };
+  if (useBasicModel) body.useBasicModel = true;
+  if (model === 'basic') body.model = 'basic';
+  return (await dataRequest('/api/imports', 'POST', body)).import;
 }
 
 export async function retryImport(id, useBasicModel = false) {

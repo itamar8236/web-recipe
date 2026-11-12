@@ -363,6 +363,28 @@ describe('each user’s 5 best-model imports', () => {
   });
 });
 
+describe('when the user chose the basic model', () => {
+  const basicJob = async (userId) => ({ ...(await newJob(userId)), state: { basicChosen: true } });
+
+  it('uses only the basic model, with no approval and none of the user’s 5', async () => {
+    const userId = await insertUser();
+    const job = await basicJob(userId);
+    const llm = answering(ANSWER);
+    expect(await run(job, llm)).toEqual({ output: ANSWER, model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
+    expect(await usage(BEST)).toBe(0);
+    expect((await reload(job)).used_best).toBe(0);
+  });
+
+  it('fails with quota when the basic model is out, never trying the best one', async () => {
+    const userId = await insertUser();
+    await markOut(BASIC);
+    const llm = answering(ANSWER);
+    await expect(run(await basicJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
+    expect(llm).not.toHaveBeenCalled();
+  });
+});
+
 describe('a re-run', () => {
   const rerunJob = (userId) => newJob(userId, { replace_recipe_id: 12345 });
 

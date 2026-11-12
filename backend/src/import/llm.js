@@ -7,6 +7,10 @@ const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions'
 // Google's REST examples pin this revision, and the response shape read below is theirs.
 const API_REVISION = '2026-05-20';
 
+// Video calls have taken over 5 minutes. A request must end before its Workflow step
+// (15 minutes, workflow.js) gives up, or the retry overlaps a call that is still running.
+const REQUEST_TIMEOUT_MS = 14 * 60 * 1000;
+
 const DEFAULT_RETRY_DELAY_MS = 20 * 1000;
 const MAX_RETRY_DELAY_MS = 60 * 1000;
 
@@ -37,8 +41,13 @@ function retryDelayFrom(details) {
 
 // Google doesn't reliably say which limit was hit: some 429s name a per-day quota in
 // their details, others say nothing.
-async function quotaErrorFrom(response) {
-  const body = await response.json().catch(() => ({}));
+function quotaErrorFrom(text) {
+  let body = {};
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // A 429 without a JSON body is treated like a bare one.
+  }
   const details = Array.isArray(body?.error?.details) ? body.error.details : [];
   return new QuotaError({ daily: JSON.stringify(details).includes('PerDay'), retryDelayMs: retryDelayFrom(details) });
 }
@@ -74,10 +83,10 @@ function parseOutput(text) {
   throw new ImportError('bad_result', { retryable: true });
 }
 
-async function failureFrom(response, videoUrl) {
-  if (response.status === 429) return quotaErrorFrom(response);
+function failureFrom(status, text, videoUrl) {
+  if (status === 429) return quotaErrorFrom(text);
   // A rejected request won't get better by itself, so only a server error is tried again.
-  if (response.status >= 500) return new ImportError('llm_error', { retryable: true });
+  if (status >= 500) return new ImportError('llm_error', { retryable: true });
   return videoUrl ? new VideoRefusedError() : new ImportError('llm_error');
 }
 
@@ -88,9 +97,15 @@ export async function callModel({ env, model, prompt, schema, videoUrl }) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
   if (!env.GEMINI_API_KEY) throw new ImportError('llm_error');
 
+  // One line per real request, so a bad result can be traced to what the model was sent.
+  // Never add the key or the headers. Prompts hold only our instructions and a public video
+  // description: if one ever holds a user's own text, stop logging it here.
+  console.log(`LLM call: model=${model} video=${videoUrl ?? 'none'}\n${prompt}`);
+
   let response;
   try {
     response = await fetch(ENDPOINT, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -99,13 +114,20 @@ export async function callModel({ env, model, prompt, schema, videoUrl }) {
       },
       body: JSON.stringify(requestBody({ model, prompt, schema, videoUrl })),
     });
-  } catch {
+  } catch (error) {
+    console.log(`LLM call failed: model=${model} ${error.name}: ${error.message}`);
     throw new ImportError('llm_error', { retryable: true });
   }
-  if (!response.ok) throw await failureFrom(response, videoUrl);
+  if (!response.ok) {
+    // Google's error text says why; it never contains the key.
+    const text = await response.text().catch(() => '');
+    console.log(`LLM call failed: model=${model} status=${response.status}\n${text.slice(0, 2000)}`);
+    throw failureFrom(response.status, text, videoUrl);
+  }
 
   const interaction = await response.json().catch(() => null);
   if (interaction?.status && interaction.status !== 'completed') {
+    console.log(`LLM call failed: model=${model} interaction status=${interaction.status}`);
     throw new ImportError('llm_error', { retryable: true });
   }
   return parseOutput(outputText(interaction));

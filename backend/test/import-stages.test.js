@@ -1,6 +1,6 @@
 import { env, introspectWorkflow } from 'cloudflare:test';
 import { NonRetryableError } from 'cloudflare:workflows';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImportError } from '../src/import/errors.js';
 import { QuotaError, VideoRefusedError } from '../src/import/llm.js';
 import { quotaDay } from '../src/import/models.js';
@@ -635,6 +635,12 @@ describe('markFailed', () => {
 });
 
 describe('the Workflow, end to end', () => {
+  // The real llm.js runs here and logs every prompt; keep that out of the test output.
+  beforeEach(() => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterEach(() => vi.restoreAllMocks());
+
   const video = {
     snippet: { title: 'Shakshuka video', description: LONG_DESCRIPTION },
     contentDetails: { duration: 'PT2M' },

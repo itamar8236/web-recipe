@@ -18,6 +18,7 @@ export default function ImportDialog({ models, backAt, manualHref, onStarted, on
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [askingApproval, setAskingApproval] = useState(false);
+  const [model, setModel] = useState('best');
 
   useEffect(() => {
     ref.current.showModal();
@@ -34,7 +35,7 @@ export default function ImportDialog({ models, backAt, manualHref, onStarted, on
     setError('');
     setAskingApproval(false);
     try {
-      onStarted(await api.startImport(url, useBasicModel));
+      onStarted(await api.startImport(url, useBasicModel, model));
     } catch (err) {
       if (err.code === 'model_approval_needed') setAskingApproval(true);
       else setError(errorMessage(t, { code: err.code, retryAt: backAt }));
@@ -93,6 +94,20 @@ export default function ImportDialog({ models, backAt, manualHref, onStarted, on
               }}
             />
             {error && <p className="error" role="alert">{error}</p>}
+          </div>
+
+          <div className={styles.model}>
+            <label className="label" htmlFor="import-model">{t.modelChoice}</label>
+            <select
+              id="import-model"
+              className={`field ${styles.modelSelect}`}
+              value={model}
+              disabled={busy}
+              onChange={(event) => setModel(event.target.value)}
+            >
+              <option value="best">{t.modelBest}</option>
+              <option value="basic">{t.modelBasic}</option>
+            </select>
           </div>
 
           {models && <p className="hint">{t.bestLeftToday(Math.min(models.bestLeftForUser, models.bestLeftToday))}</p>}

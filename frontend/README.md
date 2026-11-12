@@ -104,6 +104,7 @@ The rest are planned.
      form (`/recipe/edit`, keeping the selected folder): declining the prompt means writing
      the recipe by hand. The manual form's Cancel returns to Home.
    - An invalid or unsupported link keeps the dialog open with the error under the field.
+   - A small "Model" choice, Best (default) or Basic, picks the model for this import.
    - It shows "Best-model imports left today: N", and "Using the basic model until <time>"
      while on the basic model.
    - If the best model is out and the user hasn't approved the basic one, it asks, with

@@ -78,7 +78,10 @@ async function isUnderCaps(env, userId, day) {
 
 async function createImport(request, env, userId) {
   const body = await readJson(request);
-  if (typeof body?.url !== 'string' || !optionalBoolean(body.useBasicModel)) return fail(400, 'invalid_request');
+  const validModel = body?.model === undefined || body.model === 'best' || body.model === 'basic';
+  if (typeof body?.url !== 'string' || !optionalBoolean(body.useBasicModel) || !validModel) return fail(400, 'invalid_request');
+  // Choosing the basic model up front skips the best one entirely, so it needs no approval.
+  const basicChosen = body.model === 'basic';
 
   const link = readLink(body.url);
   if (link.error) return fail(400, link.error);
@@ -91,18 +94,25 @@ async function createImport(request, env, userId) {
   const day = quotaDay(now);
   if (!(await isUnderCaps(env, userId, day))) return fail(429, 'too_many_imports');
 
-  if (body.useBasicModel) await storeApproval(env, userId, now);
-  const refusal = startRefusal(await readModelState(env, userId, now));
+  if (body.useBasicModel && !basicChosen) await storeApproval(env, userId, now);
+  const refusal = startRefusal(await readModelState(env, userId, now), { basicChosen });
   if (refusal) return fail(REFUSAL_STATUS[refusal], refusal);
 
   let row;
   try {
     row = await env.DB.prepare(
-      `INSERT INTO imports (user_id, platform, source_id, source_url, quota_day, created_at, updated_at)
-       SELECT ?1, ?5, ?6, ?7, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
+      `INSERT INTO imports (user_id, platform, source_id, source_url, state, quota_day, created_at, updated_at)
+       SELECT ?1, ?5, ?6, ?7, ?9, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
-      .bind(...capValues(env, userId, day), link.source.platform, link.sourceId, link.sourceUrl, now)
+      .bind(
+        ...capValues(env, userId, day),
+        link.source.platform,
+        link.sourceId,
+        link.sourceUrl,
+        now,
+        JSON.stringify(basicChosen ? { basicChosen: true } : {}),
+      )
       .first();
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
@@ -149,9 +159,10 @@ async function isStillWanted(env, userId, row) {
 async function retryRefusal(env, userId, body, row, now) {
   if (row.extracted_model !== null) return null;
   const bestOnly = row.replace_recipe_id !== null;
-  if (body.useBasicModel && !bestOnly) await storeApproval(env, userId, now);
+  const basicChosen = row.basic_chosen === 1;
+  if (body.useBasicModel && !bestOnly && !basicChosen) await storeApproval(env, userId, now);
   const countedBest = holdsBestUse(row, quotaDay(now));
-  return startRefusal(await readModelState(env, userId, now), { bestOnly, countedBest });
+  return startRefusal(await readModelState(env, userId, now), { bestOnly, countedBest, basicChosen });
 }
 
 async function retryImport(request, env, userId, id) {
@@ -160,7 +171,8 @@ async function retryImport(request, env, userId, id) {
 
   const row = await env.DB.prepare(
     `SELECT status, error, source_url, replace_recipe_id, used_best, quota_day,
-            json_extract(state, '$.model') AS extracted_model
+            json_extract(state, '$.model') AS extracted_model,
+            json_extract(state, '$.basicChosen') AS basic_chosen
        FROM imports WHERE id = ? AND user_id = ?`,
   )
     .bind(id, userId)

@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:test';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { callModel, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 
 const VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
@@ -17,7 +17,16 @@ const call = (extra = {}) => callModel({ env, model: 'some-model', prompt: 'the 
 const sentBody = () => JSON.parse(fetch.mock.calls[0][1].body);
 const quotaResponse = (details, status = 429) => respond({ error: { code: status, status: 'RESOURCE_EXHAUSTED', details } }, status);
 
-afterEach(() => vi.unstubAllGlobals());
+// callModel logs every request; this keeps that out of the test output and lets tests read
+// it. Held here because reading console.log in the Workers runtime gives a bound copy.
+let log;
+beforeEach(() => {
+  log = vi.spyOn(console, 'log').mockImplementation(() => {});
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('callModel: the request', () => {
   it('posts to the Interactions API with the key in a header, never in the URL', async () => {
@@ -62,6 +71,31 @@ describe('callModel: the request', () => {
   });
 });
 
+describe('callModel: logging', () => {
+  const logged = () => log.mock.calls.map((args) => args.join(' ')).join('\n');
+
+  it('logs the model, the video and the full prompt once, and never the key', async () => {
+    respond(interaction('{"status":"none"}'));
+    await call({ videoUrl: VIDEO });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(logged()).toContain('some-model');
+    expect(logged()).toContain(VIDEO);
+    expect(logged()).toContain('the prompt');
+    expect(logged()).not.toContain('fake-gemini-key');
+  });
+
+  it('says when no video was sent', async () => {
+    respond(interaction('{"status":"none"}'));
+    await call();
+    expect(logged()).toContain('video=none');
+  });
+
+  it('logs nothing when no request is sent', async () => {
+    await callModel({ env: { ...env, GEMINI_API_KEY: '' }, model: 'm', prompt: 'p', schema: SCHEMA }).catch(() => {});
+    expect(log).not.toHaveBeenCalled();
+  });
+});
+
 describe('callModel: reading the answer', () => {
   it('returns the parsed JSON from the model_output step, skipping thoughts', async () => {
     respond(interaction('{"status":"one","language":"he"}'));
@@ -101,6 +135,22 @@ describe('callModel: failures', () => {
   it.each([500, 503])('treats %i as temporary', async (status) => {
     respond({ error: {} }, status);
     await expect(call({ videoUrl: VIDEO })).rejects.toMatchObject({ code: 'llm_error', retryable: true });
+  });
+
+  it('gives up on a request that takes too long, so a retry never overlaps it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new DOMException('timed out', 'TimeoutError'); }));
+    await expect(call({ videoUrl: VIDEO })).rejects.toMatchObject({ code: 'llm_error', retryable: true });
+    expect(fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
+    expect(log.mock.calls.at(-1).join(' ')).toContain('TimeoutError');
+  });
+
+  it('logs the status and Google’s error text when a call fails', async () => {
+    respond({ error: { message: 'The model is overloaded.' } }, 503);
+    await call().catch(() => {});
+    const line = log.mock.calls.at(-1).join(' ');
+    expect(line).toContain('status=503');
+    expect(line).toContain('The model is overloaded.');
+    expect(line).not.toContain('fake-gemini-key');
   });
 
   it('treats a network failure as temporary', async () => {

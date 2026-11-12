@@ -157,8 +157,7 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
   `.env.example` with placeholder values instead.
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
-- Run a real video import or call an LLM, even locally. The owner does that (`local-dev`
-  skill has the details).
+- Run a real video import on a link the owner didn't give in the chat (`local-dev`).
 - Add an API endpoint that skips the login check (only sign-up, login and logout are public), or an
   admin action that skips the admin check.
 - Add a paid service or anything outside the free tiers above.

@@ -89,7 +89,7 @@ All need a session, work only on the data of the user the session acts for, and 
 
 | Endpoint | Purpose | Success | Errors |
 |---|---|---|---|
-| `POST /api/imports` `{url, useBasicModel?}` | Start an import | 202 `{import}`, or 200 with the one already running | 400 `invalid_request`, `link_invalid`, `link_unsupported`; 409 `already_imported`, `model_approval_needed`; 429 `too_many_imports`, `quota` |
+| `POST /api/imports` `{url, model?, useBasicModel?}` | Start an import | 202 `{import}`, or 200 with the one already running | 400 `invalid_request`, `link_invalid`, `link_unsupported`; 409 `already_imported`, `model_approval_needed`; 429 `too_many_imports`, `quota` |
 | `GET /api/imports` | Cards plus model state | 200 `{imports, models}` | |
 | `POST /api/imports/:id/retry` `{useBasicModel?}` | Try a failed import again | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_retryable`, `model_approval_needed`; 429 `quota` |
 | `DELETE /api/imports/:id` | Dismiss the card | 200 `{ok}` | 404 |
@@ -104,6 +104,8 @@ All need a session, work only on the data of the user the session acts for, and 
 - `models` is `{ bestAvailable, bestLeftToday, bestLeftForUser, basicModel, basicApproved,
   bestAvailableAt, resetsAt }`, times in epoch ms. `bestAvailable` is false when the model
   is out or this user has used their 5. `bestAvailableAt` is `null` while it is available.
+- `model` is `'best'` (default) or `'basic'`. Basic skips the best model, needs no approval
+  and uses none of the user's 5; a Retry keeps the choice.
 - `useBasicModel: true` stores an approval until the next reset.
 - POST checks in this order: body, link, a running duplicate, `already_imported`
   (`recipes.source_url`), caps, model state, then insert and start.
@@ -215,7 +217,8 @@ is validated before it's stored.
 **Models.** `LLM_BEST_MODEL` and `LLM_BASIC_MODEL` are config, so changing one needs no code
 change. The best model is tried first whenever it isn't out, up to 5 imports a day per
 user. When it's out or the user has used their 5, the user is asked; once they approve, the
-basic model is used automatically until the next reset. A re-run never uses the basic model.
+basic model is used automatically until the next reset. The user can also pick the basic model
+for one import. A re-run never uses the basic model.
 
 **Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
 way to ask how many requests are left, so `llm_usage` counts them: every real call first
@@ -239,6 +242,9 @@ minutes. Quota errors never use Workflow retries.
 | Best out, no approval | `model_approval_needed` | no | yes |
 | Both out, or a re-run with the best out | `quota` | no | yes |
 | Stuck for 30 minutes | `timed_out` | no | yes |
+
+Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
+overlaps a call that is still running (video calls have taken over 5 minutes).
 
 A Retry bumps `attempt` and starts a new Workflow. Finished stages are skipped through
 `state.done`, so it doesn't depend on how long Workflows keeps its history. Every write is
@@ -264,9 +270,14 @@ production, and gives `workflow.not_found` before the first deploy.
 - A running import dismissed through the raw API (the UI has no × on running cards) may still
   finish its LLM call, but saves nothing.
 
+**Logging.** `llm.js` logs each Gemini request (the model, the video link and the full
+prompt) and each failure (the status and Google's error text), never the key. Prompts hold only our instructions and a public video description;
+stop logging them if one ever carries a user's own text. Production doesn't store these
+lines (no `observability` in `wrangler.jsonc`); `npx wrangler tail` shows them live.
+
 **Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
-request. Agents never run a real import, even locally (see the `local-dev` skill); the owner
-does that with real keys in `.dev.vars`.
+request. Real imports run locally on the dev keys in `.dev.vars`, which use a test quota;
+agents test with the Basic model (`local-dev` skill).
 
 ## Translation
 

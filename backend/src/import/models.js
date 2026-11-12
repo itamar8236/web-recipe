@@ -153,7 +153,9 @@ export async function readModelState(env, userId, now = Date.now()) {
 
 // Why an import can't start now, or null when it can. `countedBest` means this import
 // already holds one of the user's daily best-model uses, so their cap doesn't stop it.
-export function startRefusal(state, { bestOnly = false, countedBest = false } = {}) {
+// `basicChosen` means the user picked the basic model, so only that one matters.
+export function startRefusal(state, { bestOnly = false, countedBest = false, basicChosen = false } = {}) {
+  if (basicChosen) return state.basicOpen ? null : 'quota';
   if (state.models.bestAvailable || (countedBest && state.bestOpen)) return null;
   if (bestOnly || !state.basicOpen) return 'quota';
   return state.models.basicApproved ? null : 'model_approval_needed';
@@ -233,13 +235,15 @@ async function callBest(job, deps, request) {
 // exists to undo.
 export async function callChosenModel(job, deps, request) {
   const { env, llm } = deps;
-  const best = await callBest(job, deps, request);
-  if (!best.out) return { output: best.output, model: env.LLM_BEST_MODEL };
-  if (job.replace_recipe_id !== null) throw new ImportError('quota');
+  if (!job.state?.basicChosen) {
+    const best = await callBest(job, deps, request);
+    if (!best.out) return { output: best.output, model: env.LLM_BEST_MODEL };
+    if (job.replace_recipe_id !== null) throw new ImportError('quota');
 
-  const state = await readModelState(env, job.user_id);
-  if (!state.basicOpen) throw new ImportError('quota');
-  if (!state.models.basicApproved) throw new ImportError('model_approval_needed');
+    const state = await readModelState(env, job.user_id);
+    if (!state.basicOpen) throw new ImportError('quota');
+    if (!state.models.basicApproved) throw new ImportError('model_approval_needed');
+  }
 
   const model = env.LLM_BASIC_MODEL;
   const basic = await callUnlessOut({ env, llm, model, limit: limits(env).basicDaily, request });

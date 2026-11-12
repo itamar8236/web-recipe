@@ -416,6 +416,39 @@ describe('import endpoints', () => {
       expect((await startImport(cookie)).status).toBe(202);
     });
 
+    describe('choosing the basic model', () => {
+      it('starts on the basic model even when the best one is out, storing no approval', async () => {
+        const { cookie, userId } = await signUp();
+        await markOut(BEST);
+        const response = await startImport(cookie, LINK, { model: 'basic' });
+        expect(response.status).toBe(202);
+        expect(JSON.parse((await rows())[0].state)).toEqual({ basicChosen: true });
+        expect(await approvalOf(userId)).toBeNull();
+      });
+
+      it('answers 429 quota when the basic model is out', async () => {
+        const { cookie } = await signUp();
+        await markOut(BASIC);
+        const response = await startImport(cookie, LINK, { model: 'basic' });
+        expect(response.status).toBe(429);
+        expect(await errorOf(response)).toBe('quota');
+      });
+
+      it('accepts best, and refuses any other value', async () => {
+        const { cookie } = await signUp();
+        expect((await startImport(cookie, LINK, { model: 'max' })).status).toBe(400);
+        expect((await startImport(cookie, LINK, { model: 'best' })).status).toBe(202);
+        expect(JSON.parse((await rows())[0].state)).toEqual({});
+      });
+
+      it('keeps the choice on a retry', async () => {
+        const { cookie, userId } = await signUp();
+        const row = await failedImport(userId, { state: '{"basicChosen":true}' });
+        await markOut(BEST);
+        expect((await post(cookie, `/api/imports/${row.id}/retry`)).status).toBe(202);
+      });
+    });
+
     it('answers 429 quota when both models are out', async () => {
       const { cookie } = await signUp();
       await markOut(BEST);

@@ -357,6 +357,14 @@ describe('logged in: imports', () => {
     expect(lastCall().body).toEqual({ url: 'https://youtu.be/x', useBasicModel: true });
   });
 
+  it('sends the model only when the user picked the basic one', async () => {
+    mockFetch(202, { import: card });
+    await api.startImport('https://youtu.be/x', false, 'basic');
+    expect(lastCall().body).toEqual({ url: 'https://youtu.be/x', model: 'basic' });
+    await api.startImport('https://youtu.be/x', false, 'best');
+    expect(lastCall().body).toEqual({ url: 'https://youtu.be/x' });
+  });
+
   it('retries, with or without the approval', async () => {
     mockFetch(202, { import: card });
     await api.retryImport(5);

@@ -4,7 +4,7 @@
 import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { markFailed, runStage, STAGES } from './stages.js';
 
-const RETRY = { retries: { limit: 2, delay: '15 seconds', backoff: 'exponential' }, timeout: '5 minutes' };
+const RETRY = { retries: { limit: 2, delay: '15 seconds', backoff: 'exponential' }, timeout: '15 minutes' };
 
 export class ImportWorkflow extends WorkflowEntrypoint {
   async run(event, step) {
