@@ -116,15 +116,16 @@ function failureFrom(status, text, videoUrl) {
 
 // Sends one request and returns the model's answer as parsed JSON. Throws QuotaError,
 // ModelBusyError, VideoRefusedError, or ImportError (llm_error for other temporary
-// problems, bad_result for an answer that can't be read).
-export async function callModel({ env, model, prompt, schema, videoUrl }) {
+// problems, bad_result for an answer that can't be read). `logPrompt: false` keeps a
+// prompt that holds the user's own text (a translation) out of the logs.
+export async function callModel({ env, model, prompt, schema, videoUrl, logPrompt = true }) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
   if (!env.GEMINI_API_KEY) throw new ImportError('llm_error', { detail: 'GEMINI_API_KEY is not set' });
 
   // One line per real request, so a bad result can be traced to what the model was sent.
-  // Never add the key or the headers. Prompts hold only our instructions and a public video
-  // description: if one ever holds a user's own text, stop logging it here.
-  console.log(`LLM call: model=${model} video=${videoUrl ?? 'none'}\n${prompt}`);
+  // Never add the key or the headers. Import prompts hold only our instructions and a public
+  // video description; a translation's holds the user's recipe, so it is never logged.
+  console.log(`LLM call: model=${model} video=${videoUrl ?? 'none'}\n${logPrompt ? prompt : '(prompt not logged: user text)'}`);
 
   let response;
   try {

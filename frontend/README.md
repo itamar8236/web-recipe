@@ -31,7 +31,7 @@ frontend/
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), FolderBar, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), FolderBar, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -122,15 +122,23 @@ The rest are planned.
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
 5. **Recipe view**: name, source link (opens the video), ingredients, steps. Heart, Edit
-   and Delete buttons (delete asks for confirmation). A recipe made by the basic model also
-   shows "Re-run with best model" while that model is available: it asks with
-   `ConfirmDialog` first, because it replaces the recipe's text including any edits, then
-   returns to Home, where the usual card shows.
+   and Delete buttons (delete asks for confirmation). No AI actions here: they are all on
+   the edit form, so the view stays simple.
 6. **Edit**: name, ingredients, and steps (one per line) in the app's current language,
    plus a folder picker. A short note explains that to write the other language you
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other
-   language with a "not written yet" note; later the backend will translate it.
+   language with a "not written yet" note.
+   - **AI tools** (`components/RecipeAiTools`, a box above Save, logged-in users only): one
+     "Model" choice, Best (default) or Basic, for both buttons.
+   - **"Translate to Hebrew" / "תרגום לאנגלית"** translates the language being written into
+     the other one and fills it in (shown after saving and switching language); a note says
+     to tap Save to keep it. It asks first if the other language already has text. Works on
+     manual recipes and on new ones before their first save. Save is held while it runs.
+   - **"Scan the video again"** (only for a recipe with a link) asks first, because it
+     replaces the recipe's text including edits, then starts it like a new import and
+     returns to Home, where its card shows. If the best model is out it asks to use the
+     basic one, like the add-recipe dialog.
 7. **Users** (admin only): list of users, a form to add one (username and
    password), and per user an "Act as" button, a "Set password" button and a
    delete button (the last two with confirmation; deleting a user also deletes all their
@@ -175,10 +183,10 @@ The rest are planned.
 `lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`, `updateAccount`,
 `logout`), folders (`getFolders`, `createFolder`, `renameFolder`, `deleteFolder`),
 recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setFavorite`, `deleteRecipe`) and imports
-(`getImports`, `startImport`, `retryImport`, `dismissImport`, `rerunRecipe`). For a
-guest the folder and recipe functions use memory instead, with the same checks and error
-codes as the backend, and the import functions throw `import_needs_login` without calling
-the backend.
+(`getImports`, `startImport`, `retryImport`, `dismissImport`, `rerunRecipe`) and
+`translateRecipe`. For a guest the folder and recipe functions use memory instead, with the
+same checks and error codes as the backend, and the import and translate functions throw
+`import_needs_login` without calling the backend.
 
 - Requests go to the same origin (`/api/...`), so the session cookie is sent without any
   extra setup. There is no API base URL or CORS: test anything that needs the backend on

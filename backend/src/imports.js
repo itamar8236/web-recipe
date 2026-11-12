@@ -76,33 +76,32 @@ async function isUnderCaps(env, userId, day) {
   return row.ok === 1;
 }
 
-async function createImport(request, env, userId) {
-  const body = await readJson(request);
+// Reads the model choice every start takes: `model` is 'best' (default) or 'basic', and
+// `useBasicModel: true` approves the basic model when the best one is out. Null when invalid.
+function readModelChoice(body) {
   const validModel = body?.model === undefined || body.model === 'best' || body.model === 'basic';
-  if (typeof body?.url !== 'string' || !optionalBoolean(body.useBasicModel) || !validModel) return fail(400, 'invalid_request');
+  if (!body || !optionalBoolean(body.useBasicModel) || !validModel) return null;
   // Choosing the basic model up front skips the best one entirely, so it needs no approval.
-  const basicChosen = body.model === 'basic';
+  return { basicChosen: body.model === 'basic', useBasicModel: body.useBasicModel === true };
+}
 
-  const link = readLink(body.url);
-  if (link.error) return fail(400, link.error);
-
-  const running = await findRunning(env, userId, link);
-  if (running) return json({ import: toImport(running) });
-  if (await hasRecipeFor(env, userId, link.sourceUrl)) return fail(409, 'already_imported');
-
+// Checks the caps and the model, then inserts the row and starts it. `replaceRecipeId` is
+// set when an existing recipe's video is scanned again. Returns null when the same video
+// started a moment ago (another tap or device), for the caller to answer.
+async function startNew(env, userId, link, { basicChosen, useBasicModel }, replaceRecipeId = null) {
   const now = Date.now();
   const day = quotaDay(now);
   if (!(await isUnderCaps(env, userId, day))) return fail(429, 'too_many_imports');
 
-  if (body.useBasicModel && !basicChosen) await storeApproval(env, userId, now);
+  if (useBasicModel && !basicChosen) await storeApproval(env, userId, now);
   const refusal = startRefusal(await readModelState(env, userId, now), { basicChosen });
   if (refusal) return fail(REFUSAL_STATUS[refusal], refusal);
 
   let row;
   try {
     row = await env.DB.prepare(
-      `INSERT INTO imports (user_id, platform, source_id, source_url, state, quota_day, created_at, updated_at)
-       SELECT ?1, ?5, ?6, ?7, ?9, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
+      `INSERT INTO imports (user_id, platform, source_id, source_url, state, replace_recipe_id, quota_day, created_at, updated_at)
+       SELECT ?1, ?5, ?6, ?7, ?9, ?10, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
       .bind(
@@ -112,17 +111,34 @@ async function createImport(request, env, userId) {
         link.sourceUrl,
         now,
         JSON.stringify(basicChosen ? { basicChosen: true } : {}),
+        replaceRecipeId,
       )
       .first();
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
-    // Another tap or device started the same video a moment ago. If it has already
-    // finished by now, there is a recipe for this video.
-    const other = await findRunning(env, userId, link);
-    return other ? json({ import: toImport(other) }) : fail(409, 'already_imported');
+    return null;
   }
   if (!row) return fail(429, 'too_many_imports');
   return startAndRespond(env, userId, row.id, row.attempt);
+}
+
+async function createImport(request, env, userId) {
+  const body = await readJson(request);
+  const choice = readModelChoice(body);
+  if (typeof body?.url !== 'string' || !choice) return fail(400, 'invalid_request');
+
+  const link = readLink(body.url);
+  if (link.error) return fail(400, link.error);
+
+  const running = await findRunning(env, userId, link);
+  if (running) return json({ import: toImport(running) });
+  if (await hasRecipeFor(env, userId, link.sourceUrl)) return fail(409, 'already_imported');
+
+  const response = await startNew(env, userId, link, choice);
+  if (response) return response;
+  // If the other start has already finished by now, there is a recipe for this video.
+  const other = await findRunning(env, userId, link);
+  return other ? json({ import: toImport(other) }) : fail(409, 'already_imported');
 }
 
 // ---- Listing ----
@@ -158,11 +174,10 @@ async function isStillWanted(env, userId, row) {
 // A failed save has its recipe already, so it needs no model at all.
 async function retryRefusal(env, userId, body, row, now) {
   if (row.extracted_model !== null) return null;
-  const bestOnly = row.replace_recipe_id !== null;
   const basicChosen = row.basic_chosen === 1;
-  if (body.useBasicModel && !bestOnly && !basicChosen) await storeApproval(env, userId, now);
+  if (body.useBasicModel && !basicChosen) await storeApproval(env, userId, now);
   const countedBest = holdsBestUse(row, quotaDay(now));
-  return startRefusal(await readModelState(env, userId, now), { bestOnly, countedBest, basicChosen });
+  return startRefusal(await readModelState(env, userId, now), { countedBest, basicChosen });
 }
 
 async function retryImport(request, env, userId, id) {
@@ -212,37 +227,23 @@ async function dismissImport(env, userId, id) {
   return row ? json({ ok: true }) : fail(404, 'not_found');
 }
 
-// ---- Re-running a basic-model recipe ----
+// ---- Scanning a recipe's video again ----
 
+// Any recipe with a link can be scanned again, on the model the user picks, exactly like a
+// new import. When it finishes it replaces the recipe's text.
 async function rerunRecipe(request, env, userId, recipeId) {
-  if (!(await readJson(request))) return fail(400, 'invalid_request');
+  const choice = readModelChoice(await readJson(request));
+  if (!choice) return fail(400, 'invalid_request');
 
-  const recipe = await env.DB.prepare('SELECT source_url, source_model FROM recipes WHERE id = ? AND user_id = ?')
+  const recipe = await env.DB.prepare('SELECT source_url FROM recipes WHERE id = ? AND user_id = ?')
     .bind(recipeId, userId)
     .first();
   if (!recipe) return fail(404, 'not_found');
-  if (recipe.source_model !== env.LLM_BASIC_MODEL) return fail(409, 'not_rerunnable');
-  const link = readLink(recipe.source_url);
+  const link = recipe.source_url === null ? { error: 'manual' } : readLink(recipe.source_url);
   if (link.error) return fail(409, 'not_rerunnable');
+  if (await findRunning(env, userId, link)) return fail(409, 'not_rerunnable');
 
-  const now = Date.now();
-  const { models } = await readModelState(env, userId, now);
-  if (!models.bestAvailable) return fail(429, 'best_model_unavailable');
-
-  let row;
-  try {
-    row = await env.DB.prepare(
-      `INSERT INTO imports (user_id, platform, source_id, source_url, replace_recipe_id, quota_day, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING id, attempt`,
-    )
-      .bind(userId, link.source.platform, link.sourceId, link.sourceUrl, recipeId, quotaDay(now), now, now)
-      .first();
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-    return fail(409, 'not_rerunnable');
-  }
-  return startAndRespond(env, userId, row.id, row.attempt);
+  return (await startNew(env, userId, link, choice, recipeId)) ?? fail(409, 'not_rerunnable');
 }
 
 // Routes /api/imports[/:id[/retry]] and /api/recipes/:id/rerun. Returns null for any

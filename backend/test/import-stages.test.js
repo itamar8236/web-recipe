@@ -381,13 +381,14 @@ describe('stage: extract', () => {
     expect(JSON.parse((await reload(row)).state).model).toBe(BASIC);
   });
 
-  it('a re-run never falls back to the basic model', async () => {
+  it('a re-scan moves to the approved basic model like a new import', async () => {
     const userId = await insertUser();
     await approveBasic(userId);
     const row = await atExtract(userId, {}, { replace_recipe_id: 99 });
-    const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }));
-    await expectFailure(runExtract(row, llm), row, 'quota');
-    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST]);
+    const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }), ONE);
+    await runExtract(row, llm);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, BASIC]);
+    expect(JSON.parse((await reload(row)).state).model).toBe(BASIC);
   });
 });
 

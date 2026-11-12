@@ -13,8 +13,8 @@ here in the same PR that adds them.
 
 The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
 everything else is the static build from `../frontend/out`, served by Cloudflare. The auth
-API, the folders/recipes API and the YouTube import below exist; translation
-and the admin endpoints don't yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
+API, the folders/recipes API, the YouTube import and translation below exist; the admin
+endpoints don't yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
 `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
 automatically through Workers Builds (root directory `/`), which builds with
 `cd frontend && npm install && npm run build` and then:
@@ -26,7 +26,7 @@ automatically through Workers Builds (root directory `/`), which builds with
   `wrangler.jsonc`.
 
 Code: `src/index.js` (routes and auth), `src/data.js` (folders and recipes),
-`src/imports.js` (import endpoints), `src/http.js` (JSON helpers), `src/session.js`
+`src/imports.js` (import endpoints), `src/translate.js` (translation), `src/http.js` (JSON helpers), `src/session.js`
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
 `workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
 choice, usage counting, approvals, reset time), `llm.js` (the only file that knows
@@ -93,7 +93,7 @@ All need a session, work only on the data of the user the session acts for, and 
 | `GET /api/imports` | Cards plus model state | 200 `{imports, models}` | |
 | `POST /api/imports/:id/retry` `{useBasicModel?}` | Try a failed import again | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_retryable`, `model_approval_needed`; 429 `quota` |
 | `DELETE /api/imports/:id` | Dismiss the card | 200 `{ok}` | 404 |
-| `POST /api/recipes/:id/rerun` `{}` | Re-run a basic-model recipe with the best model | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_rerunnable`; 429 `best_model_unavailable` |
+| `POST /api/recipes/:id/rerun` `{model?, useBasicModel?}` | Scan an imported recipe's video again; replaces its text when done | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_rerunnable` (manual recipe, or that video is running), `model_approval_needed`; 429 `too_many_imports`, `quota` |
 
 - `import` is `{ id, status, stage, link, title, error, retryable, recipeId, recipeName }`.
   `recipeName` is `{ en, he }`, or `null` until there is a recipe. `error` is set only when
@@ -105,15 +105,26 @@ All need a session, work only on the data of the user the session acts for, and 
   bestAvailableAt, resetsAt }`, times in epoch ms. `bestAvailable` is false when the model
   is out or this user has used their 5. `bestAvailableAt` is `null` while it is available.
 - `model` is `'best'` (default) or `'basic'`. Basic skips the best model, needs no approval
-  and uses none of the user's 5; a Retry keeps the choice.
+  and uses none of the user's 5; a Retry keeps the choice. A re-scan (`rerun`) takes the
+  same `model` and `useBasicModel` and follows every rule of a new import (caps, approval,
+  the switch on a busy model), except `already_imported`.
 - `useBasicModel: true` stores an approval until the next reset.
 - POST checks in this order: body, link, a running duplicate, `already_imported`
   (`recipes.source_url`), caps, model state, then insert and start.
 - Caps, counted from `imports` for today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running),
   `IMPORT_DAILY_LIMIT` (10 a day) and `IMPORT_BEST_DAILY_PER_USER` (5 on the best model).
-- A Retry answers `not_retryable` if the same video is already running or saved. On a later
-  day it counts against that day. A re-run never offers the basic model: when the best
-  model is out it answers `quota`.
+- A Retry answers `not_retryable` if the same video is already running or saved (for a
+  re-scan: if its recipe was deleted). On a later day it counts against that day.
+
+## Translate API
+
+| Endpoint | Purpose | Success | Errors |
+|---|---|---|---|
+| `POST /api/translate` `{from, content, model?}` | Translate one language's text into the other | 200 `{content}` | 400 `invalid_request`, `too_long`, `nothing_to_translate`; 429 `best_model_unavailable` (best out), `quota` (basic out); 502 `bad_result`, `llm_error`; 503 `model_busy` |
+
+Needs a session like the rest. `from` is `'en'` or `'he'`, `content` is
+`{ name, ingredients, steps }` (same checks and limits as a recipe), `model` is `'best'` or
+`'basic'` (default). See [Translation](#translation).
 
 The sections below describe what the backend must do once built, except "Import from a
 YouTube link", which exists.
@@ -201,7 +212,7 @@ POST /api/imports {url}
 Workflow: each stage is one retried step, and saves its result to the row
   meta     YouTube Data API: title, description, duration, privacy (no LLM)
   extract  One call with the description and, if it can be sent, the video
-  save     One D1 batch: insert the recipe, or replace it on a re-run, + mark the import done
+  save     One D1 batch: insert the recipe, or replace it on a re-scan, + mark the import done
 ```
 
 **Links.** Only the backend decides which site a link is (`sources/index.js`); the Worker
@@ -219,7 +230,8 @@ change. The best model is tried first whenever it isn't out, up to 5 imports a d
 user. When it's out or the user has used their 5, the user is asked; once they approve, the
 basic model is used automatically until the next reset. The user can also pick the basic model
 for one import. If the best model is still busy (503) after one short retry, that import moves
-to the basic model, with no approval (see Failures). A re-run never uses the basic model.
+to the basic model, with no approval (see Failures). Scanning an existing recipe's video
+again (a re-scan, `replace_recipe_id`) follows exactly the same rules.
 
 Every retry keeps the model the import is on: a basic choice (`state.basicChosen`) holds
 through Workflow retries, busy waits and a Retry, and never touches the best model.
@@ -249,7 +261,7 @@ in `error_detail` (never sent to the browser).
 | Other 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
 | Invalid output | `bad_result` | yes, 3 tries per stage | yes |
 | Best out, no approval | `model_approval_needed` | no | yes |
-| Both out, or a re-run with the best out | `quota` | no | yes |
+| Both out | `quota` | no | yes |
 | Stuck for 30 minutes | `timed_out` | no | yes |
 
 Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
@@ -265,10 +277,10 @@ picks the model:
 
 - **Best model:** its first retry, after 30 seconds, stays on the best model. If it's still
   busy, the import moves to the basic model in that same run, with no approval, and stays
-  on it for later runs. The recipe is saved as a basic-model one, so it can be re-run later.
+  on it for later runs. The recipe is saved as a basic-model one; the user can scan it
+  again from the edit form.
   A Retry starts a new Workflow, so it tries the best model first again.
-- **Basic model** (chosen, approved, or after the switch above), **or a re-run** (which
-  never falls back): every run stays on that model.
+- **Basic model** (chosen, approved, or after the switch above): every run stays on it.
 
 No wait has jitter: there are too few users for their retries to pile up, and a Workflow
 must sleep the same on every replay. Google's Batch API is not used: its results can take
@@ -289,7 +301,7 @@ production, and gives `workflow.not_found` before the first deploy.
 
 **Known small gaps**, all rare and harmless:
 
-- The re-run button can still show while that re-run is running; tapping it answers
+- "Scan the video again" still shows while that scan is running; tapping it answers
   `not_rerunnable`.
 - A Retry that can no longer work says so and leaves the card for the user to dismiss.
 - A card left over after the best model is back names the next reset as its time.
@@ -299,8 +311,9 @@ production, and gives `workflow.not_found` before the first deploy.
   finish its LLM call, but saves nothing.
 
 **Logging.** `llm.js` logs each Gemini request (the model, the video link and the full
-prompt) and each failure (the status and Google's error text), never the key. Prompts hold only our instructions and a public video description;
-stop logging them if one ever carries a user's own text. Production keeps the logs for 3
+prompt) and each failure (the status and Google's error text), never the key. Import prompts
+hold only our instructions and a public video description. A translation's prompt holds the
+user's own recipe, so it is never logged (`logPrompt: false`). Production keeps the logs for 3
 days (Workers Logs, `observability` in `wrangler.jsonc`), and `npx wrangler tail` shows
 them live. A failed import also keeps the reason in `imports.error_detail`.
 
@@ -310,8 +323,19 @@ agents test with the Basic model (`local-dev` skill).
 
 ## Translation
 
-When a recipe is written in only one language, the backend fills in the other with the
-LLM. The user can correct either version.
+The edit form's "Translate" sends the language being written to `POST /api/translate`,
+which answers with the other language; the form fills it in, and nothing is stored until
+the user taps Save. It works for any recipe, manual ones too, but needs an account.
+
+- One plain request, not a Workflow: the user waits for it, and a text-only call takes
+  seconds. No video and no link are sent.
+- The user picks the model, as for an import. A translation takes one request from the
+  shared daily count (`llm_usage`, so a busy 503 is given back), but **not** from the
+  user's 5 best-model imports, needs no approval and never switches model: when the
+  picked one is out it answers `best_model_unavailable` or `quota`, and the UI suggests
+  Basic.
+- The answer is untrusted: it must pass the same checks as a recipe's text, and must keep
+  each part (name, ingredients, steps) the original had, or it's `bad_result`.
 
 ## Secrets
 

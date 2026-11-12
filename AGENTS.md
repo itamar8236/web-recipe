@@ -13,7 +13,8 @@ add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-
 log-out with remembered sessions plus a guest mode, editing your own username and
 password, the folders/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
-a recipe from a YouTube link in the background with a Cloudflare Workflow. The sections
+a recipe from a YouTube link in the background with a Cloudflare Workflow, plus two AI
+tools on the edit form (translate a recipe, scan its video again). The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
 ## Known bugs and accepted trade-offs
@@ -49,8 +50,11 @@ resolved. One short line each, linking to the README section with the details.
 - An import uses the **best model**, up to 5 a day per user. When it runs out, the user
   is told and can **approve the basic model** until the quota resets, after which the app
   returns to the best model by itself. If the best model is still **busy** after one short
-  retry, the import switches to the basic model by itself, with no approval. A recipe made
-  by the basic model can be **re-run with the best model** later.
+  retry, the import switches to the basic model by itself, with no approval.
+- The **edit form** holds the AI tools, with the same Best/Basic choice: **translate** the
+  language being written into the other one (any recipe, manual ones too; nothing is saved
+  until Save), and, for an imported recipe, **scan its video again**, which runs like a new
+  import and replaces the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**
@@ -63,7 +67,7 @@ resolved. One short line each, linking to the README section with the details.
   logged in on every device.
 - **Guest mode**: the login screen has "Continue as guest". The app is fully usable, but
   nothing is read from or written to the database; the guest starts empty and loses
-  everything on reload. Importing from a link needs an account.
+  everything on reload. Importing from a link and the AI tools need an account.
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not

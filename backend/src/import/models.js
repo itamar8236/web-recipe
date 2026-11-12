@@ -161,10 +161,10 @@ export async function readModelState(env, userId, now = Date.now()) {
 // Why an import can't start now, or null when it can. `countedBest` means this import
 // already holds one of the user's daily best-model uses, so their cap doesn't stop it.
 // `basicChosen` means the user picked the basic model, so only that one matters.
-export function startRefusal(state, { bestOnly = false, countedBest = false, basicChosen = false } = {}) {
+export function startRefusal(state, { countedBest = false, basicChosen = false } = {}) {
   if (basicChosen) return state.basicOpen ? null : 'quota';
   if (state.models.bestAvailable || (countedBest && state.bestOpen)) return null;
-  if (bestOnly || !state.basicOpen) return 'quota';
+  if (!state.basicOpen) return 'quota';
   return state.models.basicApproved ? null : 'model_approval_needed';
 }
 
@@ -256,26 +256,23 @@ const BEST_BUSY_RETRIES = 1;
 // when it can be used, otherwise the basic one if the user approved it or the best one
 // stayed busy. Returns { output, model }. Throws ImportError quota or model_approval_needed
 // when neither can run, and ModelBusyError for the Workflow to wait and try again.
-// `deps.busyWaits` is how many busy waits this stage has had. A re-run never falls back:
-// replacing a recipe with a basic-model answer is what it exists to undo.
+// `deps.busyWaits` is how many busy waits this stage has had. Scanning an existing
+// recipe's video again follows the same rules as a new import.
 export async function callChosenModel(job, deps, request) {
   const { env, llm, busyWaits = 0 } = deps;
-  const isRerun = job.replace_recipe_id !== null;
   // Reaching more waits than that means the best model was busy on its retry too.
-  const bestGaveUp = !isRerun && busyWaits > BEST_BUSY_RETRIES;
+  const bestGaveUp = busyWaits > BEST_BUSY_RETRIES;
   if (!job.state?.basicChosen && !bestGaveUp) {
     let best;
     try {
       best = await callBest(job, deps, request);
     } catch (error) {
-      if (!(error instanceof ModelBusyError) || isRerun || busyWaits < BEST_BUSY_RETRIES) throw error;
-      // Still busy after its retry: the basic model is used, approved or not. The recipe
-      // keeps its re-run button for when the best model is free again.
+      if (!(error instanceof ModelBusyError) || busyWaits < BEST_BUSY_RETRIES) throw error;
+      // Still busy after its retry: the basic model is used, approved or not.
       best = { busy: true };
     }
     if (!best.out && !best.busy) return { output: best.output, model: env.LLM_BEST_MODEL };
     if (best.out) {
-      if (isRerun) throw new ImportError('quota');
       const state = await readModelState(env, job.user_id);
       if (!state.basicOpen) throw new ImportError('quota');
       if (!state.models.basicApproved) throw new ImportError('model_approval_needed');
@@ -286,4 +283,18 @@ export async function callChosenModel(job, deps, request) {
   const basic = await callUnlessOut({ env, llm, model, limit: limits(env).basicDaily, request });
   if (basic.out) throw new ImportError('quota');
   return { output: basic.output, model };
+}
+
+// One request to the model the user picked (`choice` is 'best' or 'basic'), outside any
+// import, for work the user waits for (translation). It takes from the shared daily count
+// but not from the user's 5 best-model imports, needs no approval and never switches
+// model. Returns the output. Throws ImportError quota when that model is out, otherwise
+// what callModel throws.
+export async function callPickedModel(env, choice, request, llm) {
+  const best = choice === 'best';
+  const model = best ? env.LLM_BEST_MODEL : env.LLM_BASIC_MODEL;
+  const limit = best ? limits(env).bestDaily : limits(env).basicDaily;
+  const result = await callUnlessOut({ env, llm, model, limit, request });
+  if (result.out) throw new ImportError('quota');
+  return result.output;
 }

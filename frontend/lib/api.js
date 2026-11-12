@@ -228,7 +228,19 @@ export async function dismissImport(id) {
   await dataRequest(`/api/imports/${id}`, 'DELETE');
 }
 
-export async function rerunRecipe(id) {
+// Scans an imported recipe's video again, replacing its text when done. Same model choice
+// as startImport.
+export async function rerunRecipe(id, useBasicModel = false, model = 'best') {
   refuseGuest();
-  return (await dataRequest(`/api/recipes/${id}/rerun`, 'POST', {})).import;
+  const body = {};
+  if (useBasicModel) body.useBasicModel = true;
+  if (model === 'basic') body.model = 'basic';
+  return (await dataRequest(`/api/recipes/${id}/rerun`, 'POST', body)).import;
+}
+
+// Translates one language's text ({ name, ingredients, steps }) from `from` ('en' or 'he')
+// into the other, with `model` 'best' or 'basic'. Nothing is saved: returns the text.
+export async function translateRecipe(from, content, model) {
+  refuseGuest();
+  return (await dataRequest('/api/translate', 'POST', { from, content, model })).content;
 }

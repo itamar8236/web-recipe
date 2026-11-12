@@ -253,7 +253,7 @@ describe('errorMessage', () => {
     expect(errorMessage(strings.he, { code })).not.toBe(strings.he.errGeneric);
   });
 
-  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'best_model_unavailable', 'import_needs_login'])(
+  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'best_model_unavailable', 'model_busy', 'nothing_to_translate', 'import_needs_login'])(
     '%s has its own message in both languages',
     (code) => {
       expect(errorMessage(strings.en, { code })).not.toBe(strings.en.errGeneric);
@@ -316,6 +316,7 @@ describe('guest: imports need an account', () => {
     ['retryImport', () => api.retryImport(1)],
     ['dismissImport', () => api.dismissImport(1)],
     ['rerunRecipe', () => api.rerunRecipe(1)],
+    ['translateRecipe', () => api.translateRecipe('en', { name: 'Tea', ingredients: [], steps: [] }, 'basic')],
   ])('%s is refused and never calls the backend', async (_, action) => {
     vi.stubGlobal('fetch', vi.fn());
     await expect(action()).rejects.toMatchObject({ code: 'import_needs_login' });
@@ -379,10 +380,19 @@ describe('logged in: imports', () => {
     expect(lastCall()).toMatchObject({ path: '/api/imports/5', method: 'DELETE' });
   });
 
-  it('starts a re-run', async () => {
+  it('scans a recipe again, with the model and approval only when given', async () => {
     mockFetch(202, { import: card });
     expect(await api.rerunRecipe(7)).toEqual(card);
     expect(lastCall()).toEqual({ path: '/api/recipes/7/rerun', method: 'POST', body: {} });
+    await api.rerunRecipe(7, true, 'basic');
+    expect(lastCall().body).toEqual({ useBasicModel: true, model: 'basic' });
+  });
+
+  it('translates one language and returns only the text', async () => {
+    const content = { name: 'Tea', ingredients: ['Water'], steps: ['Boil'] };
+    mockFetch(200, { content: { name: 'תה', ingredients: ['מים'], steps: ['מרתיחים'] } });
+    expect(await api.translateRecipe('en', content, 'best')).toEqual({ name: 'תה', ingredients: ['מים'], steps: ['מרתיחים'] });
+    expect(lastCall()).toEqual({ path: '/api/translate', method: 'POST', body: { from: 'en', content, model: 'best' } });
   });
 
   it('passes on the backend error codes', async () => {

@@ -441,51 +441,41 @@ describe('when the best model is busy', () => {
     expect((await reload(job)).used_best).toBe(1);
   });
 
-  it('a re-run keeps waiting for the best model, even with an approval', async () => {
+  it('moves a re-scan to the basic model too', async () => {
     const userId = await insertUser();
-    await approve(userId);
-    const llm = answering(busy());
-    await expect(runAfterWaits(await newJob(userId, { replace_recipe_id: 12345 }), llm, 3)).rejects.toBeInstanceOf(ModelBusyError);
-    expect(modelsUsed(llm)).toEqual([BEST]);
+    const llm = answering(busy(), ANSWER);
+    expect(await runAfterWaits(await newJob(userId, { replace_recipe_id: 12345 }), llm, 1)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
   });
 });
 
-describe('a re-run', () => {
-  const rerunJob = (userId) => newJob(userId, { replace_recipe_id: 12345 });
+describe('a re-scan of an existing recipe', () => {
+  const rescanJob = (userId, fields = {}) => newJob(userId, { replace_recipe_id: 12345, ...fields });
 
   it('uses the best model', async () => {
     const userId = await insertUser();
-    expect(await run(await rerunJob(userId), answering(ANSWER))).toMatchObject({ model: BEST });
+    expect(await run(await rescanJob(userId), answering(ANSWER))).toMatchObject({ model: BEST });
   });
 
-  it.each([
-    ['the best model is marked out', async () => markOut(BEST), 0],
-    ['the shared limit is reached', async () => setUsage(BEST, 20), 0],
-  ])('fails with quota when %s, even with an approval', async (_, arrange, calls) => {
+  it('uses the basic model when the user picked it', async () => {
     const userId = await insertUser();
-    await approve(userId);
-    await arrange();
     const llm = answering(ANSWER);
-    await expect(run(await rerunJob(userId), llm)).rejects.toMatchObject({ code: 'quota', retryable: false });
-    expect(llm).toHaveBeenCalledTimes(calls);
+    const job = { ...(await rescanJob(userId)), state: { basicChosen: true } };
+    expect(await run(job, llm)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
   });
 
-  it('fails with quota when the user is at their 5, even with an approval', async () => {
+  it('moves to the basic model with an approval when the best one is out, like a new import', async () => {
     const userId = await insertUser();
     await approve(userId);
-    await useUpBest(userId, 5);
-    const llm = answering(ANSWER);
-    await expect(run(await rerunJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
-    expect(llm).not.toHaveBeenCalled();
+    await markOut(BEST);
+    expect(await run(await rescanJob(userId), answering(ANSWER))).toMatchObject({ model: BASIC });
   });
 
-  it('never moves to the basic model when Google says the best one ran out', async () => {
+  it('asks for the approval when the best one is out', async () => {
     const userId = await insertUser();
-    await approve(userId);
-    const llm = answering(daily429());
-    await expect(run(await rerunJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
-    expect(modelsUsed(llm)).toEqual([BEST]);
-    expect(await usage(BASIC)).toBe(0);
+    await markOut(BEST);
+    await expect(run(await rescanJob(userId), answering(ANSWER))).rejects.toMatchObject({ code: 'model_approval_needed' });
   });
 });
 
@@ -584,11 +574,6 @@ describe('what the API reports and the checks before starting', () => {
     it('says quota when both are out', () => {
       expect(startRefusal(state({ bestAvailable: false, basicApproved: true }, { basicOpen: false }))).toBe('quota');
       expect(startRefusal(state({ bestAvailable: false, basicApproved: false }, { basicOpen: false }))).toBe('quota');
-    });
-
-    it('never offers the basic model to a re-run', () => {
-      expect(startRefusal(state({ bestAvailable: false, basicApproved: true }), { bestOnly: true })).toBe('quota');
-      expect(startRefusal(state({ bestAvailable: true }), { bestOnly: true })).toBeNull();
     });
 
     it('lets a retry through at the user’s cap when it already holds one of the 5', () => {
