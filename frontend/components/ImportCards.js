@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLanguage } from './Language';
-import { errorMessage } from '@/lib/i18n';
+import { errorMessage, stageMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './ImportCards.module.css';
 
@@ -89,8 +89,6 @@ export function useImports(enabled, onRecipeReady) {
   return { imports, models, backAt, refresh, addImport, dismissImport };
 }
 
-const stageText = (t, stage) => (stage === 'meta' ? t.importStageMeta : t.importStageExtract);
-
 function recipeNameIn(lang, recipeName) {
   return recipeName[lang] || recipeName[lang === 'en' ? 'he' : 'en'];
 }
@@ -112,7 +110,7 @@ function ImportCard({ item, backAt, busy, onDismiss, onRetry }) {
       <li className={`${styles.card} ${styles.running}`}>
         <div className={styles.body}>
           <p className={styles.title} dir="auto">{item.title || item.link}</p>
-          <p className={styles.text}>{stageText(t, item.stage)}</p>
+          <p className={styles.text}>{stageMessage(t, item.stage)}</p>
         </div>
       </li>
     );

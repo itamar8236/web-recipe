@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
-import { errorMessage, formatTime, pickLanguage, strings } from './i18n';
+import { errorMessage, formatTime, pickLanguage, stageMessage, strings } from './i18n';
 
 const content = (name, ingredients = [], steps = []) => ({ name, ingredients, steps });
 
@@ -237,10 +237,12 @@ describe('errorMessage', () => {
 
   it.each([
     ['link_invalid', "That doesn't look like a video link"],
-    ['link_unsupported', 'Only YouTube links for now'],
+    ['link_unsupported', 'Only YouTube, Facebook and Instagram links for now'],
     ['already_imported', 'You already have this recipe'],
     ['too_many_imports', 'Wait for current ones, or try tomorrow'],
-    ['video_unavailable', 'Video not found'],
+    ['video_unavailable', 'Video or post not found'],
+    ['login_required', 'This post needs a login. Only public posts can be imported.'],
+    ['source_blocked', "Couldn't reach the site. Try again later."],
     ['video_private', 'The video must be public'],
     ['video_too_long', 'Only short videos for now'],
     ['no_recipe', 'No recipe found, add it manually'],
@@ -271,6 +273,20 @@ describe('errorMessage', () => {
 
   it('still gives a sensible quota message when the time is not known', () => {
     expect(errorMessage(strings.en, { code: 'quota' })).toBe('Daily limit reached, try again later');
+  });
+});
+
+describe('stageMessage', () => {
+  it.each([
+    ['meta', 'Getting the video details...'],
+    ['video', 'Getting the video...'],
+    ['extract', 'Reading the recipe...'],
+    ['save', 'Reading the recipe...'],
+    ['a stage added later', 'Reading the recipe...'],
+  ])('says what is happening during %s', (stage, message) => {
+    expect(stageMessage(strings.en, stage)).toBe(message);
+    expect(stageMessage(strings.he, stage)).toBeTruthy();
+    expect(stageMessage(strings.he, stage)).not.toBe(message);
   });
 });
 

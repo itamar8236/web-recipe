@@ -84,7 +84,7 @@ export const strings = {
     locale: 'en',
     addFromVideo: 'Add a recipe from a video',
     videoLink: 'Video link',
-    videoLinkPlaceholder: 'Paste the link',
+    videoLinkPlaceholder: 'YouTube, Facebook or Instagram link',
     modelChoice: 'Model',
     modelBest: 'Best',
     modelBasic: 'Basic',
@@ -95,6 +95,7 @@ export const strings = {
     usingBasicModel: (time) => `The best model is used up for today: imports use the basic model until ${time}`,
     bestLeftToday: (n) => `Best-model uses left today: ${n}`,
     importStageMeta: 'Getting the video details...',
+    importStageVideo: 'Getting the video...',
     importStageExtract: 'Reading the recipe...',
     recipeReady: (name) => `Recipe ready: ${name}`,
     openRecipe: 'Open',
@@ -110,10 +111,12 @@ export const strings = {
     rescanShort: 'Scan again',
     confirmRescan: "Scan the video again? When it's done, the recipe's text is replaced, including your edits.",
     errLinkInvalid: "That doesn't look like a video link",
-    errLinkUnsupported: 'Only YouTube links for now',
+    errLinkUnsupported: 'Only YouTube, Facebook and Instagram links for now',
     errAlreadyImported: 'You already have this recipe',
     errTooManyImports: 'Wait for current ones, or try tomorrow',
-    errVideoUnavailable: 'Video not found',
+    errVideoUnavailable: 'Video or post not found',
+    errLoginRequired: 'This post needs a login. Only public posts can be imported.',
+    errSourceBlocked: "Couldn't reach the site. Try again later.",
     errVideoPrivate: 'The video must be public',
     errVideoTooLong: 'Only short videos for now',
     errNoRecipe: 'No recipe found, add it manually',
@@ -213,7 +216,7 @@ export const strings = {
     locale: 'he',
     addFromVideo: 'הוספת מתכון מסרטון',
     videoLink: 'קישור לסרטון',
-    videoLinkPlaceholder: 'הדביקו את הקישור',
+    videoLinkPlaceholder: 'קישור מיוטיוב, פייסבוק או אינסטגרם',
     modelChoice: 'מודל',
     modelBest: 'הטוב',
     modelBasic: 'הבסיסי',
@@ -224,6 +227,7 @@ export const strings = {
     usingBasicModel: (time) => `המודל הטוב נוצל להיום: ייבואים משתמשים במודל הבסיסי עד ${time}`,
     bestLeftToday: (n) => `שימושים שנותרו היום במודל הטוב: ${n}`,
     importStageMeta: 'מביאים את פרטי הסרטון...',
+    importStageVideo: 'מביאים את הסרטון...',
     importStageExtract: 'קוראים את המתכון...',
     recipeReady: (name) => `המתכון מוכן: ${name}`,
     openRecipe: 'פתיחה',
@@ -239,10 +243,12 @@ export const strings = {
     rescanShort: 'סריקה מחדש',
     confirmRescan: 'לסרוק את הסרטון מחדש? בסיום, הטקסט של המתכון יוחלף, כולל השינויים שלכם.',
     errLinkInvalid: 'זה לא נראה כמו קישור לסרטון',
-    errLinkUnsupported: 'בינתיים רק קישורים מיוטיוב',
+    errLinkUnsupported: 'בינתיים רק קישורים מיוטיוב, פייסבוק ואינסטגרם',
     errAlreadyImported: 'המתכון הזה כבר אצלכם',
     errTooManyImports: 'המתינו לסיום הייבואים הנוכחיים, או נסו מחר',
-    errVideoUnavailable: 'הסרטון לא נמצא',
+    errVideoUnavailable: 'הסרטון או הפוסט לא נמצאו',
+    errLoginRequired: 'הפוסט הזה דורש התחברות. אפשר לייבא רק פוסטים ציבוריים.',
+    errSourceBlocked: 'לא הצלחנו להגיע לאתר. נסו שוב מאוחר יותר.',
     errVideoPrivate: 'הסרטון חייב להיות ציבורי',
     errVideoTooLong: 'בינתיים רק סרטונים קצרים',
     errNoRecipe: 'לא נמצא מתכון, אפשר להוסיף אותו ידנית',
@@ -267,6 +273,14 @@ export function formatTime(t, ms) {
   return new Date(ms).toLocaleTimeString(t.locale, { hour: '2-digit', minute: '2-digit' });
 }
 
+// What a running import's card says for each backend stage. Reading the recipe covers
+// every stage after the video is in hand.
+export function stageMessage(t, stage) {
+  if (stage === 'meta') return t.importStageMeta;
+  if (stage === 'video') return t.importStageVideo;
+  return t.importStageExtract;
+}
+
 // Maps a backend error code to a message in the current language. `nameRequired` is the
 // message for a missing name, which depends on what is being named. `error.retryAt` is
 // when a quota failure can be tried again.
@@ -288,6 +302,8 @@ export function errorMessage(t, error, nameRequired = t.nameRequired) {
     already_imported: t.errAlreadyImported,
     too_many_imports: t.errTooManyImports,
     video_unavailable: t.errVideoUnavailable,
+    login_required: t.errLoginRequired,
+    source_blocked: t.errSourceBlocked,
     video_private: t.errVideoPrivate,
     video_too_long: t.errVideoTooLong,
     no_recipe: t.errNoRecipe,
