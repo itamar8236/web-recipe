@@ -1,6 +1,8 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { facebook } from '../src/import/sources/facebook.js';
 import { detectSource, readLink, SOURCES } from '../src/import/sources/index.js';
+import { instagram } from '../src/import/sources/instagram.js';
 import { youtube } from '../src/import/sources/youtube.js';
 import { nextQuotaReset, quotaDay } from '../src/import/models.js';
 import worker from '../src/index.js';
@@ -61,9 +63,6 @@ describe('link detection', () => {
   });
 
   it.each([
-    ['Facebook', 'https://www.facebook.com/watch/?v=1234567890'],
-    ['Facebook short', 'https://fb.watch/abcdefg/'],
-    ['Instagram', 'https://www.instagram.com/reel/Cabcdefghij/'],
     ['TikTok', 'https://www.tiktok.com/@cook/video/1234567890123456789'],
     ['an unknown site', 'https://example.com/recipe'],
     ['a lookalike host', `https://youtube.com.evil.example/watch?v=${ID}`],
@@ -74,28 +73,12 @@ describe('link detection', () => {
     expect(readLink(text)).toEqual({ error: 'link_unsupported' });
   });
 
-  it('has YouTube as the only source for now, found through detectSource', () => {
-    expect(SOURCES).toEqual([youtube]);
+  it('has three sources, each found through detectSource by its own hosts', () => {
+    expect(SOURCES).toEqual([youtube, facebook, instagram]);
     expect(detectSource(new URL(CANONICAL))).toBe(youtube);
+    expect(detectSource(new URL('https://m.facebook.com/reel/1234567890'))).toBe(facebook);
+    expect(detectSource(new URL('https://instagr.am/p/Cabcdefghij/'))).toBe(instagram);
     expect(detectSource(new URL('https://example.com/'))).toBeUndefined();
-  });
-});
-
-describe('video length', () => {
-  it.each([
-    ['PT3M', 180],
-    ['PT12M3S', 723],
-    ['PT59S', 59],
-    ['PT1H2M3S', 3723],
-    ['P1DT1S', 86401],
-    ['P1W', 604800],
-    ['P0D', 0],
-  ])('reads %s as %i seconds', (duration, seconds) => {
-    expect(youtube.durationSeconds(duration)).toBe(seconds);
-  });
-
-  it.each(['', '3 minutes', 'T3M'])('reads %j as unknown', (duration) => {
-    expect(youtube.durationSeconds(duration)).toBeNull();
   });
 });
 
@@ -291,8 +274,8 @@ describe('import endpoints', () => {
       ['playlist', 'https://www.youtube.com/playlist?list=PL123', 'link_invalid'],
       ['bad id', 'https://youtu.be/abc', 'link_invalid'],
       ['plain text', 'not a link', 'link_invalid'],
-      ['Facebook', 'https://www.facebook.com/watch/?v=123', 'link_unsupported'],
-      ['Instagram', 'https://www.instagram.com/reel/abc/', 'link_unsupported'],
+      ['a Facebook profile', 'https://www.facebook.com/somecook', 'link_invalid'],
+      ['an Instagram profile', 'https://www.instagram.com/somecook/', 'link_invalid'],
       ['TikTok', 'https://www.tiktok.com/@a/video/1', 'link_unsupported'],
       ['an unknown site', 'https://example.com/recipe', 'link_unsupported'],
       ['a lookalike host', `https://youtube.com.evil.example/watch?v=${ID}`, 'link_unsupported'],

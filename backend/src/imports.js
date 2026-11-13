@@ -13,8 +13,17 @@ const STUCK_AFTER_MS = 30 * 60 * 1000;
 
 // A Retry can only help with these: the rest depend on the video itself.
 // model_approval_needed is only on rows from before the basic model stopped needing an
-// approval; a Retry now just runs them.
-const RETRYABLE_ERRORS = new Set(['llm_error', 'bad_result', 'model_approval_needed', 'quota', 'timed_out']);
+// approval; a Retry now just runs them. A site that blocked the request or asked for a
+// login may answer differently later, and trying again costs no model request.
+const RETRYABLE_ERRORS = new Set([
+  'llm_error',
+  'bad_result',
+  'model_approval_needed',
+  'quota',
+  'timed_out',
+  'source_blocked',
+  'login_required',
+]);
 
 const isUniqueViolation = (error) => String(error.message).includes('UNIQUE');
 

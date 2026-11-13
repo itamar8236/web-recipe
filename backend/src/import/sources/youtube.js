@@ -6,6 +6,8 @@ const HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const VIDEOS_API = 'https://www.googleapis.com/youtube/v3/videos';
 
+const watchUrl = (id) => `https://www.youtube.com/watch?v=${id}`;
+
 function videoIdFrom(url) {
   const parts = url.pathname.split('/').filter(Boolean);
   if (url.hostname === 'youtu.be') return parts.length === 1 ? parts[0] : null;
@@ -22,7 +24,7 @@ function durationSeconds(duration) {
   return weeks * 604800 + days * 86400 + hours * 3600 + minutes * 60 + seconds;
 }
 
-async function fetchMeta(sourceId, env) {
+async function fetchPost(sourceId, env) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
   if (!env.YOUTUBE_API_KEY) throw new ImportError('llm_error');
 
@@ -38,11 +40,20 @@ async function fetchMeta(sourceId, env) {
 
   const video = (await response.json()).items?.[0];
   if (!video) throw new ImportError('video_unavailable');
+  const sourceUrl = watchUrl(sourceId);
   return {
+    sourceId,
+    sourceUrl,
     title: video.snippet?.title ?? '',
-    description: video.snippet?.description ?? '',
-    duration: video.contentDetails?.duration ?? '',
-    privacyStatus: video.status?.privacyStatus ?? '',
+    text: video.snippet?.description ?? '',
+    transcript: '',
+    video: {
+      // A live stream has no length yet (0), which counts as unknown.
+      seconds: durationSeconds(video.contentDetails?.duration) || null,
+      isPublic: video.status?.privacyStatus === 'public',
+      // The model reads a YouTube video from its link, so there is no file to hand over.
+      uri: sourceUrl,
+    },
   };
 }
 
@@ -52,8 +63,7 @@ export const youtube = {
   // The stored link is rebuilt from the id, so nothing else in the pasted text is kept.
   parse(url) {
     const id = videoIdFrom(url);
-    return id && VIDEO_ID.test(id) ? { sourceId: id, sourceUrl: `https://www.youtube.com/watch?v=${id}` } : null;
+    return id && VIDEO_ID.test(id) ? { sourceId: id, sourceUrl: watchUrl(id) } : null;
   },
-  fetchMeta,
-  durationSeconds,
+  fetchPost,
 };
