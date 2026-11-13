@@ -27,12 +27,15 @@
     { "name": "recipe-import", "binding": "IMPORT_WORKFLOW", "class_name": "ImportWorkflow" }
   ],
   // Model names and limits are settings, so changing them needs no code change.
-  // GEMINI_API_KEY and YOUTUBE_API_KEY are Worker secrets, never set here.
+  // GEMINI_API_KEY, YOUTUBE_API_KEY and GROQ_API_KEY are Worker secrets, never set here.
+  // The fallback model (Groq, text only) stays unused until GROQ_API_KEY exists.
   "vars": {
     "LLM_BEST_MODEL": "gemini-3.8-flash",
     "LLM_BASIC_MODEL": "gemini-3.5-flash-lite",
     "LLM_BEST_DAILY_LIMIT": 20,
     "LLM_BASIC_DAILY_LIMIT": 500,
+    "LLM_FALLBACK_MODEL": "openai/gpt-oss-120b",
+    "LLM_FALLBACK_DAILY_LIMIT": 200,
     "IMPORT_MAX_VIDEO_MINUTES": 3,
     "IMPORT_MAX_VIDEO_MB": 100,
     "IMPORT_MAX_RUNNING": 3,
@@ -51,6 +54,8 @@
       "LLM_BASIC_MODEL": "gemini-3.5-flash-lite",
       "LLM_BEST_DAILY_LIMIT": 20,
       "LLM_BASIC_DAILY_LIMIT": 500,
+      "LLM_FALLBACK_MODEL": "openai/gpt-oss-120b",
+      "LLM_FALLBACK_DAILY_LIMIT": 200,
       "IMPORT_MAX_VIDEO_MINUTES": 3,
       "IMPORT_MAX_VIDEO_MB": 100,
       "IMPORT_MAX_RUNNING": 3,

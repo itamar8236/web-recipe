@@ -3,6 +3,7 @@
 // user's daily best-model uses.
 
 import { ImportError } from './errors.js';
+import { callFallbackModel } from './groq.js';
 import { ModelBusyError, QuotaError } from './llm.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -10,6 +11,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const limits = (env) => ({
   bestDaily: Number(env.LLM_BEST_DAILY_LIMIT),
   basicDaily: Number(env.LLM_BASIC_DAILY_LIMIT),
+  fallbackDaily: Number(env.LLM_FALLBACK_DAILY_LIMIT),
   bestPerUser: Number(env.IMPORT_BEST_DAILY_PER_USER),
 });
 
@@ -211,11 +213,38 @@ async function callBest(job, deps, request) {
   return result;
 }
 
-async function callBasic(env, llm, request) {
+// The fallback model, from another provider, for when the basic one is busy or out. It
+// reads text only, so a request with a video never reaches it, and it is off until its key
+// is set (GROQ_API_KEY). Returns null when it can't answer either.
+async function callFallback({ env, fallbackLlm = callFallbackModel }, request) {
+  const model = env.LLM_FALLBACK_MODEL;
+  if (!model || !env.GROQ_API_KEY || request.videoUrl) return null;
+  try {
+    const fallback = await callUnlessOut({ env, llm: fallbackLlm, model, limit: limits(env).fallbackDaily, request });
+    return fallback.out ? null : { output: fallback.output, model };
+  } catch (error) {
+    if (error instanceof ModelBusyError) return null;
+    throw error;
+  }
+}
+
+// Calls the basic model, and the fallback model when the basic one is busy or out. When
+// neither answers, a busy basic model is reported as busy (the Workflow waits and tries
+// again) and a used-up one as quota.
+async function callBasic(deps, request) {
+  const { env, llm } = deps;
   const model = env.LLM_BASIC_MODEL;
-  const basic = await callUnlessOut({ env, llm, model, limit: limits(env).basicDaily, request });
-  if (basic.out) throw new ImportError('quota');
-  return { output: basic.output, model };
+  let busy = null;
+  try {
+    const basic = await callUnlessOut({ env, llm, model, limit: limits(env).basicDaily, request });
+    if (!basic.out) return { output: basic.output, model };
+  } catch (error) {
+    if (!(error instanceof ModelBusyError)) throw error;
+    busy = error;
+  }
+  const fallback = await callFallback(deps, request);
+  if (fallback) return fallback;
+  throw busy ?? new ImportError('quota');
 }
 
 // How many Workflow waits a busy best model gets before the import moves to the basic one.
@@ -227,7 +256,7 @@ const BEST_BUSY_RETRIES = 1;
 // with no approval asked (the user has used their 5, the shared limit is reached, or the
 // best one stayed busy). Returns { output, model }. Throws ImportError quota when no model
 // can run, and ModelBusyError for the Workflow to wait and try again. `deps.busyWaits` is
-// how many busy waits this stage has had.
+// how many busy waits this stage has had. `deps.fallbackLlm` is swapped in tests.
 export async function callChosenModel(job, deps, request) {
   const { env, llm, busyWaits = 0 } = deps;
   // Reaching more waits than that means the best model was busy on its retry too.
@@ -241,7 +270,7 @@ export async function callChosenModel(job, deps, request) {
       // Still busy after its retry: the basic model is used.
     }
   }
-  return callBasic(env, llm, request);
+  return callBasic(deps, request);
 }
 
 // A translation's request, for the row `job` (purpose 'translation'). The user waits for
@@ -259,5 +288,5 @@ export async function callTranslationModel(job, deps, request, choice) {
       if (!(error instanceof ModelBusyError)) throw error;
     }
   }
-  return callBasic(env, llm, request);
+  return callBasic(deps, request);
 }
