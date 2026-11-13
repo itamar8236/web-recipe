@@ -18,7 +18,6 @@ export default function ImportDialog({ models, backAt, manualHref, onClose, onSt
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [askingApproval, setAskingApproval] = useState(false);
   const [model, setModel] = useState('best');
 
   useEffect(() => {
@@ -35,26 +34,25 @@ export default function ImportDialog({ models, backAt, manualHref, onClose, onSt
     if (!busy) onClose();
   }
 
-  async function start(useBasicModel) {
+  async function start() {
     setBusy(true);
     setError('');
-    setAskingApproval(false);
     try {
-      onStarted(await api.startImport(url, useBasicModel, model));
+      onStarted(await api.startImport(url, model));
     } catch (err) {
-      if (err.code === 'model_approval_needed') setAskingApproval(true);
-      else setError(errorMessage(t, { code: err.code, retryAt: backAt }));
-      if (err.code === 'model_approval_needed' || err.code === 'quota') onModelsStale();
+      setError(errorMessage(t, { code: err.code, retryAt: backAt }));
+      if (err.code === 'quota') onModelsStale();
       setBusy(false);
     }
   }
 
   function submit(event) {
     event.preventDefault();
-    if (url.trim()) start(false);
+    if (url.trim()) start();
   }
 
-  const onBasicModel = models?.basicApproved && !models.bestAvailable;
+  // Nobody is asked: when the best model can't be used, the basic one is used by itself.
+  const onBasicModel = model === 'best' && models && !models.bestAvailable;
 
   return (
     <dialog
@@ -118,24 +116,14 @@ export default function ImportDialog({ models, backAt, manualHref, onClose, onSt
           {models && <p className="hint">{t.bestLeftToday(Math.min(models.bestLeftForUser, models.bestLeftToday))}</p>}
           {onBasicModel && <p className="hint">{t.usingBasicModel(formatTime(t, backAt))}</p>}
 
-          {askingApproval ? (
-            <div className={styles.approval} role="alert">
-              <p>{t.approvalNeeded(formatTime(t, backAt))}</p>
-              <div className={styles.actions}>
-                <button type="button" className="button" onClick={() => start(true)}>{t.useBasicModel}</button>
-                <button type="button" className="button secondary" onClick={() => setAskingApproval(false)}>{t.notNow}</button>
-              </div>
-            </div>
-          ) : (
-            <div className={styles.actions}>
-              <button type="submit" className="button" disabled={busy || !url.trim()}>
-                {busy ? t.importStarting : t.importButton}
-              </button>
-              <button type="button" className="button secondary" disabled={busy} onClick={writeManually}>
-                {t.writeManually}
-              </button>
-            </div>
-          )}
+          <div className={styles.actions}>
+            <button type="submit" className="button" disabled={busy || !url.trim()}>
+              {busy ? t.importStarting : t.importButton}
+            </button>
+            <button type="button" className="button secondary" disabled={busy} onClick={writeManually}>
+              {t.writeManually}
+            </button>
+          </div>
         </form>
       </div>
     </dialog>

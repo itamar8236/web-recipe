@@ -13,11 +13,16 @@ const today = () => quotaDay(Date.now());
 const SOURCE = { name: 'Tea', ingredients: ['1 cup water', 'Tea leaves'], steps: ['Boil the water', 'Steep 3 minutes'] };
 const HEBREW = { name: 'תה', ingredients: ['כוס מים', 'עלי תה'], steps: ['מרתיחים את המים', 'משרים 3 דקות'] };
 
-const answering = (result) =>
-  vi.fn(async () => {
-    if (result instanceof Error) throw result;
-    return result;
+// Answers each call with the next result; the last one repeats.
+const answering = (...results) => {
+  const queue = [...results];
+  return vi.fn(async () => {
+    const next = queue.length > 1 ? queue.shift() : queue[0];
+    if (next instanceof Error) throw next;
+    return next;
   });
+};
+const modelsUsed = (llm) => llm.mock.calls.map(([args]) => args.model);
 
 const translate = async (body, llm, userId) =>
   handleTranslate(
@@ -27,17 +32,20 @@ const translate = async (body, llm, userId) =>
     userId ?? (await insertUser()),
     llm,
   );
-const bestUses = async (userId) =>
-  (await env.DB.prepare('SELECT uses FROM translation_best_uses WHERE user_id = ? AND day = ?').bind(userId, today()).first())?.uses ?? 0;
+const translationRows = async () =>
+  (await env.DB.prepare(`SELECT * FROM imports WHERE purpose = 'translation' ORDER BY id`).all()).results;
 const useUpBestImports = async (userId, count) => {
   for (let i = 0; i < count; i++) {
     await insertImport(userId, { source_id: `video${String(i).padStart(6, '0')}`, status: 'done', used_best: 1, quota_day: today() });
   }
 };
+const insertRecipe = async (userId) =>
+  (await env.DB.prepare(`INSERT INTO recipes (user_id, name_en) VALUES (?, 'Tea') RETURNING id`).bind(userId).first()).id;
 const usage = async (model) =>
   (await env.DB.prepare('SELECT calls FROM llm_usage WHERE day = ? AND model = ?').bind(today(), model).first())?.calls ?? 0;
+// A model Google said is out for the day: its count is at its limit.
 const markOut = (model) =>
-  env.DB.prepare('INSERT INTO llm_model_status (model, unavailable_until) VALUES (?, ?)').bind(model, Date.now() + 3600000).run();
+  env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(today(), model, model === BEST ? 20 : 500).run();
 
 describe('POST /api/translate', () => {
   it('needs a session', async () => {
@@ -50,23 +58,45 @@ describe('POST /api/translate', () => {
     expect((await call('/api/translate', { cookie })).status).toBe(405);
   });
 
-  it('translates to the other language on the basic model by default, and stores nothing', async () => {
+  it('translates on the basic model by default, records the request, and stores no recipe text', async () => {
+    const userId = await insertUser();
     const llm = answering(HEBREW);
-    const response = await translate({ from: 'en', content: SOURCE }, llm);
+    const response = await translate({ from: 'en', content: SOURCE }, llm, userId);
     expect(response.status).toBe(200);
-    expect((await response.json()).content).toEqual(HEBREW);
+    expect(await response.json()).toEqual({ content: HEBREW, model: 'basic' });
     const [args] = llm.mock.calls[0];
     expect(args).toMatchObject({ model: BASIC, logPrompt: false });
     expect(args.prompt).toContain('from English to Hebrew');
     expect(args.prompt).toContain('Steep 3 minutes');
     expect(await usage(BASIC)).toBe(1);
     expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM recipes').first()).n).toBe(0);
+    const [row] = await translationRows();
+    expect(row).toMatchObject({ user_id: userId, status: 'done', used_best: 0, recipe_id: null, source_url: null, quota_day: today() });
+    expect(JSON.parse(row.state)).toEqual({ model: BASIC });
+    expect(row.state).not.toContain('Tea');
+  });
+
+  it('links the request to the recipe being edited', async () => {
+    const userId = await insertUser();
+    const recipeId = await insertRecipe(userId);
+    expect((await translate({ from: 'en', content: SOURCE, recipeId }, answering(HEBREW), userId)).status).toBe(200);
+    expect((await translationRows())[0].recipe_id).toBe(recipeId);
+  });
+
+  it('answers 404 for another user’s recipe, calling nothing', async () => {
+    const recipeId = await insertRecipe(await insertUser('dana'));
+    const llm = answering(HEBREW);
+    const response = await translate({ from: 'en', content: SOURCE, recipeId }, llm, await insertUser('noa'));
+    expect(response.status).toBe(404);
+    expect(llm).not.toHaveBeenCalled();
+    expect(await translationRows()).toEqual([]);
   });
 
   it('uses the best model when picked, and translates Hebrew to English', async () => {
     const llm = answering(SOURCE);
-    expect((await translate({ from: 'he', content: HEBREW, model: 'best' }, llm)).status).toBe(200);
-    expect(llm.mock.calls[0][0].model).toBe(BEST);
+    const response = await translate({ from: 'he', content: HEBREW, model: 'best' }, llm);
+    expect((await response.json()).model).toBe('best');
+    expect(modelsUsed(llm)).toEqual([BEST]);
     expect(llm.mock.calls[0][0].prompt).toContain('from Hebrew to English');
   });
 
@@ -75,42 +105,48 @@ describe('POST /api/translate', () => {
       const userId = await insertUser();
       await useUpBestImports(userId, 3);
       await translate({ from: 'en', content: SOURCE, model: 'best' }, answering(HEBREW), userId);
-      expect(await bestUses(userId)).toBe(1);
+      expect((await translationRows())[0].used_best).toBe(1);
       expect((await readModelState(env, userId)).models.bestLeftForUser).toBe(1);
     });
 
     it('a basic-model translation takes none', async () => {
       const userId = await insertUser();
       await translate({ from: 'en', content: SOURCE }, answering(HEBREW), userId);
-      expect(await bestUses(userId)).toBe(0);
+      expect((await readModelState(env, userId)).models.bestLeftForUser).toBe(5);
     });
 
-    it('answers best_model_unavailable at 5, counting imports and translations, without calling the model', async () => {
+    it('at 5, a best-model translation is answered by the basic model, asking nothing', async () => {
       const userId = await insertUser();
-      await useUpBestImports(userId, 4);
-      expect((await translate({ from: 'en', content: SOURCE, model: 'best' }, answering(HEBREW), userId)).status).toBe(200);
+      await useUpBestImports(userId, 5);
       const llm = answering(HEBREW);
       const response = await translate({ from: 'en', content: SOURCE, model: 'best' }, llm, userId);
-      expect(response.status).toBe(429);
-      expect((await response.json()).error).toBe('best_model_unavailable');
-      expect(llm).not.toHaveBeenCalled();
-      expect(await bestUses(userId)).toBe(1);
-      expect((await readModelState(env, userId)).models.bestAvailable).toBe(false);
+      expect(await response.json()).toEqual({ content: HEBREW, model: 'basic' });
+      expect(modelsUsed(llm)).toEqual([BASIC]);
+      expect((await translationRows())[0].used_best).toBe(0);
     });
 
-    it('gives the use back when the model is busy or nothing was sent', async () => {
+    it('a busy best model: the basic one answers at once, and the try still counts', async () => {
       const userId = await insertUser();
-      await translate({ from: 'en', content: SOURCE, model: 'best' }, answering(new ModelBusyError('busy')), userId);
-      expect(await bestUses(userId)).toBe(0);
+      const llm = answering(new ModelBusyError('busy'), HEBREW);
+      const response = await translate({ from: 'en', content: SOURCE, model: 'best' }, llm, userId);
+      expect((await response.json()).model).toBe('basic');
+      expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
+      expect((await translationRows())[0].used_best).toBe(1);
+    });
+
+    it('takes no use when nothing reached the best model', async () => {
+      const userId = await insertUser();
       await markOut(BEST);
-      await translate({ from: 'en', content: SOURCE, model: 'best' }, answering(HEBREW), userId);
-      expect(await bestUses(userId)).toBe(0);
+      const llm = answering(HEBREW);
+      expect((await (await translate({ from: 'en', content: SOURCE, model: 'best' }, llm, userId)).json()).model).toBe('basic');
+      expect(modelsUsed(llm)).toEqual([BASIC]);
+      expect((await translationRows())[0].used_best).toBe(0);
     });
 
     it('keeps the use when Google answered, even with a bad result', async () => {
       const userId = await insertUser();
       await translate({ from: 'en', content: SOURCE, model: 'best' }, answering({ text: 'hi' }), userId);
-      expect(await bestUses(userId)).toBe(1);
+      expect((await translationRows())[0]).toMatchObject({ used_best: 1, status: 'failed', error: 'bad_result' });
     });
   });
 
@@ -121,12 +157,14 @@ describe('POST /api/translate', () => {
     ['an unknown model', { from: 'en', content: SOURCE, model: 'great' }],
     ['no content', { from: 'en' }],
     ['lines that are not text', { from: 'en', content: { name: 'Tea', ingredients: [1], steps: [] } }],
-  ])('answers 400 invalid_request for %s', async (_, body) => {
+    ['a recipe id that is not a number', { from: 'en', content: SOURCE, recipeId: '5' }],
+  ])('answers 400 invalid_request for %s, recording nothing', async (_, body) => {
     const llm = answering(HEBREW);
     const response = await translate(body, llm);
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe('invalid_request');
     expect(llm).not.toHaveBeenCalled();
+    expect(await translationRows()).toEqual([]);
   });
 
   it('answers 400 nothing_to_translate for an empty recipe', async () => {
@@ -146,11 +184,12 @@ describe('POST /api/translate', () => {
     expect((await response.json()).error).toBe('bad_result');
   });
 
-  it('answers 503 model_busy and gives the request back when the model is busy', async () => {
+  it('answers 503 model_busy and gives the request back when the basic model is busy', async () => {
     const response = await translate({ from: 'en', content: SOURCE }, answering(new ModelBusyError('busy')));
     expect(response.status).toBe(503);
     expect((await response.json()).error).toBe('model_busy');
     expect(await usage(BASIC)).toBe(0);
+    expect((await translationRows())[0]).toMatchObject({ status: 'failed', error: 'model_busy' });
   });
 
   it('answers 502 llm_error for another failure', async () => {
@@ -159,19 +198,13 @@ describe('POST /api/translate', () => {
     expect((await response.json()).error).toBe('llm_error');
   });
 
-  it('answers 429 best_model_unavailable when the best model is out, without calling it', async () => {
+  it('answers 429 quota when no model can run', async () => {
     await markOut(BEST);
+    await markOut(BASIC);
     const llm = answering(HEBREW);
     const response = await translate({ from: 'en', content: SOURCE, model: 'best' }, llm);
     expect(response.status).toBe(429);
-    expect((await response.json()).error).toBe('best_model_unavailable');
-    expect(llm).not.toHaveBeenCalled();
-  });
-
-  it('answers 429 quota when the basic model is out', async () => {
-    await markOut(BASIC);
-    const response = await translate({ from: 'en', content: SOURCE }, answering(HEBREW));
-    expect(response.status).toBe(429);
     expect((await response.json()).error).toBe('quota');
+    expect(llm).not.toHaveBeenCalled();
   });
 });

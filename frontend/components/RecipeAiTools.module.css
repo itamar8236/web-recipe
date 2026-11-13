@@ -44,12 +44,3 @@
   flex-wrap: wrap;
   gap: 10px;
 }
-
-.approval {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-}

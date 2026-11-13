@@ -47,11 +47,12 @@ resolved. One short line each, linking to the README section with the details.
   The user can edit or delete it afterwards. Supported now: **YouTube** only, and only
   short videos are sent to the LLM (a longer one still works when its description holds
   the recipe). Other platforms may come later; don't build for them until asked.
-- An import uses the **best model**, up to 5 a day per user (best-model translations count
-  toward the same 5). When it runs out, the user
-  is told and can **approve the basic model** until the quota resets, after which the app
-  returns to the best model by itself. If the best model is still **busy** after one short
-  retry, the import switches to the basic model by itself, with no approval.
+- An import uses the **best model**, up to 5 a day per user. Every try that calls the best
+  model counts toward the 5 (each import, Retry, re-scan and best-model translation), even
+  one that ends up on the basic model. After the 5, or when the best model is out for the
+  day, the **basic model is used by itself**, with no question, until the quota resets.
+  If the best model is still **busy** after one short retry, the import switches to the
+  basic model by itself too.
 - The **edit form** holds the AI tools, each with its own Best/Basic choice: **translate**
   the language being written into the other one (Basic by default; any recipe, manual ones
   too; nothing is saved until Save), and, for an imported recipe, **scan its video again**

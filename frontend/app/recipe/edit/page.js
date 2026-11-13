@@ -173,6 +173,7 @@ function RecipeForm() {
           from={lang}
           content={toContent(current)}
           otherHasText={Boolean(form[other].name.trim() || form[other].ingredients.trim() || form[other].steps.trim())}
+          recipeId={id}
           rescanId={id !== null && link ? id : null}
           onTranslated={(content) => setForm((latest) => ({ ...latest, [other]: toText(content) }))}
           onBusyChange={setAiBusy}

@@ -290,7 +290,6 @@ describe('strings', () => {
     for (const lang of ['en', 'he']) {
       expect(strings[lang].recipeReady('X')).toContain('X');
       expect(strings[lang].usingBasicModel('10:00')).toContain('10:00');
-      expect(strings[lang].approvalNeeded('10:00')).toContain('10:00');
       expect(strings[lang].bestLeftToday(4)).toContain('4');
     }
   });
@@ -352,26 +351,18 @@ describe('logged in: imports', () => {
     expect(lastCall()).toEqual({ path: '/api/imports', method: 'POST', body: { url: 'https://youtu.be/x' } });
   });
 
-  it('adds the approval only when the user gave it', async () => {
-    mockFetch(202, { import: card });
-    await api.startImport('https://youtu.be/x', true);
-    expect(lastCall().body).toEqual({ url: 'https://youtu.be/x', useBasicModel: true });
-  });
-
   it('sends the model only when the user picked the basic one', async () => {
     mockFetch(202, { import: card });
-    await api.startImport('https://youtu.be/x', false, 'basic');
+    await api.startImport('https://youtu.be/x', 'basic');
     expect(lastCall().body).toEqual({ url: 'https://youtu.be/x', model: 'basic' });
-    await api.startImport('https://youtu.be/x', false, 'best');
+    await api.startImport('https://youtu.be/x', 'best');
     expect(lastCall().body).toEqual({ url: 'https://youtu.be/x' });
   });
 
-  it('retries, with or without the approval', async () => {
+  it('retries and returns the new card', async () => {
     mockFetch(202, { import: card });
-    await api.retryImport(5);
-    expect(lastCall()).toEqual({ path: '/api/imports/5/retry', method: 'POST', body: {} });
-    await api.retryImport(5, true);
-    expect(lastCall().body).toEqual({ useBasicModel: true });
+    expect(await api.retryImport(4)).toEqual(card);
+    expect(lastCall()).toEqual({ path: '/api/imports/4/retry', method: 'POST', body: {} });
   });
 
   it('dismisses with DELETE', async () => {
@@ -380,26 +371,29 @@ describe('logged in: imports', () => {
     expect(lastCall()).toMatchObject({ path: '/api/imports/5', method: 'DELETE' });
   });
 
-  it('scans a recipe again, with the model and approval only when given', async () => {
+  it('scans a recipe again, sending the model only when it is the basic one', async () => {
     mockFetch(202, { import: card });
     expect(await api.rerunRecipe(7)).toEqual(card);
     expect(lastCall()).toEqual({ path: '/api/recipes/7/rerun', method: 'POST', body: {} });
-    await api.rerunRecipe(7, true, 'basic');
-    expect(lastCall().body).toEqual({ useBasicModel: true, model: 'basic' });
+    await api.rerunRecipe(7, 'basic');
+    expect(lastCall().body).toEqual({ model: 'basic' });
   });
 
   it('translates one language and returns only the text', async () => {
     const content = { name: 'Tea', ingredients: ['Water'], steps: ['Boil'] };
-    mockFetch(200, { content: { name: 'תה', ingredients: ['מים'], steps: ['מרתיחים'] } });
-    expect(await api.translateRecipe('en', content, 'best')).toEqual({ name: 'תה', ingredients: ['מים'], steps: ['מרתיחים'] });
+    const hebrew = { name: 'תה', ingredients: ['מים'], steps: ['מרתיחים'] };
+    mockFetch(200, { content: hebrew, model: 'basic' });
+    expect(await api.translateRecipe('en', content, 'best')).toEqual({ content: hebrew, model: 'basic' });
     expect(lastCall()).toEqual({ path: '/api/translate', method: 'POST', body: { from: 'en', content, model: 'best' } });
+    await api.translateRecipe('en', content, 'basic', 12);
+    expect(lastCall().body).toEqual({ from: 'en', content, model: 'basic', recipeId: 12 });
   });
 
   it('passes on the backend error codes', async () => {
     mockFetch(400, { error: 'link_unsupported' });
     await expect(api.startImport('https://example.com')).rejects.toMatchObject({ code: 'link_unsupported' });
-    mockFetch(409, { error: 'model_approval_needed' });
-    await expect(api.startImport('https://youtu.be/x')).rejects.toMatchObject({ code: 'model_approval_needed' });
+    mockFetch(429, { error: 'quota' });
+    await expect(api.startImport('https://youtu.be/x')).rejects.toMatchObject({ code: 'quota' });
   });
 
   it('reports a lost session while polling, so the login screen comes back', async () => {
