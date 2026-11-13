@@ -1,6 +1,5 @@
 // Which site a pasted link belongs to. The client only ever sends the link, so this is
 // the one place that decides. A new platform is one more adapter in SOURCES.
-
 //
 // Every adapter has the same shape:
 //   platform           the name stored on the import and on the recipe

@@ -65,7 +65,11 @@ function buildPrompt({ description, subtitles }, hasVideo) {
   return parts.join('\n\n');
 }
 
-const longEnough = (text) => (text.trim().length >= MIN_TEXT_LENGTH ? text.trim() : null);
+// The text comes from a stranger's post. Its own copies of the tags that mark it as data
+// are taken out, so it can't end its block early and pose as instructions.
+const withoutDataTags = (text) => text.replace(/<\/?\s*(description|subtitles)\s*>/gi, ' ');
+
+const longEnough = (text) => (text.trim().length >= MIN_TEXT_LENGTH ? withoutDataTags(text.trim()) : null);
 
 // Works out from the post's details, with no LLM call, what can be sent. `blockedBy` is
 // the code to fail with if the video can't be sent and the text isn't enough; it stays
@@ -143,22 +147,25 @@ async function fetchMeta(job, { env, source }) {
 // Hands the video to the model's file store, for a source whose videos the model can't
 // read from a link. The bytes are streamed from the site to the store, never held here.
 // If that can't be done and the text may be enough, the import goes on without the video
-// and remembers why (videoSkipped).
-async function uploadVideo(job, deps) {
+// and remembers why (videoSkipped). A failure that may pass (a server error, the network)
+// is thrown instead, so the Workflow tries the stage again before the video is given up.
+async function handOverVideo(job, deps) {
   const { env, source, files } = deps;
   const { needsUpload, text } = whatCanBeSent(job, deps);
   if (!needsUpload) return {};
+  let download;
   try {
-    const download = await source.openVideo(job.state.meta.video);
+    download = await source.openVideo(job.state.meta.video);
     const bytes = Number(download.headers.get('content-length'));
-    if (!bytes || bytes > Number(env.IMPORT_MAX_VIDEO_MB) * 1024 * 1024) {
-      await download.body.cancel();
-      throw new ImportError('video_too_long', { detail: `The video file is ${bytes || 'an unknown number of'} bytes` });
-    }
+    // The upload needs the size up front, so a file that doesn't state one can't be sent.
+    if (!bytes) throw new ImportError('video_unavailable', { detail: 'The video file does not say how big it is' });
+    if (bytes > Number(env.IMPORT_MAX_VIDEO_MB) * 1024 * 1024) throw new ImportError('video_too_long', { detail: `The video file is ${bytes} bytes` });
     const type = download.headers.get('content-type') ?? '';
     return { file: await files.upload({ env, body: download.body, bytes, mimeType: type.startsWith('video/') ? type : 'video/mp4' }) };
   } catch (error) {
-    if (!(error instanceof ImportError) || !text) throw error;
+    // Whatever went wrong, a download that was started is not left open.
+    if (download && !download.body.locked) await download.body.cancel().catch(() => {});
+    if (!(error instanceof ImportError) || error.retryable || !text) throw error;
     console.log(`Import ${job.id}: going on without the video: ${error.code}, ${error.detail}`);
     return { videoSkipped: error.code === 'video_too_long' ? 'video_too_long' : 'video_unavailable' };
   }
@@ -185,10 +192,11 @@ async function extractRecipe(job, deps) {
   const { output, model } = answer;
   if (!['one', 'none', 'multiple'].includes(output.status)) throw badResult();
   const recipe = output.status === 'one' ? readRecipe(output) : null;
-  // The answer can be used, so the uploaded video has done its job. Until then it stays:
-  // a bad answer is asked for again, and that needs the video.
-  if (file) await files.remove({ env, file });
+  // With a recipe in hand the uploaded video is deleted by the save stage, once this
+  // stage's result is safely on the row: a stage that runs again still needs the video.
   if (recipe) return { recipe, model };
+  // No recipe ends the import here, so the video has done its job.
+  if (file) await files.remove({ env, file });
   if (output.status === 'multiple') throw new ImportError('multiple_recipes');
   // The recipe may still be in the video the model couldn't see, so say why it couldn't.
   throw new ImportError(refused ? 'video_unavailable' : blockedBy ?? 'no_recipe');
@@ -234,18 +242,19 @@ function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) 
   ];
 }
 
-async function saveRecipe(job, { env }) {
+async function saveRecipe(job, { env, files }) {
   const { state } = job;
   const machineLang = state.recipe.language === 'he' ? 'en' : 'he';
   const statements = job.replace_recipe_id === null ? insertRecipeStatements : replaceRecipeStatements;
   // One batch, so the recipe and the finished import are written together or not at all.
   await env.DB.batch(statements(env, job, state, machineLang, Date.now()));
+  if (state.file) await files.remove({ env, file: state.file });
   return {};
 }
 
 export const STAGES = [
   { name: 'meta', run: fetchMeta },
-  { name: 'video', run: uploadVideo },
+  { name: 'video', run: handOverVideo },
   { name: 'extract', run: extractRecipe },
   { name: 'save', run: saveRecipe },
 ];

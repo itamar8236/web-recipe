@@ -288,10 +288,12 @@ by a fixed path, because the layout differs between a reel page and a watch page
 of unknown length is not sent. Gemini reads a YouTube video from its link. A Facebook or
 Instagram video is a file, so the `video` stage streams it from the CDN into Gemini's file
 store (free, deleted by Google after 48 hours) without holding it in memory, refusing a file
-over `IMPORT_MAX_VIDEO_MB` (100). `extract` waits until the file is processed, sends its
-uri, and deletes it once the answer can be used (a bad answer is asked for again and still
-needs it). If the download or upload fails and there is enough text, the import goes on
-with the text and remembers why (`state.videoSkipped`); with no text it fails.
+over `IMPORT_MAX_VIDEO_MB` (100). `extract` waits until the file is processed and sends its
+uri. The file is deleted when the import ends: by `save` once the recipe is written, or by
+`extract` when the model found no recipe (a bad answer is asked for again and still needs
+it). If the download or upload is refused for good and there is enough text, the import
+goes on with the text and remembers why (`state.videoSkipped`); with no text it fails. A
+failure that may pass (a server error, the network) is retried by the Workflow first.
 
 **Extract.** The description counts if it's at least 80 characters, and so do subtitles.
 If neither text nor video can be sent, it fails with no LLM call. One call with whatever

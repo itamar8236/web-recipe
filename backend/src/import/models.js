@@ -1,6 +1,6 @@
 // Which model an import uses, and the app's own count of what's left. Quota belongs to
-// the whole Google project, so all of this is shared between users, apart from each
-// user's daily best-model uses.
+// the whole Google project (and, for the fallback model, the whole Groq account), so all
+// of this is shared between users, apart from each user's daily best-model uses.
 
 import { ImportError } from './errors.js';
 import { callFallbackModel } from './groq.js';
@@ -251,7 +251,7 @@ async function callBasic(deps, request) {
 // Google advises a short retry first, but a busy spell can last hours.
 const BEST_BUSY_RETRIES = 1;
 
-// Sends an import's `request` ({ prompt, schema, videoUrl }): to the best model when the
+// Sends an import's `request` ({ prompt, schema, videoUrl, videoType }): to the best model when the
 // user didn't pick the basic one and the best one can be used, otherwise to the basic one,
 // with no approval asked (the user has used their 5, the shared limit is reached, or the
 // best one stayed busy). Returns { output, model }. Throws ImportError quota when no model

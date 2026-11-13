@@ -213,7 +213,7 @@ async function uploadVideo({ env, body, bytes, mimeType }) {
   const uploadUrl = start.headers.get('x-goog-upload-url');
   if (!start.ok || !uploadUrl) throw uploadFailed(`start answered ${start.status}: ${await start.text().catch(() => '')}`);
   // The address comes from a response, so the key is only sent on to Google's own host.
-  if (new URL(uploadUrl).host !== API_HOST) throw uploadFailed('start answered with an unexpected upload host');
+  if (!uploadUrl.startsWith(`https://${API_HOST}/`)) throw uploadFailed('start answered with an unexpected upload address');
 
   // A stream of known length, so the request carries a Content-Length as Google requires.
   const sized = body.pipeThrough(new FixedLengthStream(bytes));

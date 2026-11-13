@@ -48,7 +48,7 @@ describe('the fallback model in the model policy', () => {
   it('is set in the config, with its own daily limit', () => {
     expect(FALLBACK).toBe('openai/gpt-oss-120b');
     expect(Number(env.LLM_FALLBACK_DAILY_LIMIT)).toBeGreaterThan(0);
-    expect(env.GROQ_API_KEY).toBeUndefined();
+    expect(env.GROQ_API_KEY).toBe('');
   });
 
   it('is never called without its key: a busy basic model stays busy, as before', async () => {

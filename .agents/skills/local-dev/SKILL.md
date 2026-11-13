@@ -28,7 +28,10 @@ local copy, so agents can't reach production even by accident.
 - You may test real imports yourself on the local app, but only on links the owner gives
   in the chat. Pick **Basic** in the dialog's model choice, so testing doesn't use up the
   best model's 20 requests a day. Automated tests always use fake keys and stubs. List in
-  the PR the real imports you ran.
+  the PR the real imports you ran. `node scripts/e2e-links.mjs <links file>` (from
+  `backend/`, with the app running) runs a file of owner-given links through the local app
+  on a test account, Basic by default; it's the check after Facebook or Instagram change
+  their pages.
 
 ## 1. Check the local copy
 From `backend/`:
