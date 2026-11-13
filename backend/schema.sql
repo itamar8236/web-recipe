@@ -127,6 +127,9 @@ CREATE INDEX IF NOT EXISTS folders_user_id ON folders (user_id);
 -- one row, so a recipe is read and saved in one statement. Either language may be empty
 -- ('' and '[]') until it is written or translated, but at least one name is set.
 -- folder_id NULL means "No folder". source_url NULL means added manually.
+-- platform is 'manual' or the site an import came from ('youtube', 'facebook',
+-- 'instagram'). It has no list CHECK, so adding a site needs no table rebuild; the backend
+-- only ever writes the name of one of its own adapters.
 -- is_favorite is a plain column because only the owner ever sees a recipe, so "my
 -- favorite" and "favorite" are the same thing.
 -- source_model is the LLM that produced an imported recipe (NULL for manual recipes); it
@@ -138,8 +141,7 @@ CREATE TABLE IF NOT EXISTS recipes (
   user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   folder_id      INTEGER,
   is_favorite    INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1)),
-  platform       TEXT    NOT NULL DEFAULT 'manual'
-                 CHECK (platform IN ('manual', 'youtube', 'facebook')),
+  platform       TEXT    NOT NULL DEFAULT 'manual',
   source_url     TEXT,
   source_model   TEXT,
   name_en        TEXT    NOT NULL DEFAULT '',
