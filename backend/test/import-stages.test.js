@@ -108,12 +108,11 @@ const atSave = (userId, recipe = ONE, fields = {}) =>
     }),
     ...fields,
   });
-const reload = (row) => env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(row.id).first();
+const reload = (row) => env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(row.id).first();
 const count = async (table) => (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n;
-const markBestOut = () =>
-  env.DB.prepare('INSERT INTO llm_model_status (model, unavailable_until) VALUES (?, ?)').bind(BEST, SOON()).run();
-const approveBasic = (userId) =>
-  env.DB.prepare('INSERT INTO llm_basic_model_approvals (user_id, approved_until) VALUES (?, ?)').bind(userId, SOON()).run();
+// A model Google said is out for the day: its count is at its limit.
+const markOut = (model, calls) => env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(today(), model, calls).run();
+const markBestOut = () => markOut(BEST, 20);
 
 const fakeLlm = (...answers) => {
   const queue = [...answers];
@@ -357,17 +356,18 @@ describe('stage: extract', () => {
     expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST]);
   });
 
-  it('asks for approval without a Workflow retry when the best model runs out', async () => {
+  it('moves to the basic model in the same stage, asking nothing, when the best model runs out', async () => {
     const row = await atExtract(await insertUser());
-    const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }));
-    await expectFailure(runExtract(row, llm), row, 'model_approval_needed');
-    expect(llm).toHaveBeenCalledTimes(1);
+    const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }), ONE);
+    await runExtract(row, llm);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, BASIC]);
+    expect(JSON.parse((await reload(row)).state).model).toBe(BASIC);
   });
 
   it('fails with quota, without a Workflow retry, when both models are out', async () => {
     const userId = await insertUser();
     await markBestOut();
-    await env.DB.prepare('INSERT INTO llm_model_status (model, unavailable_until) VALUES (?, ?)').bind(BASIC, SOON()).run();
+    await markOut(BASIC, 500);
     const row = await atExtract(userId);
     await expectFailure(runExtract(row, fakeLlm(ONE)), row, 'quota');
   });
@@ -375,19 +375,18 @@ describe('stage: extract', () => {
   it('stores the basic model when that is what answered', async () => {
     const userId = await insertUser();
     await markBestOut();
-    await approveBasic(userId);
     const row = await atExtract(userId);
     await runExtract(row, fakeLlm(ONE));
     expect(JSON.parse((await reload(row)).state).model).toBe(BASIC);
   });
 
-  it('a re-run never falls back to the basic model', async () => {
+  it('a re-scan moves to the basic model like a new import', async () => {
     const userId = await insertUser();
-    await approveBasic(userId);
     const row = await atExtract(userId, {}, { replace_recipe_id: 99 });
-    const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }));
-    await expectFailure(runExtract(row, llm), row, 'quota');
-    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST]);
+    const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }), ONE);
+    await runExtract(row, llm);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, BASIC]);
+    expect(JSON.parse((await reload(row)).state).model).toBe(BASIC);
   });
 });
 
@@ -457,7 +456,7 @@ describe('runStage rules', () => {
   it('writes no progress for an import dismissed during the stage', async () => {
     const row = await atExtract(await insertUser());
     const llm = vi.fn(async () => {
-      await env.DB.prepare(`UPDATE imports SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
+      await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
       return ONE;
     });
     await runExtract(row, llm);
@@ -518,7 +517,7 @@ describe('stage: save', () => {
   it('writes nothing for a dismissed import', async () => {
     const row = await atSave(await insertUser());
     const job = await loadJob(row);
-    await env.DB.prepare(`UPDATE imports SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
+    await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
     await directSave(job);
     expect(await count('recipes')).toBe(0);
     expect((await reload(row)).status).toBe('dismissed');
@@ -618,7 +617,7 @@ describe('stage: save', () => {
       await directSave(await loadJob(row, { attempt: 1 }));
       expect((await recipes())[0].name_en).toBe('Old name');
       const job = await loadJob(row);
-      await env.DB.prepare(`UPDATE imports SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
+      await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
       await directSave(job);
       expect((await recipes())[0].name_en).toBe('Old name');
     });
@@ -757,16 +756,16 @@ describe('the Workflow, end to end', () => {
     expect(await totalCounted()).toBe(1);
   });
 
-  it('moves to the basic model, with no approval, when the best one is still busy on its retry', async () => {
+  it('moves to the basic model when the best one is still busy on its retry, and the try still counts', async () => {
     fakeGoogle({ gemini: busyFor(2) });
     const row = await newImport();
     await runWorkflow(row);
-    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 0 });
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 1 });
     expect(sentModels()).toEqual([BEST, BEST, BASIC]);
     expect(await savedModel(row)).toBe(BASIC);
   });
 
-  it('waits longer each time while the basic model is busy too, then fails with llm_error and counts nothing', async () => {
+  it('waits longer each time while the basic model is busy too, then fails with llm_error, giving back the shared count', async () => {
     const busy = { error: { code: 503, message: 'This model is currently experiencing high demand.' } };
     fakeGoogle({ gemini: () => jsonResponse(busy, 503) });
     const row = await newImport();
@@ -775,7 +774,8 @@ describe('the Workflow, end to end', () => {
       status: 'failed',
       error: 'llm_error',
       error_detail: 'Gemini 503: This model is currently experiencing high demand.',
-      used_best: 0,
+      // The user tried the best model, so the try counts toward their 5.
+      used_best: 1,
     });
     expect(sentModels()).toEqual([BEST, BEST, BASIC, BASIC, BASIC]);
     expect(await totalCounted()).toBe(0);
@@ -833,8 +833,8 @@ describe('the Workflow, end to end', () => {
     fakeGoogle({ gemini: () => jsonResponse(daily, 429) });
     const row = await newImport();
     await runWorkflow(row);
-    expect(await reload(row)).toMatchObject({ status: 'failed', error: 'model_approval_needed' });
-    expect(calls('generativelanguage')).toHaveLength(1);
+    expect(await reload(row)).toMatchObject({ status: 'failed', error: 'quota' });
+    expect(sentModels()).toEqual([BEST, BASIC]);
   });
 
   it('a retry skips finished stages and makes no new calls for them', async () => {

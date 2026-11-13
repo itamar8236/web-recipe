@@ -1,5 +1,6 @@
 import { handleData } from './data.js';
 import { handleImports } from './imports.js';
+import { handleTranslate } from './translate.js';
 import { fail, json, readJson } from './http.js';
 import { hashPassword, verifyPassword } from './password.js';
 import { endSession, getSessionUser, startSession } from './session.js';
@@ -125,6 +126,7 @@ async function handleApi(request, env, path) {
 
   return (
     handleImports(request, env, path, user.data_user_id) ??
+    handleTranslate(request, env, path, user.data_user_id) ??
     handleData(request, env, path, user.data_user_id) ??
     fail(404, 'not_found')
   );

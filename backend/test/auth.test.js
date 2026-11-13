@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
 import { hashPassword, verifyPassword } from '../src/password.js';
-import { call, cookiesFrom, register } from './helpers.js';
+import { call, cookiesFrom, insertImport, register } from './helpers.js';
 
 describe('passwords', () => {
   it('verifies the right password and rejects a wrong one', async () => {
@@ -149,6 +149,27 @@ describe('session', () => {
     expect((await call('/api/auth/me', { cookie })).status).toBe(401);
     const { count } = await env.DB.prepare('SELECT COUNT(*) AS count FROM sessions').first();
     expect(count).toBe(0);
+  });
+
+  it('logs out a user who has import and translation rows, keeping their rows', async () => {
+    const response = await register();
+    const cookie = cookiesFrom(response);
+    const userId = (await response.json()).user.id;
+    await insertImport(userId, { status: 'failed', error: 'llm_error' });
+    await insertImport(userId, { purpose: 'translation', platform: null, source_id: null, source_url: null, status: 'done', used_best: 1 });
+
+    const out = await call('/api/auth/logout', { method: 'POST', cookie });
+    expect(out.status).toBe(200);
+    expect(await out.json()).toEqual({ ok: true });
+    expect(out.headers.getSetCookie().some((c) => c.startsWith('session=;'))).toBe(true);
+    expect((await call('/api/auth/me', { cookie })).status).toBe(401);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests WHERE user_id = ?').bind(userId).first()).n).toBe(2);
+  });
+
+  it('logs out with a JSON body too, and twice in a row', async () => {
+    const cookie = cookiesFrom(await register());
+    expect((await call('/api/auth/logout', { method: 'POST', cookie, body: {} })).status).toBe(200);
+    expect((await call('/api/auth/logout', { method: 'POST', cookie })).status).toBe(200);
   });
 
   it('requires a login for everything except the auth endpoints', async () => {

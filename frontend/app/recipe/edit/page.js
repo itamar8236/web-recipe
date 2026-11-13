@@ -3,7 +3,9 @@
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
+import RecipeAiTools from '@/components/RecipeAiTools';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from '../recipe.module.css';
@@ -36,6 +38,10 @@ function RecipeForm() {
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [link, setLink] = useState('');
+  const [aiBusy, setAiBusy] = useState(false);
+  // Translating and scanning need an account, like importing.
+  const loggedIn = useAuth().status === 'user';
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +56,7 @@ function RecipeForm() {
         if (id !== null && !recipe) return setStatus('missing');
         if (recipe) {
           setFolderId(recipe.folderId);
+          setLink(recipe.link);
           setForm({ en: toText(recipe.en), he: toText(recipe.he) });
         }
         setStatus('ready');
@@ -120,8 +127,10 @@ function RecipeForm() {
     }
   }
 
-  // The form edits only the app's current language; the other language is kept as is.
+  // The form edits only the app's current language; the other language is kept as is,
+  // unless the user translates into it.
   const current = form[lang];
+  const other = lang === 'en' ? 'he' : 'en';
 
   return (
     <form className={`${styles.recipe} ${styles.form}`} onSubmit={submit}>
@@ -159,10 +168,22 @@ function RecipeForm() {
         </select>
       </div>
 
+      {loggedIn && (
+        <RecipeAiTools
+          from={lang}
+          content={toContent(current)}
+          otherHasText={Boolean(form[other].name.trim() || form[other].ingredients.trim() || form[other].steps.trim())}
+          recipeId={id}
+          rescanId={id !== null && link ? id : null}
+          onTranslated={(content) => setForm((latest) => ({ ...latest, [other]: toText(content) }))}
+          onBusyChange={setAiBusy}
+        />
+      )}
+
       {error && <p className="error" role="alert">{error}</p>}
 
       <div className={styles.actions}>
-        <button type="submit" className="button" disabled={saving}>{saving ? t.saving : t.save}</button>
+        <button type="submit" className="button" disabled={saving || aiBusy}>{saving ? t.saving : t.save}</button>
         <Link href={id === null ? '/' : `/recipe?id=${id}`} className="button secondary">{t.cancel}</Link>
       </div>
     </form>

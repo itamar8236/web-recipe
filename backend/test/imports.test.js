@@ -99,7 +99,7 @@ describe('video length', () => {
   });
 });
 
-describe('imports table rules', () => {
+describe('llm_requests table rules', () => {
   it('fills in the defaults a new import needs', async () => {
     const row = await insertImport(await insertUser('dana'));
     expect(row).toMatchObject({ status: 'running', stage: 'meta', attempt: 1, state: '{}', used_best: 0, error: null });
@@ -129,15 +129,25 @@ describe('imports table rules', () => {
     expect(row.platform).toBe('somewhere-new');
   });
 
-  it('deletes a user’s imports and approval with the user', async () => {
+  it('deletes a user’s imports with the user', async () => {
     const userId = await insertUser('dana');
     await insertImport(userId);
-    await env.DB.prepare('INSERT INTO llm_basic_model_approvals (user_id, approved_until) VALUES (?, 1)')
-      .bind(userId)
-      .run();
     await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
-    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM imports').first()).n).toBe(0);
-    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM llm_basic_model_approvals').first()).n).toBe(0);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests').first()).n).toBe(0);
+  });
+
+  it('defaults the purpose to import, which needs the link', async () => {
+    const userId = await insertUser('dana');
+    expect((await insertImport(userId)).purpose).toBe('import');
+    await expect(insertImport(userId, { source_url: null, source_id: 'other12345a' })).rejects.toThrow(/CHECK/);
+  });
+
+  it('keeps a translation without a link, and lets several run at once', async () => {
+    const userId = await insertUser('dana');
+    const translation = { purpose: 'translation', platform: null, source_id: null, source_url: null };
+    await insertImport(userId, translation);
+    await insertImport(userId, translation);
+    await expect(insertImport(userId, { ...translation, platform: 'youtube', source_id: ID, source_url: CANONICAL })).rejects.toThrow(/CHECK/);
   });
 
   it('keeps an import when its recipe is deleted, and a re-run keeps pointing at it', async () => {
@@ -149,7 +159,7 @@ describe('imports table rules', () => {
       .first();
     const row = await insertImport(userId, { recipe_id: recipe.id, replace_recipe_id: recipe.id });
     await env.DB.prepare('DELETE FROM recipes WHERE id = ?').bind(recipe.id).run();
-    const after = await env.DB.prepare('SELECT recipe_id, replace_recipe_id FROM imports WHERE id = ?').bind(row.id).first();
+    const after = await env.DB.prepare('SELECT recipe_id, replace_recipe_id FROM llm_requests WHERE id = ?').bind(row.id).first();
     expect(after).toEqual({ recipe_id: null, replace_recipe_id: recipe.id });
   });
 });
@@ -180,13 +190,15 @@ describe('import endpoints', () => {
   const startImport = (cookie, url = LINK, extra = {}) => post(cookie, '/api/imports', { url, ...extra });
   const list = async (cookie) => (await send(cookie, 'GET', '/api/imports')).json();
   const errorOf = async (response) => (await response.json()).error;
-  const rows = async () => (await env.DB.prepare('SELECT * FROM imports ORDER BY id').all()).results;
+  const rows = async () => (await env.DB.prepare('SELECT * FROM llm_requests ORDER BY id').all()).results;
 
   let videoNumber = 0;
   const otherVideo = (fields = {}) => ({ source_id: `vid${String(++videoNumber).padStart(8, '0')}`, source_url: `https://www.youtube.com/watch?v=vid${videoNumber}`, quota_day: today(), ...fields });
   const failedImport = (userId, fields = {}) =>
     insertImport(userId, { status: 'failed', error: 'llm_error', quota_day: today(), updated_at: Date.now(), ...fields });
-  const markOut = (model) => env.DB.prepare('INSERT INTO llm_model_status (model, unavailable_until) VALUES (?, ?)').bind(model, SOON()).run();
+  // A model Google said is out for the day: its count is at its limit.
+  const markOut = (model) =>
+    env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(today(), model, model === BEST ? 20 : 500).run();
   const useUpBest = async (userId, count = 5) => {
     for (let i = 0; i < count; i++) await insertImport(userId, otherVideo({ status: 'done', used_best: 1 }));
   };
@@ -197,7 +209,6 @@ describe('import endpoints', () => {
       .bind(...Object.values(row))
       .first();
   };
-  const approvalOf = (userId) => env.DB.prepare('SELECT approved_until FROM llm_basic_model_approvals WHERE user_id = ?').bind(userId).first();
 
   describe('login', () => {
     it.each([
@@ -259,7 +270,6 @@ describe('import endpoints', () => {
     it.each([
       ['no url', {}],
       ['a url that is not text', { url: 42 }],
-      ['a useBasicModel that is not true or false', { url: LINK, useBasicModel: 'yes' }],
     ])('refuses %s as invalid_request', async (_, body) => {
       const { cookie } = await signUp();
       const response = await post(cookie, '/api/imports', body);
@@ -287,14 +297,13 @@ describe('import endpoints', () => {
       ['an unknown site', 'https://example.com/recipe', 'link_unsupported'],
       ['a lookalike host', `https://youtube.com.evil.example/watch?v=${ID}`, 'link_unsupported'],
     ])('refuses %s, with no external call and no row', async (_, url, code) => {
-      const { cookie, userId } = await signUp();
-      const response = await startImport(cookie, url, { useBasicModel: true });
+      const { cookie } = await signUp();
+      const response = await startImport(cookie, url);
       expect(response.status).toBe(400);
       expect(await errorOf(response)).toBe(code);
       expect(await rows()).toEqual([]);
       expect(fetch).not.toHaveBeenCalled();
       expect(workflow.create).not.toHaveBeenCalled();
-      expect(await approvalOf(userId)).toBeNull();
     });
 
     it('returns the running import with 200 for the same video, in any link form', async () => {
@@ -345,6 +354,14 @@ describe('import endpoints', () => {
       expect((await startImport(cookie)).status).toBe(202);
     });
 
+    it('does not count translations against the caps', async () => {
+      const { cookie, userId } = await signUp();
+      for (let i = 0; i < 10; i++) {
+        await insertImport(userId, { purpose: 'translation', platform: null, source_id: null, source_url: null, quota_day: today() });
+      }
+      expect((await startImport(cookie)).status).toBe(202);
+    });
+
     it('counts 10 a day including finished and dismissed rows', async () => {
       const { cookie, userId } = await signUp();
       for (let i = 0; i < 9; i++) await insertImport(userId, otherVideo({ status: i % 2 ? 'dismissed' : 'done' }));
@@ -375,55 +392,39 @@ describe('import endpoints', () => {
       expect(await errorOf(await startImport(cookie))).toBe('already_imported');
     });
 
-    it('checks the caps before the model state, and stores no approval when over them', async () => {
+    it('checks the caps before the model state', async () => {
       const { cookie, userId } = await signUp();
       await markOut(BEST);
+      await markOut(BASIC);
       for (let i = 0; i < 3; i++) await insertImport(userId, otherVideo());
-      expect(await errorOf(await startImport(cookie, LINK, { useBasicModel: true }))).toBe('too_many_imports');
-      expect(await approvalOf(userId)).toBeNull();
+      expect(await errorOf(await startImport(cookie))).toBe('too_many_imports');
     });
 
-    it('asks first when the best model is out, and runs nothing', async () => {
+    it('starts without asking anything when the best model is out', async () => {
       const { cookie } = await signUp();
       await markOut(BEST);
-      const response = await startImport(cookie);
-      expect(response.status).toBe(409);
-      expect(await errorOf(response)).toBe('model_approval_needed');
-      expect(await rows()).toEqual([]);
-      expect(workflow.create).not.toHaveBeenCalled();
-    });
-
-    it('the 6th best-model import asks first', async () => {
-      const { cookie, userId } = await signUp();
-      await useUpBest(userId);
-      expect(await errorOf(await startImport(cookie))).toBe('model_approval_needed');
-    });
-
-    it('useBasicModel stores an approval until the reset, and the import starts', async () => {
-      const { cookie, userId } = await signUp();
-      await markOut(BEST);
-      const before = Date.now();
-      const response = await startImport(cookie, LINK, { useBasicModel: true });
-      expect(response.status).toBe(202);
-      expect((await approvalOf(userId)).approved_until).toBe(nextQuotaReset(before));
+      expect((await startImport(cookie)).status).toBe(202);
       expect(workflow.create).toHaveBeenCalledTimes(1);
     });
 
-    it('a user who already approved needs no flag', async () => {
+    it('starts the 6th import of the day without asking anything', async () => {
       const { cookie, userId } = await signUp();
-      await markOut(BEST);
-      await env.DB.prepare('INSERT INTO llm_basic_model_approvals (user_id, approved_until) VALUES (?, ?)').bind(userId, SOON()).run();
+      await useUpBest(userId);
       expect((await startImport(cookie)).status).toBe(202);
     });
 
+    it('ignores a useBasicModel flag sent by an older page', async () => {
+      const { cookie } = await signUp();
+      expect((await startImport(cookie, LINK, { useBasicModel: true })).status).toBe(202);
+    });
+
     describe('choosing the basic model', () => {
-      it('starts on the basic model even when the best one is out, storing no approval', async () => {
-        const { cookie, userId } = await signUp();
+      it('starts on the basic model even when the best one is out', async () => {
+        const { cookie } = await signUp();
         await markOut(BEST);
         const response = await startImport(cookie, LINK, { model: 'basic' });
         expect(response.status).toBe(202);
         expect(JSON.parse((await rows())[0].state)).toEqual({ basicChosen: true });
-        expect(await approvalOf(userId)).toBeNull();
       });
 
       it('answers 429 quota when the basic model is out', async () => {
@@ -453,7 +454,7 @@ describe('import endpoints', () => {
       const { cookie } = await signUp();
       await markOut(BEST);
       await markOut(BASIC);
-      const response = await startImport(cookie, LINK, { useBasicModel: true });
+      const response = await startImport(cookie);
       expect(response.status).toBe(429);
       expect(await errorOf(response)).toBe('quota');
       expect(await rows()).toEqual([]);
@@ -466,12 +467,12 @@ describe('import endpoints', () => {
           get(target, name) {
             if (name !== 'prepare') return typeof target[name] === 'function' ? target[name].bind(target) : target[name];
             return (sql) => {
-              if (!sql.startsWith('INSERT INTO imports')) return target.prepare(sql);
+              if (!sql.startsWith('INSERT INTO llm_requests')) return target.prepare(sql);
               return {
                 bind: () => ({
                   first: async () => {
                     await beforeRefusing();
-                    throw new Error('UNIQUE constraint failed: imports.user_id');
+                    throw new Error('UNIQUE constraint failed: llm_requests.user_id');
                   },
                 }),
               };
@@ -555,9 +556,15 @@ describe('import endpoints', () => {
       await useUpBest(userId, 2);
       const before = Date.now();
       const { models } = await list(cookie);
-      expect(models).toMatchObject({ bestAvailable: true, bestLeftToday: 20, bestLeftForUser: 3, basicModel: BASIC, basicApproved: false, bestAvailableAt: null });
+      expect(models).toMatchObject({ bestAvailable: true, bestLeftToday: 20, bestLeftForUser: 3, basicModel: BASIC, bestAvailableAt: null });
       expect(models.resetsAt).toBeGreaterThanOrEqual(nextQuotaReset(before));
-      expect(Object.keys(models).sort()).toEqual(['basicApproved', 'basicModel', 'bestAvailable', 'bestAvailableAt', 'bestLeftForUser', 'bestLeftToday', 'resetsAt']);
+      expect(Object.keys(models).sort()).toEqual(['basicModel', 'bestAvailable', 'bestAvailableAt', 'bestLeftForUser', 'bestLeftToday', 'resetsAt']);
+    });
+
+    it('never lists translations as cards', async () => {
+      const { cookie, userId } = await signUp();
+      await insertImport(userId, { purpose: 'translation', platform: null, source_id: null, source_url: null, status: 'done', quota_day: today() });
+      expect((await list(cookie)).imports).toEqual([]);
     });
 
     it.each([
@@ -597,35 +604,33 @@ describe('import endpoints', () => {
       const noa = await signUp('noa');
       const stuck = await insertImport(noa.userId, otherVideo({ updated_at: 1 }));
       await list(dana.cookie);
-      expect((await env.DB.prepare('SELECT status FROM imports WHERE id = ?').bind(stuck.id).first()).status).toBe('running');
+      expect((await env.DB.prepare('SELECT status FROM llm_requests WHERE id = ?').bind(stuck.id).first()).status).toBe('running');
     });
   });
 
   describe('POST /api/imports/:id/retry', () => {
     const retry = (cookie, id, body = {}) => post(cookie, `/api/imports/${id}/retry`, body);
-    const reload = (row) => env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(row.id).first();
+    const reload = (row) => env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(row.id).first();
 
-    it('clears the old failure reason', async () => {
+    const newestRow = async () => (await rows()).at(-1);
+
+    it('starts a new row that keeps the state and stage, and dismisses the failed one', async () => {
       const { cookie, userId } = await signUp();
-      const row = await failedImport(userId, { error_detail: 'Gemini 503: high demand' });
-      expect((await retry(cookie, row.id)).status).toBe(202);
-      expect((await reload(row)).error_detail).toBeNull();
+      const row = await failedImport(userId, { state: '{"done":["meta"],"meta":{}}', stage: 'extract', title: 'Tea', error_detail: 'Gemini 503' });
+      const response = await retry(cookie, row.id);
+      expect(response.status).toBe(202);
+      const added = await newestRow();
+      expect(added.id).not.toBe(row.id);
+      expect(added).toMatchObject({ status: 'running', attempt: 1, error: null, error_detail: null, used_best: 0, purpose: 'import', title: 'Tea', stage: 'extract', state: '{"done":["meta"],"meta":{}}', source_url: CANONICAL, quota_day: today() });
+      expect((await response.json()).import).toMatchObject({ id: added.id, status: 'running', error: null, stage: 'extract' });
+      expect((await reload(row)).status).toBe('dismissed');
+      expect(workflow.create).toHaveBeenCalledWith({ id: `import-${added.id}-1`, params: { importId: added.id, attempt: 1 } });
     });
 
     it('never sends the failure reason to the browser', async () => {
       const { cookie, userId } = await signUp();
       await failedImport(userId, { error_detail: 'Gemini 503: high demand' });
       expect(JSON.stringify(await list(cookie))).not.toContain('high demand');
-    });
-
-    it('bumps the attempt, restarts the import and keeps its state', async () => {
-      const { cookie, userId } = await signUp();
-      const row = await failedImport(userId, { state: '{"done":["meta"],"meta":{}}', stage: 'extract' });
-      const response = await retry(cookie, row.id);
-      expect(response.status).toBe(202);
-      expect((await response.json()).import).toMatchObject({ id: row.id, status: 'running', error: null, stage: 'extract' });
-      expect(await reload(row)).toMatchObject({ status: 'running', attempt: 2, error: null, state: '{"done":["meta"],"meta":{}}' });
-      expect(workflow.create).toHaveBeenCalledWith({ id: `import-${row.id}-2`, params: { importId: row.id, attempt: 2 } });
     });
 
     it('answers 404 for another user’s import and for a missing one', async () => {
@@ -674,22 +679,11 @@ describe('import endpoints', () => {
       expect(await errorOf(await retry(cookie, row.id))).toBe('not_retryable');
     });
 
-    it('asks first when the best model is out', async () => {
+    it('runs an old card that waited for an approval, asking nothing', async () => {
       const { cookie, userId } = await signUp();
       const row = await failedImport(userId, { error: 'model_approval_needed' });
       await markOut(BEST);
-      const response = await retry(cookie, row.id);
-      expect(response.status).toBe(409);
-      expect(await errorOf(response)).toBe('model_approval_needed');
-      expect(await reload(row)).toMatchObject({ status: 'failed', attempt: 1 });
-    });
-
-    it('with useBasicModel stores the approval and restarts', async () => {
-      const { cookie, userId } = await signUp();
-      const row = await failedImport(userId, { error: 'model_approval_needed' });
-      await markOut(BEST);
-      expect((await retry(cookie, row.id, { useBasicModel: true })).status).toBe(202);
-      expect(await approvalOf(userId)).not.toBeNull();
+      expect((await retry(cookie, row.id)).status).toBe(202);
     });
 
     it('answers 429 quota when both models are out', async () => {
@@ -697,17 +691,18 @@ describe('import endpoints', () => {
       const row = await failedImport(userId, { error: 'quota' });
       await markOut(BEST);
       await markOut(BASIC);
-      const response = await retry(cookie, row.id, { useBasicModel: true });
+      const response = await retry(cookie, row.id);
       expect(response.status).toBe(429);
       expect(await errorOf(response)).toBe('quota');
+      expect((await reload(row)).status).toBe('failed');
     });
 
-    it('does not use another of the 5: an import holding one can retry at the cap', async () => {
+    it('is a new try: it counts toward the caps', async () => {
       const { cookie, userId } = await signUp();
-      await useUpBest(userId, 4);
-      const row = await failedImport(userId, { used_best: 1 });
-      expect((await retry(cookie, row.id)).status).toBe(202);
-      expect(await reload(row)).toMatchObject({ used_best: 1, quota_day: today() });
+      const row = await failedImport(userId);
+      for (let i = 0; i < 9; i++) await insertImport(userId, otherVideo({ status: 'done' }));
+      expect(await errorOf(await retry(cookie, row.id))).toBe('too_many_imports');
+      expect((await reload(row)).status).toBe('failed');
     });
 
     it('needs no model when the recipe was already extracted', async () => {
@@ -718,18 +713,11 @@ describe('import endpoints', () => {
       expect((await retry(cookie, row.id)).status).toBe(202);
     });
 
-    it('on a later day counts against that day', async () => {
+    it('on a later day counts for that day', async () => {
       const { cookie, userId } = await signUp();
       const row = await failedImport(userId, { used_best: 1, quota_day: '2020-01-01' });
       expect((await retry(cookie, row.id)).status).toBe(202);
-      expect(await reload(row)).toMatchObject({ used_best: 0, quota_day: today() });
-    });
-
-    it('on a later day cannot pass the user’s cap as if it already held a use', async () => {
-      const { cookie, userId } = await signUp();
-      await useUpBest(userId);
-      const row = await failedImport(userId, { used_best: 1, quota_day: '2020-01-01' });
-      expect(await errorOf(await retry(cookie, row.id))).toBe('model_approval_needed');
+      expect(await newestRow()).toMatchObject({ used_best: 0, quota_day: today() });
     });
 
     it('marks the row failed when the Workflow cannot start', async () => {
@@ -740,22 +728,14 @@ describe('import endpoints', () => {
       expect((await response.json()).import).toMatchObject({ status: 'failed', error: 'llm_error' });
     });
 
-    it('refuses a useBasicModel that is not true or false', async () => {
-      const { cookie, userId } = await signUp();
-      const row = await failedImport(userId);
-      expect((await retry(cookie, row.id, { useBasicModel: 1 })).status).toBe(400);
-    });
-
-    describe('of a re-run', () => {
-      it('answers quota and stores no approval when the best model is out', async () => {
+    describe('of a re-scan', () => {
+      it('keeps replacing the same recipe', async () => {
         const { cookie, userId } = await signUp();
         const recipe = await insertRecipe(userId);
         const row = await failedImport(userId, { error: 'quota', replace_recipe_id: recipe.id });
         await markOut(BEST);
-        const response = await retry(cookie, row.id, { useBasicModel: true });
-        expect(response.status).toBe(429);
-        expect(await errorOf(response)).toBe('quota');
-        expect(await approvalOf(userId)).toBeNull();
+        expect((await retry(cookie, row.id)).status).toBe(202);
+        expect((await newestRow()).replace_recipe_id).toBe(recipe.id);
       });
 
       it('restarts when the best model is back, even though the recipe exists', async () => {
@@ -805,17 +785,38 @@ describe('import endpoints', () => {
   });
 
   describe('POST /api/recipes/:id/rerun', () => {
-    const rerun = (cookie, id) => post(cookie, `/api/recipes/${id}/rerun`);
+    const rerun = (cookie, id, body = {}) => post(cookie, `/api/recipes/${id}/rerun`, body);
 
-    it('starts a re-run of a basic-model recipe', async () => {
+    it('scans the video of any imported recipe again, replacing that recipe', async () => {
       const { cookie, userId } = await signUp();
-      const recipe = await insertRecipe(userId);
+      const recipe = await insertRecipe(userId, { source_model: BEST });
       const response = await rerun(cookie, recipe.id);
       expect(response.status).toBe(202);
       const [row] = await rows();
-      expect(row).toMatchObject({ replace_recipe_id: recipe.id, source_id: ID, source_url: CANONICAL, platform: 'youtube', status: 'running' });
+      expect(row).toMatchObject({ replace_recipe_id: recipe.id, source_id: ID, source_url: CANONICAL, platform: 'youtube', status: 'running', state: '{}' });
       expect(workflow.create).toHaveBeenCalledWith({ id: `import-${row.id}-1`, params: { importId: row.id, attempt: 1 } });
       expect((await response.json()).import.id).toBe(row.id);
+    });
+
+    it('keeps the basic model when the user picks it, even with the best one out', async () => {
+      const { cookie, userId } = await signUp();
+      const recipe = await insertRecipe(userId);
+      await markOut(BEST);
+      expect((await rerun(cookie, recipe.id, { model: 'basic' })).status).toBe(202);
+      expect(JSON.parse((await rows())[0].state)).toEqual({ basicChosen: true });
+    });
+
+    it('starts without asking anything when the best model is out', async () => {
+      const { cookie, userId } = await signUp();
+      const recipe = await insertRecipe(userId);
+      await markOut(BEST);
+      expect((await rerun(cookie, recipe.id)).status).toBe(202);
+    });
+
+    it.each([{ model: 'other' }])('answers 400 for %j', async (body) => {
+      const { cookie, userId } = await signUp();
+      const recipe = await insertRecipe(userId);
+      expect(await errorOf(await rerun(cookie, recipe.id, body))).toBe('invalid_request');
     });
 
     it('answers 404 for another user’s recipe and for a missing one', async () => {
@@ -826,18 +827,12 @@ describe('import endpoints', () => {
       expect((await rerun(noa.cookie, 987654)).status).toBe(404);
     });
 
-    it('answers 409 not_rerunnable for a best-model recipe', async () => {
-      const { cookie, userId } = await signUp();
-      const recipe = await insertRecipe(userId, { source_model: BEST });
-      const response = await rerun(cookie, recipe.id);
-      expect(response.status).toBe(409);
-      expect(await errorOf(response)).toBe('not_rerunnable');
-    });
-
     it('answers 409 not_rerunnable for a manual recipe', async () => {
       const { cookie, userId } = await signUp();
       const recipe = await insertRecipe(userId, { platform: 'manual', source_url: null, source_model: null });
-      expect(await errorOf(await rerun(cookie, recipe.id))).toBe('not_rerunnable');
+      const response = await rerun(cookie, recipe.id);
+      expect(response.status).toBe(409);
+      expect(await errorOf(response)).toBe('not_rerunnable');
     });
 
     it('answers 409 not_rerunnable while the same video is already running', async () => {
@@ -847,24 +842,11 @@ describe('import endpoints', () => {
       expect(await errorOf(await rerun(cookie, recipe.id))).toBe('not_rerunnable');
     });
 
-    it.each([
-      ['the best model is out', async () => markOut(BEST)],
-      ['the shared limit is reached', async () => env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, 20)').bind(today(), BEST).run()],
-    ])('answers 429 best_model_unavailable when %s', async (_, arrange) => {
+    it('counts against the daily caps', async () => {
       const { cookie, userId } = await signUp();
       const recipe = await insertRecipe(userId);
-      await arrange();
-      const response = await rerun(cookie, recipe.id);
-      expect(response.status).toBe(429);
-      expect(await errorOf(response)).toBe('best_model_unavailable');
-      expect(await rows()).toEqual([]);
-    });
-
-    it('answers 429 best_model_unavailable when the user has used their 5', async () => {
-      const { cookie, userId } = await signUp();
-      const recipe = await insertRecipe(userId);
-      await useUpBest(userId);
-      expect(await errorOf(await rerun(cookie, recipe.id))).toBe('best_model_unavailable');
+      for (let i = 0; i < 10; i++) await insertImport(userId, otherVideo({ status: 'done' }));
+      expect(await errorOf(await rerun(cookie, recipe.id))).toBe('too_many_imports');
     });
   });
 

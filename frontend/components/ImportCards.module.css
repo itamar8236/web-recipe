@@ -94,11 +94,6 @@
   background: #eef7f1;
 }
 
-.approval {
-  border-inline-start-color: var(--accent);
-  background: var(--accent-soft);
-}
-
 .failed {
   border-inline-start-color: var(--danger);
   background: #fdecea;

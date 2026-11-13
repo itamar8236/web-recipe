@@ -23,7 +23,7 @@ beforeAll(async () => {
 // Every test starts with an empty database.
 beforeEach(async () => {
   await env.DB.batch(
-    ['imports', 'llm_basic_model_approvals', 'llm_model_status', 'llm_usage', 'recipes', 'folders', 'sessions', 'users'].map(
+    ['llm_requests', 'llm_usage', 'recipes', 'folders', 'sessions', 'users'].map(
       (table) => env.DB.prepare(`DELETE FROM ${table}`),
     ),
   );

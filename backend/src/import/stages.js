@@ -1,5 +1,5 @@
 // The stages of an import. Each one takes (job, deps), returns what to remember in
-// imports.state, and runs inside its own Workflow step, so a crash loses only that stage.
+// llm_requests.state, and runs inside its own Workflow step, so a crash loses only that stage.
 
 import { NonRetryableError } from 'cloudflare:workflows';
 import { contentValues, readContent } from '../data.js';
@@ -93,7 +93,7 @@ function ask(job, deps, description, videoUrl) {
 
 async function fetchMeta(job, { env, source }) {
   const { title, ...meta } = await source.fetchMeta(job.source_id, env);
-  await env.DB.prepare(`UPDATE imports SET title = ? ${isCurrent}`)
+  await env.DB.prepare(`UPDATE llm_requests SET title = ? ${isCurrent}`)
     .bind(title, job.id, job.attempt)
     .run();
   return { meta };
@@ -129,10 +129,10 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
          name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
          machine_translated_lang, created_at, updated_at)
        SELECT ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-       WHERE EXISTS (SELECT 1 FROM imports ${isCurrent})`,
+       WHERE EXISTS (SELECT 1 FROM llm_requests ${isCurrent})`,
     ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, now, now, job.id, job.attempt),
     env.DB.prepare(
-      `UPDATE imports SET status = 'done', state = '{}', updated_at = ?,
+      `UPDATE llm_requests SET status = 'done', state = '{}', updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE user_id = ? AND source_url = ? ORDER BY id DESC LIMIT 1)
        ${isCurrent}`,
     ).bind(now, job.user_id, job.source_url, job.id, job.attempt),
@@ -150,10 +150,10 @@ function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) 
          name_en = ?, ingredients_en = ?, steps_en = ?, name_he = ?, ingredients_he = ?, steps_he = ?,
          machine_translated_lang = ?, updated_at = ?
        WHERE ${sameRecipe}
-         AND EXISTS (SELECT 1 FROM imports ${isCurrent})`,
+         AND EXISTS (SELECT 1 FROM llm_requests ${isCurrent})`,
     ).bind(model, ...contentValues(recipe), machineLang, now, ...recipeKey, job.id, job.attempt),
     env.DB.prepare(
-      `UPDATE imports SET
+      `UPDATE llm_requests SET
          status = CASE WHEN EXISTS (SELECT 1 FROM recipes WHERE ${sameRecipe}) THEN 'done' ELSE 'dismissed' END,
          state = '{}', updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE ${sameRecipe})
@@ -179,7 +179,7 @@ export const STAGES = [
 
 // Written before throwing, so nothing depends on how Workflows passes errors along.
 async function saveError(env, importId, attempt, code, detail = null) {
-  await env.DB.prepare(`UPDATE imports SET error = ?, error_detail = ?, updated_at = ? ${isCurrent}`)
+  await env.DB.prepare(`UPDATE llm_requests SET error = ?, error_detail = ?, updated_at = ? ${isCurrent}`)
     .bind(code, detail, Date.now(), importId, attempt)
     .run();
 }
@@ -188,7 +188,7 @@ async function saveProgress(env, job, stage, patch) {
   const done = [...(job.state.done ?? []), stage.name];
   // After the last stage the row is already done, so this write changes nothing.
   const next = STAGES[STAGES.findIndex(({ name }) => name === stage.name) + 1]?.name ?? stage.name;
-  await env.DB.prepare(`UPDATE imports SET state = ?, stage = ?, updated_at = ? ${isCurrent}`)
+  await env.DB.prepare(`UPDATE llm_requests SET state = ?, stage = ?, updated_at = ? ${isCurrent}`)
     .bind(JSON.stringify({ ...job.state, ...patch, done }), next, Date.now(), job.id, job.attempt)
     .run();
 }
@@ -197,7 +197,7 @@ async function saveProgress(env, job, stage, patch) {
 // Workflow to wait and run the stage again; its error stays on the row in case it gives up.
 // `busyWaits` is how many of those waits came before this run.
 export async function runStage(env, importId, attempt, stage, { llm = callModel, busyWaits = 0 } = {}) {
-  const job = await env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(importId).first();
+  const job = await env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(importId).first();
   if (!job || job.status !== 'running' || job.attempt !== attempt) return;
   job.state = JSON.parse(job.state);
   if (job.state.done?.includes(stage.name)) return;
@@ -225,7 +225,7 @@ export async function runStage(env, importId, attempt, stage, { llm = callModel,
 // timed out and so wrote nothing.
 export async function markFailed(env, importId, attempt) {
   await env.DB.prepare(
-    `UPDATE imports SET status = 'failed',
+    `UPDATE llm_requests SET status = 'failed',
        error_detail = CASE WHEN error IS NULL THEN 'Stopped without an error, most likely the step timeout' ELSE error_detail END,
        error = COALESCE(error, 'llm_error'), updated_at = ? ${isCurrent}`,
   )

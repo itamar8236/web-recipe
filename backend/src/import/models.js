@@ -1,11 +1,9 @@
 // Which model an import uses, and the app's own count of what's left. Quota belongs to
 // the whole Google project, so all of this is shared between users, apart from each
-// user's daily best-model uses and their approval of the basic model.
+// user's daily best-model uses.
 
 import { ImportError } from './errors.js';
 import { ModelBusyError, QuotaError } from './llm.js';
-
-const COOL_DOWN_MS = 15 * 60 * 1000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -62,7 +60,7 @@ export function nextQuotaReset(now) {
   return midnightAsUtc - pacificOffset(midnightAsUtc + eightHours);
 }
 
-// ---- Counting and marking ----
+// ---- Counting ----
 
 // Takes one request from the day's count, in one statement, so two imports can't both
 // take the last one. False means the limit is reached and no request may be sent.
@@ -84,102 +82,74 @@ async function releaseCall(env, model, day) {
     .run();
 }
 
-const markOutStatement = (env, model, until) =>
-  env.DB.prepare(
-    `INSERT INTO llm_model_status (model, unavailable_until) VALUES (?, ?)
-     ON CONFLICT (model) DO UPDATE SET unavailable_until = max(unavailable_until, excluded.unavailable_until)`,
-  ).bind(model, until);
-
+// Google said the model's daily quota is used up. Google is the source of truth and may
+// have counted requests the app didn't make, so the day's count is set to the limit: that
+// alone keeps every later request off this model until the reset.
 async function markModelOutForTheDay(env, model, limit, now) {
-  await env.DB.batch([
-    markOutStatement(env, model, nextQuotaReset(now)),
-    // Google is the source of truth, and it may have counted requests the app didn't make.
-    env.DB.prepare(
-      `INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)
-       ON CONFLICT (day, model) DO UPDATE SET calls = excluded.calls`,
-    ).bind(quotaDay(now), model, limit),
-  ]);
-}
-
-async function isMarkedOut(env, model, now) {
-  const row = await env.DB.prepare('SELECT 1 FROM llm_model_status WHERE model = ? AND unavailable_until > ?')
-    .bind(model, now)
-    .first();
-  return row !== null;
-}
-
-// ---- Approvals ----
-
-export async function storeApproval(env, userId, now) {
   await env.DB.prepare(
-    `INSERT INTO llm_basic_model_approvals (user_id, approved_until) VALUES (?, ?)
-     ON CONFLICT (user_id) DO UPDATE SET approved_until = excluded.approved_until`,
+    `INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)
+     ON CONFLICT (day, model) DO UPDATE SET calls = excluded.calls`,
   )
-    .bind(userId, nextQuotaReset(now))
+    .bind(quotaDay(now), model, limit)
     .run();
 }
 
 // ---- What's available ----
 
 // The `models` object the API returns, plus whether each model itself is open: the
-// frontend needs only the first, the checks before starting need both.
+// frontend needs only the first, the checks before starting need both. A user's daily
+// best-model uses are the llm_requests rows (of every purpose) that called the best model.
 export async function readModelState(env, userId, now = Date.now()) {
   const best = env.LLM_BEST_MODEL;
   const basic = env.LLM_BASIC_MODEL;
   const limit = limits(env);
   const day = quotaDay(now);
-  const [marked, usage, used, approval] = await env.DB.batch([
-    env.DB.prepare('SELECT model, unavailable_until FROM llm_model_status WHERE model IN (?, ?) AND unavailable_until > ?').bind(best, basic, now),
+  const [usage, used] = await env.DB.batch([
     env.DB.prepare('SELECT model, calls FROM llm_usage WHERE day = ? AND model IN (?, ?)').bind(day, best, basic),
-    env.DB.prepare('SELECT COUNT(*) AS n FROM imports WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, day),
-    env.DB.prepare('SELECT 1 FROM llm_basic_model_approvals WHERE user_id = ? AND approved_until > ?').bind(userId, now),
+    env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, day),
   ]);
   const callsOf = (model) => usage.results.find((row) => row.model === model)?.calls ?? 0;
-  const outUntil = (model) => marked.results.find((row) => row.model === model)?.unavailable_until ?? null;
 
   const resetsAt = nextQuotaReset(now);
   const bestLeftToday = Math.max(0, limit.bestDaily - callsOf(best));
   const bestLeftForUser = Math.max(0, limit.bestPerUser - used.results[0].n);
-  const bestOpen = outUntil(best) === null && bestLeftToday > 0;
-  const bestAvailable = bestOpen && bestLeftForUser > 0;
-  const bestBackOnlyAtReset = bestLeftToday === 0 || bestLeftForUser === 0;
+  const bestAvailable = bestLeftToday > 0 && bestLeftForUser > 0;
   return {
     models: {
       bestAvailable,
       bestLeftToday,
       bestLeftForUser,
       basicModel: basic,
-      basicApproved: approval.results.length > 0,
-      bestAvailableAt: bestAvailable ? null : bestBackOnlyAtReset ? resetsAt : outUntil(best),
+      // Both limits are daily, so the best model is back at the reset.
+      bestAvailableAt: bestAvailable ? null : resetsAt,
       resetsAt,
     },
-    bestOpen,
-    basicOpen: outUntil(basic) === null && callsOf(basic) < limit.basicDaily,
+    basicOpen: callsOf(basic) < limit.basicDaily,
   };
 }
 
-// Why an import can't start now, or null when it can. `countedBest` means this import
-// already holds one of the user's daily best-model uses, so their cap doesn't stop it.
-// `basicChosen` means the user picked the basic model, so only that one matters.
-export function startRefusal(state, { bestOnly = false, countedBest = false, basicChosen = false } = {}) {
+// Why an import can't start now, or null when it can. Nobody is asked to approve the basic
+// model: when the best one can't be used it is used by itself, so only both being out (or
+// the basic one, when the user picked it) stops a start.
+export function startRefusal(state, { basicChosen = false } = {}) {
   if (basicChosen) return state.basicOpen ? null : 'quota';
-  if (state.models.bestAvailable || (countedBest && state.bestOpen)) return null;
-  if (bestOnly || !state.basicOpen) return 'quota';
-  return state.models.basicApproved ? null : 'model_approval_needed';
+  return state.models.bestAvailable || state.basicOpen ? null : 'quota';
 }
 
 // ---- Calling ----
 
-// Whether this import already holds one of the user's daily best-model uses for `day`.
-export const holdsBestUse = (job, day) => job.used_best === 1 && job.quota_day === day;
+// Whether this row already holds one of the user's daily best-model uses for `day`. A row
+// can call the model more than once (a Workflow retry, a busy wait, a second ask without
+// the video); the use is taken once per row.
+const holdsBestUse = (job, day) => job.used_best === 1 && job.quota_day === day;
 
-// One of the user's daily best-model uses, taken in one statement so imports running at
+// One of the user's daily best-model uses, taken in one statement so requests running at
 // the same time can't go past the cap.
 async function claimBestUse(env, job, day) {
   const row = await env.DB.prepare(
-    `UPDATE imports SET used_best = 1, quota_day = ?1
+    `UPDATE llm_requests SET used_best = 1, quota_day = ?1
       WHERE id = ?2 AND status = 'running' AND attempt = ?3
-        AND (SELECT COUNT(*) FROM imports WHERE user_id = ?4 AND quota_day = ?1 AND used_best = 1) < ?5
+        AND (SELECT COUNT(*) FROM llm_requests WHERE user_id = ?4 AND quota_day = ?1 AND used_best = 1) < ?5
       RETURNING id`,
   )
     .bind(day, job.id, job.attempt, job.user_id, limits(env).bestPerUser)
@@ -190,42 +160,43 @@ async function claimBestUse(env, job, day) {
 // Reserves and sends a request, handling Google's quota answers. Returns { output }, or
 // { out: true, sent } when the model can't be used; `sent` says whether a request went
 // out before that. Quota errors stop here, because Workflow retries would only burn more
-// requests. A busy answer (ModelBusyError) is thrown for the Workflow to wait on.
+// requests. A busy answer (ModelBusyError) is thrown for the caller to handle.
 async function callUnlessOut({ env, llm, model, limit, request }) {
   let sent = false;
   for (let tries = 1; ; tries++) {
-    if (await isMarkedOut(env, model, Date.now())) return { out: true, sent };
     const day = quotaDay(Date.now());
     if (!(await reserveCall(env, model, limit, day))) return { out: true, sent };
     sent = true;
     try {
       return { output: await llm({ env, model, ...request }) };
     } catch (error) {
-      // Google says a 503 is unrelated to quota, so its request is given back. If Google
-      // counted it after all, its per-day 429 sets the count right.
+      // Google says a 503 is unrelated to quota, so its request is given back to the shared
+      // count. If Google counted it after all, its per-day 429 sets the count right.
       if (error instanceof ModelBusyError) await releaseCall(env, model, day);
       if (!(error instanceof QuotaError)) throw error;
-      const now = Date.now();
       if (error.daily) {
-        await markModelOutForTheDay(env, model, limit, now);
+        await markModelOutForTheDay(env, model, limit, Date.now());
         return { out: true, sent };
       }
-      if (tries === 2) {
-        await markOutStatement(env, model, now + COOL_DOWN_MS).run();
-        return { out: true, sent };
-      }
+      // A short limit (per minute): one more try after Google's delay, then this request
+      // gives up on the model. Nothing is remembered; the next request simply tries.
+      if (tries === 2) return { out: true, sent };
       await sleep(error.retryDelayMs);
     }
   }
 }
 
 async function giveBackBestUse(env, job) {
-  await env.DB.prepare(`UPDATE imports SET used_best = 0 WHERE id = ? AND status = 'running' AND attempt = ?`)
+  await env.DB.prepare(`UPDATE llm_requests SET used_best = 0 WHERE id = ? AND status = 'running' AND attempt = ?`)
     .bind(job.id, job.attempt)
     .run();
   job.used_best = 0;
 }
 
+// Calls the best model for this row, taking one of the user's daily uses first. The use
+// stays taken once a request reached Google, even if the model was busy and the row ends
+// up on the basic one: trying the best model is what the 5 count. Only when nothing was
+// sent (the shared limit was already reached) is it given back.
 async function callBest(job, deps, request) {
   const { env, llm } = deps;
   const day = quotaDay(Date.now());
@@ -235,55 +206,58 @@ async function callBest(job, deps, request) {
     job.used_best = 1;
     job.quota_day = day;
   }
-  let result;
-  try {
-    result = await callUnlessOut({ env, llm, model: env.LLM_BEST_MODEL, limit: limits(env).bestDaily, request });
-  } catch (error) {
-    // A busy answer took nothing from the shared count, so nothing from the user's 5 either.
-    if (error instanceof ModelBusyError && !alreadyCounted) await giveBackBestUse(env, job);
-    throw error;
-  }
-  // Nothing reached Google, so this import didn't take one of the user's daily uses.
+  const result = await callUnlessOut({ env, llm, model: env.LLM_BEST_MODEL, limit: limits(env).bestDaily, request });
   if (result.out && !result.sent && !alreadyCounted) await giveBackBestUse(env, job);
   return result;
+}
+
+async function callBasic(env, llm, request) {
+  const model = env.LLM_BASIC_MODEL;
+  const basic = await callUnlessOut({ env, llm, model, limit: limits(env).basicDaily, request });
+  if (basic.out) throw new ImportError('quota');
+  return { output: basic.output, model };
 }
 
 // How many Workflow waits a busy best model gets before the import moves to the basic one.
 // Google advises a short retry first, but a busy spell can last hours.
 const BEST_BUSY_RETRIES = 1;
 
-// Sends `request` ({ prompt, schema, videoUrl }) to the model policy allows: the best one
-// when it can be used, otherwise the basic one if the user approved it or the best one
-// stayed busy. Returns { output, model }. Throws ImportError quota or model_approval_needed
-// when neither can run, and ModelBusyError for the Workflow to wait and try again.
-// `deps.busyWaits` is how many busy waits this stage has had. A re-run never falls back:
-// replacing a recipe with a basic-model answer is what it exists to undo.
+// Sends an import's `request` ({ prompt, schema, videoUrl }): to the best model when the
+// user didn't pick the basic one and the best one can be used, otherwise to the basic one,
+// with no approval asked (the user has used their 5, the shared limit is reached, or the
+// best one stayed busy). Returns { output, model }. Throws ImportError quota when no model
+// can run, and ModelBusyError for the Workflow to wait and try again. `deps.busyWaits` is
+// how many busy waits this stage has had.
 export async function callChosenModel(job, deps, request) {
   const { env, llm, busyWaits = 0 } = deps;
-  const isRerun = job.replace_recipe_id !== null;
   // Reaching more waits than that means the best model was busy on its retry too.
-  const bestGaveUp = !isRerun && busyWaits > BEST_BUSY_RETRIES;
+  const bestGaveUp = busyWaits > BEST_BUSY_RETRIES;
   if (!job.state?.basicChosen && !bestGaveUp) {
-    let best;
     try {
-      best = await callBest(job, deps, request);
+      const best = await callBest(job, deps, request);
+      if (!best.out) return { output: best.output, model: env.LLM_BEST_MODEL };
     } catch (error) {
-      if (!(error instanceof ModelBusyError) || isRerun || busyWaits < BEST_BUSY_RETRIES) throw error;
-      // Still busy after its retry: the basic model is used, approved or not. The recipe
-      // keeps its re-run button for when the best model is free again.
-      best = { busy: true };
-    }
-    if (!best.out && !best.busy) return { output: best.output, model: env.LLM_BEST_MODEL };
-    if (best.out) {
-      if (isRerun) throw new ImportError('quota');
-      const state = await readModelState(env, job.user_id);
-      if (!state.basicOpen) throw new ImportError('quota');
-      if (!state.models.basicApproved) throw new ImportError('model_approval_needed');
+      if (!(error instanceof ModelBusyError) || busyWaits < BEST_BUSY_RETRIES) throw error;
+      // Still busy after its retry: the basic model is used.
     }
   }
+  return callBasic(env, llm, request);
+}
 
-  const model = env.LLM_BASIC_MODEL;
-  const basic = await callUnlessOut({ env, llm, model, limit: limits(env).basicDaily, request });
-  if (basic.out) throw new ImportError('quota');
-  return { output: basic.output, model };
+// A translation's request, for the row `job` (purpose 'translation'). The user waits for
+// it, so nothing waits: the best model (when picked) is tried once, and if it can't be used
+// or is busy the basic one answers instead, with no approval asked. A best-model try takes
+// one of the user's 5 like an import's. Returns { output, model }. Throws ImportError quota
+// when no model can run, and ModelBusyError when the basic model is busy.
+export async function callTranslationModel(job, deps, request, choice) {
+  const { env, llm } = deps;
+  if (choice === 'best') {
+    try {
+      const best = await callBest(job, deps, request);
+      if (!best.out) return { output: best.output, model: env.LLM_BEST_MODEL };
+    } catch (error) {
+      if (!(error instanceof ModelBusyError)) throw error;
+    }
+  }
+  return callBasic(env, llm, request);
 }

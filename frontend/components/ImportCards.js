@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLanguage } from './Language';
-import { errorMessage, formatTime } from '@/lib/i18n';
+import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './ImportCards.module.css';
 
@@ -61,10 +61,11 @@ export function useImports(enabled, onRecipeReady) {
     return () => clearInterval(timer);
   }, [enabled, anyRunning, refresh]);
 
-  // A poll already on its way must not put the old list back over this card.
-  const addImport = useCallback((added) => {
+  // A poll already on its way must not put the old list back over this card. `replacedId`
+  // is the failed card a Retry replaces (a Retry is a new import).
+  const addImport = useCallback((added, replacedId = null) => {
     latestRequest.current += 1;
-    setImports((list) => [added, ...list.filter((i) => i.id !== added.id)]);
+    setImports((list) => [added, ...list.filter((i) => i.id !== added.id && i.id !== replacedId)]);
   }, []);
 
   const dismissImport = useCallback(
@@ -102,7 +103,7 @@ function CloseButton({ label, disabled, onClick }) {
   );
 }
 
-function ImportCard({ item, backAt, busy, asksApproval, onDismiss, onRetry }) {
+function ImportCard({ item, backAt, busy, onDismiss, onRetry }) {
   const { lang, t } = useLanguage();
   const close = <CloseButton label={t.dismissImport} disabled={busy} onClick={() => onDismiss(item.id)} />;
 
@@ -134,22 +135,6 @@ function ImportCard({ item, backAt, busy, asksApproval, onDismiss, onRetry }) {
     );
   }
 
-  if (asksApproval) {
-    return (
-      <li className={`${styles.card} ${styles.approval}`}>
-        <div className={styles.body}>
-          <p className={styles.text}>{t.approvalNeeded(formatTime(t, backAt))}</p>
-          <div className={styles.actions}>
-            <button type="button" className="button" disabled={busy} onClick={() => onRetry(item.id, true)}>
-              {t.useBasicModel}
-            </button>
-          </div>
-        </div>
-        {close}
-      </li>
-    );
-  }
-
   return (
     <li className={`${styles.card} ${styles.failed}`}>
       <div className={styles.body}>
@@ -157,7 +142,7 @@ function ImportCard({ item, backAt, busy, asksApproval, onDismiss, onRetry }) {
         <p className={styles.text}>{errorMessage(t, { code: item.error, retryAt: backAt })}</p>
         {item.retryable && (
           <div className={styles.actions}>
-            <button type="button" className="button secondary" disabled={busy} onClick={() => onRetry(item.id, false)}>
+            <button type="button" className="button secondary" disabled={busy} onClick={() => onRetry(item.id)}>
               {t.retry}
             </button>
           </div>
@@ -172,7 +157,6 @@ export default function ImportCards({ imports, backAt, refresh, addImport, dismi
   const { t } = useLanguage();
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState(null);
-  const [retriesAskingApproval, setRetriesAskingApproval] = useState(new Set());
 
   async function dismiss(id) {
     setError('');
@@ -183,16 +167,13 @@ export default function ImportCards({ imports, backAt, refresh, addImport, dismi
     }
   }
 
-  async function retry(id, useBasicModel) {
+  async function retry(id) {
     setError('');
     setBusyId(id);
     try {
-      const restarted = await api.retryImport(id, useBasicModel);
-      setRetriesAskingApproval((ids) => new Set([...ids].filter((other) => other !== id)));
-      addImport(restarted);
+      addImport(await api.retryImport(id), id);
     } catch (err) {
-      if (err.code === 'model_approval_needed') setRetriesAskingApproval((ids) => new Set(ids).add(id));
-      else setError(errorMessage(t, { code: err.code, retryAt: backAt }));
+      setError(errorMessage(t, { code: err.code, retryAt: backAt }));
     }
     await refresh();
     setBusyId((current) => (current === id ? null : current));
@@ -212,7 +193,6 @@ export default function ImportCards({ imports, backAt, refresh, addImport, dismi
               item={item}
               backAt={backAt}
               busy={busyId === item.id}
-              asksApproval={item.error === 'model_approval_needed' || retriesAskingApproval.has(item.id)}
               onDismiss={dismiss}
               onRetry={retry}
             />

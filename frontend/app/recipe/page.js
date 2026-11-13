@@ -3,7 +3,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
 import HeartButton from '@/components/HeartButton';
 import ConfirmDialog from '@/components/ConfirmDialog';
@@ -20,26 +19,8 @@ function RecipeView() {
   const [loadError, setLoadError] = useState(null);
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [confirmingRerun, setConfirmingRerun] = useState(false);
-  const [busy, setBusy] = useState(null); // null | 'favorite' | 'delete' | 'rerun'
+  const [busy, setBusy] = useState(null); // null | 'favorite' | 'delete'
   const [error, setError] = useState('');
-  const [models, setModels] = useState(null); // only known for a logged-in user
-  const loggedIn = useAuth().status === 'user';
-
-  useEffect(() => {
-    if (!loggedIn) return undefined;
-    let cancelled = false;
-    // Only decides whether the re-run button shows, so a failure just leaves it hidden.
-    api
-      .getImports()
-      .then((data) => {
-        if (!cancelled) setModels(data.models);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [loggedIn]);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,21 +88,6 @@ function RecipeView() {
     }
   }
 
-  async function rerun() {
-    setConfirmingRerun(false);
-    setBusy('rerun');
-    setError('');
-    try {
-      await api.rerunRecipe(recipe.id);
-      router.push('/');
-    } catch (err) {
-      setError(errorMessage(t, err));
-      setBusy(null);
-    }
-  }
-
-  const canRerun = models && recipe.sourceModel === models.basicModel && models.bestAvailable;
-
   // The heart changes at once and changes back if saving fails.
   async function toggleFavorite() {
     const favorite = !recipe.favorite;
@@ -182,12 +148,6 @@ function RecipeView() {
 
       {error && <p className="error" role="alert">{error}</p>}
 
-      {canRerun && (
-        <button type="button" className="button secondary" disabled={busy !== null} onClick={() => setConfirmingRerun(true)}>
-          {busy === 'rerun' ? t.rerunning : t.rerunBest}
-        </button>
-      )}
-
       <div className={styles.actions}>
         <Link href={`/recipe/edit?id=${recipe.id}`} className="button">{t.edit}</Link>
         <button type="button" className="button danger" disabled={busy !== null} onClick={() => setConfirmingDelete(true)}>
@@ -201,16 +161,6 @@ function RecipeView() {
           confirmLabel={t.delete}
           onConfirm={remove}
           onCancel={() => setConfirmingDelete(false)}
-        />
-      )}
-
-      {confirmingRerun && (
-        <ConfirmDialog
-          message={t.confirmRerun}
-          confirmLabel={t.rerunBest}
-          danger={false}
-          onConfirm={rerun}
-          onCancel={() => setConfirmingRerun(false)}
         />
       )}
     </article>

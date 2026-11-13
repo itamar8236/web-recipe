@@ -80,15 +80,6 @@
   width: auto;
 }
 
-.approval {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;

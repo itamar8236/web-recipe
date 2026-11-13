@@ -4,35 +4,29 @@ import { ImportError } from '../src/import/errors.js';
 import { ModelBusyError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 import {
   callChosenModel,
+  callTranslationModel,
   nextQuotaReset,
   quotaDay,
   readModelState,
   reserveCall,
   startRefusal,
-  storeApproval,
 } from '../src/import/models.js';
 import { insertImport, insertUser } from './helpers.js';
 
 const BEST = env.LLM_BEST_MODEL;
 const BASIC = env.LLM_BASIC_MODEL;
 const today = () => quotaDay(Date.now());
-const LATER = () => Date.now() + 60 * 60 * 1000;
-const EARLIER = () => Date.now() - 1000;
 const ANSWER = { status: 'none' };
 
 const bare429 = () => new QuotaError({ daily: false, retryDelayMs: 1 });
 const daily429 = () => new QuotaError({ daily: true, retryDelayMs: 1 });
 
 const setUsage = (model, calls, day = today()) =>
-  env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(day, model, calls).run();
+  env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?) ON CONFLICT (day, model) DO UPDATE SET calls = excluded.calls').bind(day, model, calls).run();
+// A model Google said is out for the day: its count is at its limit.
+const markOut = (model) => setUsage(model, model === BEST ? 20 : 500);
 const usage = async (model, day = today()) =>
   (await env.DB.prepare('SELECT calls FROM llm_usage WHERE day = ? AND model = ?').bind(day, model).first())?.calls ?? 0;
-const markOut = (model, until = LATER()) =>
-  env.DB.prepare('INSERT INTO llm_model_status (model, unavailable_until) VALUES (?, ?)').bind(model, until).run();
-const outUntil = async (model) =>
-  (await env.DB.prepare('SELECT unavailable_until AS t FROM llm_model_status WHERE model = ?').bind(model).first())?.t ?? null;
-const approve = (userId, until = LATER()) =>
-  env.DB.prepare('INSERT INTO llm_basic_model_approvals (user_id, approved_until) VALUES (?, ?)').bind(userId, until).run();
 
 let videoNumber = 0;
 const newJob = (userId, fields = {}) =>
@@ -41,8 +35,8 @@ const useUpBest = async (userId, count) => {
   for (let i = 0; i < count; i++) await newJob(userId, { status: 'done', used_best: 1 });
 };
 const usedBestCount = async (userId) =>
-  (await env.DB.prepare('SELECT COUNT(*) AS n FROM imports WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, today()).first()).n;
-const reload = (job) => env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(job.id).first();
+  (await env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, today()).first()).n;
+const reload = (job) => env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(job.id).first();
 
 const answering = (...results) => {
   const queue = [...results];
@@ -104,12 +98,14 @@ describe('reserving a request', () => {
     expect(await usage(BEST)).toBe(1);
   });
 
-  it('sends no request when the limit is already reached', async () => {
+  it('sends no best-model request when its limit is already reached, and takes no use', async () => {
     const userId = await insertUser();
     await setUsage(BEST, 20);
+    const job = await newJob(userId);
     const llm = answering(ANSWER);
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'model_approval_needed' });
-    expect(llm).not.toHaveBeenCalled();
+    expect(await run(job, llm)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
+    expect((await reload(job)).used_best).toBe(0);
   });
 
   it('keeps a failed call counted, because Google may have counted it', async () => {
@@ -122,7 +118,7 @@ describe('reserving a request', () => {
   });
 });
 
-describe('the model policy table', () => {
+describe('the model policy: no approval is ever asked', () => {
   it('best available, user under their 5: uses the best model', async () => {
     const userId = await insertUser();
     const job = await newJob(userId);
@@ -133,103 +129,66 @@ describe('the model policy table', () => {
     expect((await reload(job)).used_best).toBe(1);
   });
 
-  it('best out, user approved: uses the basic model', async () => {
+  it('best out for the day: uses the basic model by itself', async () => {
     const userId = await insertUser();
-    await approve(userId);
     await markOut(BEST);
     const job = await newJob(userId);
     const llm = answering(ANSWER);
     expect(await run(job, llm)).toEqual({ output: ANSWER, model: BASIC });
     expect(modelsUsed(llm)).toEqual([BASIC]);
-    expect(await usage(BEST)).toBe(0);
     expect((await reload(job)).used_best).toBe(0);
   });
 
-  it('user at 5, user approved: uses the basic model', async () => {
+  it('user at 5 (the 6th import): uses the basic model by itself', async () => {
     const userId = await insertUser();
-    await approve(userId);
     await useUpBest(userId, 5);
     const llm = answering(ANSWER);
     expect(await run(await newJob(userId), llm)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
     expect(await usedBestCount(userId)).toBe(5);
   });
 
-  it('best out, not approved: asks, and runs nothing', async () => {
-    const userId = await insertUser();
-    await markOut(BEST);
-    const llm = answering(ANSWER);
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'model_approval_needed', retryable: false });
-    expect(llm).not.toHaveBeenCalled();
-  });
-
-  it('user at 5, not approved: asks, and runs nothing (the 6th import)', async () => {
-    const userId = await insertUser();
-    await useUpBest(userId, 5);
-    const llm = answering(ANSWER);
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'model_approval_needed' });
-    expect(llm).not.toHaveBeenCalled();
-    expect(await usedBestCount(userId)).toBe(5);
-  });
-
-  it('both out: fails with quota, approved or not', async () => {
+  it('both out: fails with quota, calling nothing', async () => {
     const userId = await insertUser();
     await markOut(BEST);
     await markOut(BASIC);
     const llm = answering(ANSWER);
     await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'quota', retryable: false });
-    await approve(userId);
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
     expect(llm).not.toHaveBeenCalled();
   });
 
-  it('after the reset: best is used again by itself and the approval has expired', async () => {
+  it('after the reset: the best model is used again by itself', async () => {
     const userId = await insertUser();
     await setUsage(BEST, 20, '2020-01-01');
-    await markOut(BEST, EARLIER());
-    await approve(userId, EARLIER());
-
-    const llm = answering(ANSWER);
-    expect(await run(await newJob(userId), llm)).toMatchObject({ model: BEST });
-
-    const failing = answering(daily429());
-    await expect(run(await newJob(userId), failing)).rejects.toMatchObject({ code: 'model_approval_needed' });
-    expect(modelsUsed(failing)).toEqual([BEST]);
+    expect(await run(await newJob(userId), answering(ANSWER))).toMatchObject({ model: BEST });
   });
 
-  it('an approved user still tries the best model first', async () => {
-    const userId = await insertUser();
-    await approve(userId);
-    const llm = answering(ANSWER);
-    expect(await run(await newJob(userId), llm)).toMatchObject({ model: BEST });
-    expect(modelsUsed(llm)).toEqual([BEST]);
-  });
-
-  it('an approval counts only for its own user', async () => {
-    const owner = await insertUser('dana');
-    const other = await insertUser('noa');
-    await approve(owner);
-    await markOut(BEST);
-    await expect(run(await newJob(other), answering(ANSWER))).rejects.toMatchObject({ code: 'model_approval_needed' });
+  it('counts each user’s 5 separately', async () => {
+    const dana = await insertUser('dana');
+    const noa = await insertUser('noa');
+    await useUpBest(dana, 5);
+    expect(await run(await newJob(noa), answering(ANSWER))).toMatchObject({ model: BEST });
   });
 });
 
 describe('quota answers from Google', () => {
-  it('a daily 429 marks the model out until the reset and syncs the count', async () => {
+  it('a daily 429 sets the day’s count to the limit and moves to the basic model in the same stage', async () => {
     const userId = await insertUser();
-    const llm = answering(daily429());
-    const before = Date.now();
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'model_approval_needed' });
-    expect(llm).toHaveBeenCalledTimes(1);
-    expect(await outUntil(BEST)).toBe(nextQuotaReset(before));
+    const job = await newJob(userId);
+    const llm = answering(daily429(), ANSWER);
+    expect(await run(job, llm)).toEqual({ output: ANSWER, model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
     expect(await usage(BEST)).toBe(20);
+    // A request reached the best model, so the try counts.
+    expect((await reload(job)).used_best).toBe(1);
   });
 
-  it('with an approval, a daily 429 moves to the basic model in the same stage', async () => {
+  it('after a daily 429, the next import goes straight to the basic model', async () => {
     const userId = await insertUser();
-    await approve(userId);
-    const llm = answering(daily429(), ANSWER);
-    expect(await run(await newJob(userId), llm)).toEqual({ output: ANSWER, model: BASIC });
-    expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
+    await run(await newJob(userId), answering(daily429(), ANSWER));
+    const llm = answering(ANSWER);
+    expect(await run(await newJob(userId), llm)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
   });
 
   it('a bare 429 waits and retries once, reserving again, and can succeed', async () => {
@@ -238,40 +197,24 @@ describe('quota answers from Google', () => {
     expect(await run(await newJob(userId), llm)).toMatchObject({ model: BEST });
     expect(llm).toHaveBeenCalledTimes(2);
     expect(await usage(BEST)).toBe(2);
-    expect(await outUntil(BEST)).toBeNull();
   });
 
-  it('two bare 429s put the model on a 15-minute cool-down, without touching the count', async () => {
+  it('two bare 429s move this import to the basic model, remembering nothing', async () => {
     const userId = await insertUser();
-    const llm = answering(bare429());
-    const before = Date.now();
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'model_approval_needed' });
-    expect(llm).toHaveBeenCalledTimes(2);
-    const until = await outUntil(BEST);
-    expect(until).toBeGreaterThanOrEqual(before + 15 * 60 * 1000);
-    expect(until).toBeLessThan(before + 16 * 60 * 1000);
+    const llm = answering(bare429(), bare429(), ANSWER);
+    expect(await run(await newJob(userId), llm)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BEST, BEST, BASIC]);
     expect(await usage(BEST)).toBe(2);
-  });
-
-  it('a bare 429 then a daily 429 counts as daily', async () => {
-    const userId = await insertUser();
-    const before = Date.now();
-    await expect(run(await newJob(userId), answering(bare429(), daily429()))).rejects.toMatchObject({ code: 'model_approval_needed' });
-    expect(await outUntil(BEST)).toBe(nextQuotaReset(before));
+    const next = answering(ANSWER);
+    expect(await run(await newJob(userId), next)).toMatchObject({ model: BEST });
   });
 
   it('stops retrying when the last slot went to someone else in the meantime', async () => {
     const userId = await insertUser();
     await setUsage(BEST, 19);
     const llm = answering(bare429(), ANSWER);
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'model_approval_needed' });
-    expect(llm).toHaveBeenCalledTimes(1);
-  });
-
-  it('uses the model again once the cool-down has passed', async () => {
-    const userId = await insertUser();
-    await markOut(BEST, EARLIER());
-    expect(await run(await newJob(userId), answering(ANSWER))).toMatchObject({ model: BEST });
+    expect(await run(await newJob(userId), llm)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
   });
 
   it.each([
@@ -279,26 +222,8 @@ describe('quota answers from Google', () => {
     ['bare', bare429],
   ])('fails with quota when the basic model also answers a %s 429', async (_, error) => {
     const userId = await insertUser();
-    await approve(userId);
     await markOut(BEST);
     await expect(run(await newJob(userId), answering(error()))).rejects.toMatchObject({ code: 'quota' });
-  });
-
-  it('fails with quota, not an offer, when the basic model is out too', async () => {
-    const userId = await insertUser();
-    await markOut(BASIC);
-    const llm = answering(daily429());
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
-  });
-
-  it('fails with quota when the basic model has reached its own limit', async () => {
-    const userId = await insertUser();
-    await approve(userId);
-    await markOut(BEST);
-    await setUsage(BASIC, 500);
-    const llm = answering(ANSWER);
-    await expect(run(await newJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
-    expect(llm).not.toHaveBeenCalled();
   });
 
   it('passes a refused video on to the stage', async () => {
@@ -307,18 +232,8 @@ describe('quota answers from Google', () => {
   });
 });
 
-describe('each user’s 5 best-model imports', () => {
-  it('does not use another of the 5 when the same import is retried', async () => {
-    const userId = await insertUser();
-    await useUpBest(userId, 4);
-    const job = await newJob(userId, { used_best: 1 });
-    const llm = answering(ANSWER);
-    expect(await run(job, llm)).toMatchObject({ model: BEST });
-    expect(await usedBestCount(userId)).toBe(5);
-    expect(await usage(BEST)).toBe(1);
-  });
-
-  it('marks the use only once when one stage calls the model twice', async () => {
+describe('each user’s 5 best-model uses', () => {
+  it('marks the use only once when one row calls the model twice', async () => {
     const userId = await insertUser();
     const job = await newJob(userId);
     const llm = answering(ANSWER);
@@ -328,45 +243,29 @@ describe('each user’s 5 best-model imports', () => {
     expect(await usage(BEST)).toBe(2);
   });
 
-  it('takes a new use when an import from an earlier day is retried', async () => {
-    const userId = await insertUser();
-    const job = await newJob(userId, { used_best: 1, quota_day: '2020-01-01' });
-    await run(job, answering(ANSWER));
-    expect(await reload(job)).toMatchObject({ used_best: 1, quota_day: today() });
-    expect(await usedBestCount(userId)).toBe(1);
-  });
-
-  it('lets only one of two imports at once take the last use', async () => {
+  it('lets only one of two imports at once take the last use; the other uses the basic model', async () => {
     const userId = await insertUser();
     await useUpBest(userId, 4);
     const [first, second] = [await newJob(userId), await newJob(userId)];
     const llm = answering(ANSWER);
-    const results = await Promise.allSettled([run(first, llm), run(second, llm)]);
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    expect(results.find((r) => r.status === 'rejected').reason).toMatchObject({ code: 'model_approval_needed' });
+    const results = await Promise.all([run(first, llm), run(second, llm)]);
+    expect(results.map((r) => r.model).sort()).toEqual([BASIC, BEST].sort());
     expect(await usedBestCount(userId)).toBe(5);
   });
 
-  it('gives the use back when no request went out', async () => {
+  it('counts translation rows on the best model too', async () => {
     const userId = await insertUser();
-    await setUsage(BEST, 20);
-    const job = await newJob(userId);
-    await expect(run(job, answering(ANSWER))).rejects.toMatchObject({ code: 'model_approval_needed' });
-    expect((await reload(job)).used_best).toBe(0);
-  });
-
-  it('counts each user separately', async () => {
-    const dana = await insertUser('dana');
-    const noa = await insertUser('noa');
-    await useUpBest(dana, 5);
-    expect(await run(await newJob(noa), answering(ANSWER))).toMatchObject({ model: BEST });
+    await useUpBest(userId, 4);
+    await insertImport(userId, { purpose: 'translation', platform: null, source_id: null, source_url: null, quota_day: today(), used_best: 1 });
+    expect((await readModelState(env, userId)).models.bestLeftForUser).toBe(0);
+    expect(await run(await newJob(userId), answering(ANSWER))).toMatchObject({ model: BASIC });
   });
 });
 
 describe('when the user chose the basic model', () => {
   const basicJob = async (userId) => ({ ...(await newJob(userId)), state: { basicChosen: true } });
 
-  it('uses only the basic model, with no approval and none of the user’s 5', async () => {
+  it('uses only the basic model, and none of the user’s 5', async () => {
     const userId = await insertUser();
     const job = await basicJob(userId);
     const llm = answering(ANSWER);
@@ -391,24 +290,25 @@ describe('when the best model is busy', () => {
   const runAfterWaits = (job, llm, busyWaits) =>
     callChosenModel(job, { env, llm, busyWaits }, { prompt: 'p', schema: {}, videoUrl: null });
 
-  it('leaves the first busy answer to a Workflow wait, giving back the request and the user’s use', async () => {
+  it('leaves the first busy answer to a Workflow wait: the request goes back to the shared count, the user’s use stays', async () => {
     const userId = await insertUser();
     const job = await newJob(userId);
     const llm = answering(busy());
     await expect(runAfterWaits(job, llm, 0)).rejects.toBeInstanceOf(ModelBusyError);
     expect(modelsUsed(llm)).toEqual([BEST]);
     expect(await usage(BEST)).toBe(0);
-    expect((await reload(job)).used_best).toBe(0);
-  });
-
-  it('keeps the best model’s answer when it is free again on its retry', async () => {
-    const userId = await insertUser();
-    const job = await newJob(userId);
-    expect(await runAfterWaits(job, answering(ANSWER), 1)).toEqual({ output: ANSWER, model: BEST });
     expect((await reload(job)).used_best).toBe(1);
   });
 
-  it('moves to the basic model when the best one is still busy on its retry, with no approval', async () => {
+  it('keeps the best model’s answer when it is free again on its retry, taking the use once', async () => {
+    const userId = await insertUser();
+    const job = await newJob(userId);
+    await expect(runAfterWaits(job, answering(busy()), 0)).rejects.toBeInstanceOf(ModelBusyError);
+    expect(await runAfterWaits(await reload(job), answering(ANSWER), 1)).toEqual({ output: ANSWER, model: BEST });
+    expect(await usedBestCount(userId)).toBe(1);
+  });
+
+  it('moves to the basic model when the best one is still busy on its retry, and the try still counts', async () => {
     const userId = await insertUser();
     const job = await newJob(userId);
     const llm = answering(busy(), ANSWER);
@@ -416,7 +316,7 @@ describe('when the best model is busy', () => {
     expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
     expect(await usage(BEST)).toBe(0);
     expect(await usage(BASIC)).toBe(1);
-    expect((await reload(job)).used_best).toBe(0);
+    expect((await reload(job)).used_best).toBe(1);
   });
 
   it('goes straight to the basic model after that', async () => {
@@ -434,58 +334,83 @@ describe('when the best model is busy', () => {
     expect(await usage(BASIC)).toBe(0);
   });
 
-  it('keeps a user’s use that an earlier try already spent', async () => {
+  it('moves a re-scan to the basic model too', async () => {
     const userId = await insertUser();
-    const job = await newJob(userId, { used_best: 1 });
-    await expect(runAfterWaits(job, answering(busy()), 0)).rejects.toBeInstanceOf(ModelBusyError);
-    expect((await reload(job)).used_best).toBe(1);
-  });
-
-  it('a re-run keeps waiting for the best model, even with an approval', async () => {
-    const userId = await insertUser();
-    await approve(userId);
-    const llm = answering(busy());
-    await expect(runAfterWaits(await newJob(userId, { replace_recipe_id: 12345 }), llm, 3)).rejects.toBeInstanceOf(ModelBusyError);
-    expect(modelsUsed(llm)).toEqual([BEST]);
+    const llm = answering(busy(), ANSWER);
+    expect(await runAfterWaits(await newJob(userId, { replace_recipe_id: 12345 }), llm, 1)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
   });
 });
 
-describe('a re-run', () => {
-  const rerunJob = (userId) => newJob(userId, { replace_recipe_id: 12345 });
+describe('a re-scan of an existing recipe', () => {
+  const rescanJob = (userId, fields = {}) => newJob(userId, { replace_recipe_id: 12345, ...fields });
 
   it('uses the best model', async () => {
     const userId = await insertUser();
-    expect(await run(await rerunJob(userId), answering(ANSWER))).toMatchObject({ model: BEST });
+    expect(await run(await rescanJob(userId), answering(ANSWER))).toMatchObject({ model: BEST });
   });
 
-  it.each([
-    ['the best model is marked out', async () => markOut(BEST), 0],
-    ['the shared limit is reached', async () => setUsage(BEST, 20), 0],
-  ])('fails with quota when %s, even with an approval', async (_, arrange, calls) => {
+  it('uses the basic model when the user picked it', async () => {
     const userId = await insertUser();
-    await approve(userId);
-    await arrange();
     const llm = answering(ANSWER);
-    await expect(run(await rerunJob(userId), llm)).rejects.toMatchObject({ code: 'quota', retryable: false });
-    expect(llm).toHaveBeenCalledTimes(calls);
+    const job = { ...(await rescanJob(userId)), state: { basicChosen: true } };
+    expect(await run(job, llm)).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
   });
 
-  it('fails with quota when the user is at their 5, even with an approval', async () => {
+  it('moves to the basic model by itself when the best one is out, like a new import', async () => {
     const userId = await insertUser();
-    await approve(userId);
+    await markOut(BEST);
+    expect(await run(await rescanJob(userId), answering(ANSWER))).toMatchObject({ model: BASIC });
+  });
+});
+
+describe('a translation', () => {
+  const translationJob = (userId) =>
+    insertImport(userId, { purpose: 'translation', platform: null, source_id: null, source_url: null, quota_day: today() });
+  const translateWith = (job, llm, choice) => callTranslationModel(job, { env, llm }, { prompt: 'p', schema: {} }, choice);
+  const busy = () => new ModelBusyError('Gemini 503: high demand');
+
+  it('uses only the basic model when it was picked, taking none of the 5', async () => {
+    const userId = await insertUser();
+    const job = await translationJob(userId);
+    const llm = answering(ANSWER);
+    expect(await translateWith(job, llm, 'basic')).toEqual({ output: ANSWER, model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
+    expect((await reload(job)).used_best).toBe(0);
+  });
+
+  it('uses the best model when picked, taking one of the 5', async () => {
+    const userId = await insertUser();
+    const job = await translationJob(userId);
+    expect(await translateWith(job, answering(ANSWER), 'best')).toMatchObject({ model: BEST });
+    expect((await reload(job)).used_best).toBe(1);
+  });
+
+  it('answers with the basic model at once when the best one is busy, and the try counts', async () => {
+    const userId = await insertUser();
+    const job = await translationJob(userId);
+    const llm = answering(busy(), ANSWER);
+    expect(await translateWith(job, llm, 'best')).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BEST, BASIC]);
+    expect((await reload(job)).used_best).toBe(1);
+  });
+
+  it('answers with the basic model when the user has used their 5', async () => {
+    const userId = await insertUser();
     await useUpBest(userId, 5);
+    const job = await translationJob(userId);
     const llm = answering(ANSWER);
-    await expect(run(await rerunJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
-    expect(llm).not.toHaveBeenCalled();
+    expect(await translateWith(job, llm, 'best')).toMatchObject({ model: BASIC });
+    expect(modelsUsed(llm)).toEqual([BASIC]);
+    expect((await reload(job)).used_best).toBe(0);
   });
 
-  it('never moves to the basic model when Google says the best one ran out', async () => {
+  it('throws ModelBusyError when the basic model is busy, and quota when it is out', async () => {
     const userId = await insertUser();
-    await approve(userId);
-    const llm = answering(daily429());
-    await expect(run(await rerunJob(userId), llm)).rejects.toMatchObject({ code: 'quota' });
-    expect(modelsUsed(llm)).toEqual([BEST]);
-    expect(await usage(BASIC)).toBe(0);
+    await expect(translateWith(await translationJob(userId), answering(busy()), 'basic')).rejects.toBeInstanceOf(ModelBusyError);
+    await markOut(BASIC);
+    await expect(translateWith(await translationJob(userId), answering(ANSWER), 'basic')).rejects.toMatchObject({ code: 'quota' });
   });
 });
 
@@ -495,17 +420,16 @@ describe('what the API reports and the checks before starting', () => {
   it('reports a fresh day', async () => {
     const userId = await insertUser();
     const now = Date.now();
-    const { models, bestOpen, basicOpen } = await readModelState(env, userId, now);
+    const { models, basicOpen } = await readModelState(env, userId, now);
     expect(models).toEqual({
       bestAvailable: true,
       bestLeftToday: 20,
       bestLeftForUser: 5,
       basicModel: BASIC,
-      basicApproved: false,
       bestAvailableAt: null,
       resetsAt: nextQuotaReset(now),
     });
-    expect({ bestOpen, basicOpen }).toEqual({ bestOpen: true, basicOpen: true });
+    expect(basicOpen).toBe(true);
   });
 
   it('subtracts what was used', async () => {
@@ -520,86 +444,40 @@ describe('what the API reports and the checks before starting', () => {
     const userId = await insertUser();
     await useUpBest(userId, 5);
     const now = Date.now();
-    const { models, bestOpen } = await readModelState(env, userId, now);
+    const { models } = await readModelState(env, userId, now);
     expect(models).toMatchObject({ bestAvailable: false, bestLeftForUser: 0, bestAvailableAt: nextQuotaReset(now) });
-    expect(bestOpen).toBe(true);
   });
 
   it('is unavailable until the reset when the shared count is used up', async () => {
     const userId = await insertUser();
     await setUsage(BEST, 20);
     const now = Date.now();
-    const { models, bestOpen } = await readModelState(env, userId, now);
+    const { models } = await readModelState(env, userId, now);
     expect(models).toMatchObject({ bestAvailable: false, bestLeftToday: 0, bestAvailableAt: nextQuotaReset(now) });
-    expect(bestOpen).toBe(false);
   });
 
-  it('reports the end of a cool-down as when the best model is back', async () => {
+  it('says the basic model is closed when its count is used up', async () => {
     const userId = await insertUser();
-    const until = Date.now() + 5 * 60 * 1000;
-    await markOut(BEST, until);
-    expect((await stateFor(userId)).models).toMatchObject({ bestAvailable: false, bestAvailableAt: until });
-  });
-
-  it('ignores a mark that has expired', async () => {
-    const userId = await insertUser();
-    await markOut(BEST, EARLIER());
-    expect((await stateFor(userId)).models).toMatchObject({ bestAvailable: true, bestAvailableAt: null });
-  });
-
-  it('stores an approval until the next reset, for that user only', async () => {
-    const userId = await insertUser('dana');
-    const other = await insertUser('noa');
-    const now = Date.now();
-    await storeApproval(env, userId, now);
-    const row = await env.DB.prepare('SELECT approved_until FROM llm_basic_model_approvals WHERE user_id = ?').bind(userId).first();
-    expect(row.approved_until).toBe(nextQuotaReset(now));
-    expect((await stateFor(userId)).models.basicApproved).toBe(true);
-    expect((await stateFor(other)).models.basicApproved).toBe(false);
-  });
-
-  it('renews an expired approval and stops counting one that has expired', async () => {
-    const userId = await insertUser();
-    await approve(userId, EARLIER());
-    expect((await stateFor(userId)).models.basicApproved).toBe(false);
-    await storeApproval(env, userId, Date.now());
-    expect((await stateFor(userId)).models.basicApproved).toBe(true);
+    await markOut(BASIC);
+    expect((await stateFor(userId)).basicOpen).toBe(false);
   });
 
   describe('startRefusal', () => {
-    const state = (models, open = {}) => ({ models, bestOpen: false, basicOpen: true, ...open });
+    const state = (bestAvailable, basicOpen = true) => ({ models: { bestAvailable }, basicOpen });
 
-    it('allows a start while the best model is available', () => {
-      expect(startRefusal(state({ bestAvailable: true }))).toBeNull();
-    });
-
-    it('allows a start on the basic model with an approval', () => {
-      expect(startRefusal(state({ bestAvailable: false, basicApproved: true }))).toBeNull();
-    });
-
-    it('asks without an approval', () => {
-      expect(startRefusal(state({ bestAvailable: false, basicApproved: false }))).toBe('model_approval_needed');
+    it('allows a start while either model can run', () => {
+      expect(startRefusal(state(true))).toBeNull();
+      expect(startRefusal(state(false))).toBeNull();
+      expect(startRefusal(state(true, false))).toBeNull();
     });
 
     it('says quota when both are out', () => {
-      expect(startRefusal(state({ bestAvailable: false, basicApproved: true }, { basicOpen: false }))).toBe('quota');
-      expect(startRefusal(state({ bestAvailable: false, basicApproved: false }, { basicOpen: false }))).toBe('quota');
+      expect(startRefusal(state(false, false))).toBe('quota');
     });
 
-    it('never offers the basic model to a re-run', () => {
-      expect(startRefusal(state({ bestAvailable: false, basicApproved: true }), { bestOnly: true })).toBe('quota');
-      expect(startRefusal(state({ bestAvailable: true }), { bestOnly: true })).toBeNull();
-    });
-
-    it('lets a retry through at the user’s cap when it already holds one of the 5', () => {
-      const atCap = state({ bestAvailable: false, basicApproved: false }, { bestOpen: true });
-      expect(startRefusal(atCap, { countedBest: true })).toBeNull();
-      expect(startRefusal(atCap)).toBe('model_approval_needed');
-    });
-
-    it('does not let that retry through when the model itself is out', () => {
-      const out = state({ bestAvailable: false, basicApproved: false }, { bestOpen: false });
-      expect(startRefusal(out, { countedBest: true })).toBe('model_approval_needed');
+    it('looks only at the basic model when the user picked it', () => {
+      expect(startRefusal(state(true, false), { basicChosen: true })).toBe('quota');
+      expect(startRefusal(state(false, true), { basicChosen: true })).toBeNull();
     });
   });
 });

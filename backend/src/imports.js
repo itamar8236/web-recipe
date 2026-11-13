@@ -1,25 +1,30 @@
 // The import endpoints. Everything here is behind the login check and works only on the
 // data of the user the session acts for. The work itself happens in import/workflow.js.
+// Every start, Retry and re-scan is its own imports row (purpose 'import'), so each try
+// that calls the best model counts toward the user's 5; translations are rows too, but
+// with purpose 'translation' (translate.js), and never show as cards.
 
 import { fail, json, readJson } from './http.js';
-import { holdsBestUse, quotaDay, readModelState, startRefusal, storeApproval } from './import/models.js';
+import { quotaDay, readModelState, startRefusal } from './import/models.js';
 import { readLink } from './import/sources/index.js';
 import { markFailed } from './import/stages.js';
 
 const STUCK_AFTER_MS = 30 * 60 * 1000;
 
 // A Retry can only help with these: the rest depend on the video itself.
+// model_approval_needed is only on rows from before the basic model stopped needing an
+// approval; a Retry now just runs them.
 const RETRYABLE_ERRORS = new Set(['llm_error', 'bad_result', 'model_approval_needed', 'quota', 'timed_out']);
 
-const REFUSAL_STATUS = { model_approval_needed: 409, quota: 429 };
-
 const isUniqueViolation = (error) => String(error.message).includes('UNIQUE');
-const optionalBoolean = (value) => value === undefined || typeof value === 'boolean';
 
 // state is deliberately absent: it holds whole video descriptions and recipes, and
 // polling reads this often.
 const IMPORT_SELECT = `SELECT i.id, i.status, i.stage, i.source_url, i.title, i.error, i.recipe_id, r.name_en, r.name_he
-  FROM imports i LEFT JOIN recipes r ON r.id = i.recipe_id`;
+  FROM llm_requests i LEFT JOIN recipes r ON r.id = i.recipe_id`;
+
+// Only these rows are cards: translations are not imports.
+const IS_IMPORT = `i.purpose = 'import'`;
 
 function toImport(row) {
   const failed = row.status === 'failed';
@@ -41,7 +46,7 @@ const loadImport = (env, userId, id) =>
   env.DB.prepare(`${IMPORT_SELECT} WHERE i.id = ? AND i.user_id = ?`).bind(id, userId).first();
 
 const findRunning = (env, userId, link) =>
-  env.DB.prepare(`${IMPORT_SELECT} WHERE i.user_id = ? AND i.platform = ? AND i.source_id = ? AND i.status = 'running'`)
+  env.DB.prepare(`${IMPORT_SELECT} WHERE ${IS_IMPORT} AND i.user_id = ? AND i.platform = ? AND i.source_id = ? AND i.status = 'running'`)
     .bind(userId, link.source.platform, link.sourceId)
     .first();
 
@@ -66,8 +71,9 @@ async function startAndRespond(env, userId, id, attempt) {
 
 // Both caps, as one SQL condition: checked first so the answer comes before the model
 // checks, and again inside the INSERT so two requests at once can't both take the last slot.
-const UNDER_CAPS = `(SELECT COUNT(*) FROM imports WHERE user_id = ?1 AND quota_day = ?2) < ?3
-  AND (SELECT COUNT(*) FROM imports WHERE user_id = ?1 AND quota_day = ?2 AND status = 'running') < ?4`;
+// Every try counts (a Retry is a row too); translations don't.
+const UNDER_CAPS = `(SELECT COUNT(*) FROM llm_requests WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import') < ?3
+  AND (SELECT COUNT(*) FROM llm_requests WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import' AND status = 'running') < ?4`;
 
 const capValues = (env, userId, day) => [userId, day, Number(env.IMPORT_DAILY_LIMIT), Number(env.IMPORT_MAX_RUNNING)];
 
@@ -76,33 +82,31 @@ async function isUnderCaps(env, userId, day) {
   return row.ok === 1;
 }
 
-async function createImport(request, env, userId) {
-  const body = await readJson(request);
+// Reads the model choice every start takes: `model` is 'best' (default) or 'basic'. Null
+// when invalid. With 'best', the basic model still answers by itself when the best one
+// can't be used; with 'basic', the best one is never tried.
+function readModelChoice(body) {
   const validModel = body?.model === undefined || body.model === 'best' || body.model === 'basic';
-  if (typeof body?.url !== 'string' || !optionalBoolean(body.useBasicModel) || !validModel) return fail(400, 'invalid_request');
-  // Choosing the basic model up front skips the best one entirely, so it needs no approval.
-  const basicChosen = body.model === 'basic';
+  if (!body || !validModel) return null;
+  return { basicChosen: body.model === 'basic' };
+}
 
-  const link = readLink(body.url);
-  if (link.error) return fail(400, link.error);
-
-  const running = await findRunning(env, userId, link);
-  if (running) return json({ import: toImport(running) });
-  if (await hasRecipeFor(env, userId, link.sourceUrl)) return fail(409, 'already_imported');
-
+// Checks the caps and the model, then inserts the row and starts it. `replaceRecipeId` is
+// set when an existing recipe's video is scanned again. Returns null when the same video
+// started a moment ago (another tap or device), for the caller to answer.
+async function startNew(env, userId, link, { basicChosen }, replaceRecipeId = null) {
   const now = Date.now();
   const day = quotaDay(now);
   if (!(await isUnderCaps(env, userId, day))) return fail(429, 'too_many_imports');
 
-  if (body.useBasicModel && !basicChosen) await storeApproval(env, userId, now);
   const refusal = startRefusal(await readModelState(env, userId, now), { basicChosen });
-  if (refusal) return fail(REFUSAL_STATUS[refusal], refusal);
+  if (refusal) return fail(429, refusal);
 
   let row;
   try {
     row = await env.DB.prepare(
-      `INSERT INTO imports (user_id, platform, source_id, source_url, state, quota_day, created_at, updated_at)
-       SELECT ?1, ?5, ?6, ?7, ?9, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
+      `INSERT INTO llm_requests (user_id, platform, source_id, source_url, state, replace_recipe_id, quota_day, created_at, updated_at)
+       SELECT ?1, ?5, ?6, ?7, ?9, ?10, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
       .bind(
@@ -112,17 +116,34 @@ async function createImport(request, env, userId) {
         link.sourceUrl,
         now,
         JSON.stringify(basicChosen ? { basicChosen: true } : {}),
+        replaceRecipeId,
       )
       .first();
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
-    // Another tap or device started the same video a moment ago. If it has already
-    // finished by now, there is a recipe for this video.
-    const other = await findRunning(env, userId, link);
-    return other ? json({ import: toImport(other) }) : fail(409, 'already_imported');
+    return null;
   }
   if (!row) return fail(429, 'too_many_imports');
   return startAndRespond(env, userId, row.id, row.attempt);
+}
+
+async function createImport(request, env, userId) {
+  const body = await readJson(request);
+  const choice = readModelChoice(body);
+  if (typeof body?.url !== 'string' || !choice) return fail(400, 'invalid_request');
+
+  const link = readLink(body.url);
+  if (link.error) return fail(400, link.error);
+
+  const running = await findRunning(env, userId, link);
+  if (running) return json({ import: toImport(running) });
+  if (await hasRecipeFor(env, userId, link.sourceUrl)) return fail(409, 'already_imported');
+
+  const response = await startNew(env, userId, link, choice);
+  if (response) return response;
+  // If the other start has already finished by now, there is a recipe for this video.
+  const other = await findRunning(env, userId, link);
+  return other ? json({ import: toImport(other) }) : fail(409, 'already_imported');
 }
 
 // ---- Listing ----
@@ -130,14 +151,14 @@ async function createImport(request, env, userId) {
 async function listImports(env, userId) {
   const now = Date.now();
   await env.DB.prepare(
-    `UPDATE imports SET status = 'failed', error = 'timed_out', updated_at = ?
+    `UPDATE llm_requests SET status = 'failed', error = 'timed_out', updated_at = ?
       WHERE user_id = ? AND status = 'running' AND updated_at < ?`,
   )
     .bind(now, userId, now - STUCK_AFTER_MS)
     .run();
 
   const [{ results }, state] = await Promise.all([
-    env.DB.prepare(`${IMPORT_SELECT} WHERE i.user_id = ? AND i.status IN ('running', 'failed', 'done') ORDER BY i.id DESC`)
+    env.DB.prepare(`${IMPORT_SELECT} WHERE ${IS_IMPORT} AND i.user_id = ? AND i.status IN ('running', 'failed', 'done') ORDER BY i.id DESC`)
       .bind(userId)
       .all(),
     readModelState(env, userId, now),
@@ -156,24 +177,22 @@ async function isStillWanted(env, userId, row) {
 }
 
 // A failed save has its recipe already, so it needs no model at all.
-async function retryRefusal(env, userId, body, row, now) {
+async function retryRefusal(env, userId, row, now) {
   if (row.extracted_model !== null) return null;
-  const bestOnly = row.replace_recipe_id !== null;
-  const basicChosen = row.basic_chosen === 1;
-  if (body.useBasicModel && !bestOnly && !basicChosen) await storeApproval(env, userId, now);
-  const countedBest = holdsBestUse(row, quotaDay(now));
-  return startRefusal(await readModelState(env, userId, now), { bestOnly, countedBest, basicChosen });
+  return startRefusal(await readModelState(env, userId, now), { basicChosen: row.basic_chosen === 1 });
 }
 
+// A Retry is a new row that starts where the failed one stopped (finished stages are kept
+// in its state), and the failed card goes away. Being a new row, it counts toward the caps
+// and, if it calls the best model, toward the user's 5, like any other try.
 async function retryImport(request, env, userId, id) {
-  const body = await readJson(request);
-  if (!body || !optionalBoolean(body.useBasicModel)) return fail(400, 'invalid_request');
+  if (!(await readJson(request))) return fail(400, 'invalid_request');
 
   const row = await env.DB.prepare(
-    `SELECT status, error, source_url, replace_recipe_id, used_best, quota_day,
+    `SELECT status, error, source_url, replace_recipe_id,
             json_extract(state, '$.model') AS extracted_model,
             json_extract(state, '$.basicChosen') AS basic_chosen
-       FROM imports WHERE id = ? AND user_id = ?`,
+       FROM llm_requests WHERE id = ? AND user_id = ? AND purpose = 'import'`,
   )
     .bind(id, userId)
     .first();
@@ -182,67 +201,56 @@ async function retryImport(request, env, userId, id) {
   if (!(await isStillWanted(env, userId, row))) return fail(409, 'not_retryable');
 
   const now = Date.now();
-  const refusal = await retryRefusal(env, userId, body, row, now);
-  if (refusal) return fail(REFUSAL_STATUS[refusal], refusal);
+  const day = quotaDay(now);
+  if (!(await isUnderCaps(env, userId, day))) return fail(429, 'too_many_imports');
+  const refusal = await retryRefusal(env, userId, row, now);
+  if (refusal) return fail(429, refusal);
 
-  // One statement, so a double tap restarts it only once. On a later day it counts as
-  // that day's import, and any best-model use from the earlier day no longer applies.
-  let restarted;
+  // A double tap or a second device makes a second running row for the same video, which
+  // the unique index refuses.
+  let added;
   try {
-    restarted = await env.DB.prepare(
-      `UPDATE imports SET status = 'running', attempt = attempt + 1, error = NULL, error_detail = NULL, updated_at = ?1,
-         used_best = CASE WHEN quota_day = ?2 THEN used_best ELSE 0 END, quota_day = ?2
-       WHERE id = ?3 AND user_id = ?4 AND status = 'failed'
-       RETURNING attempt`,
+    added = await env.DB.prepare(
+      `INSERT INTO llm_requests (user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, quota_day, created_at, updated_at)
+       SELECT user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, ?2, ?5, ?5
+         FROM llm_requests WHERE id = ?6 AND status = 'failed' AND ${UNDER_CAPS}
+       RETURNING id, attempt`,
     )
-      .bind(now, quotaDay(now), id, userId)
+      .bind(...capValues(env, userId, day), now, id)
       .first();
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
     return fail(409, 'not_retryable');
   }
-  if (!restarted) return fail(409, 'not_retryable');
-  return startAndRespond(env, userId, id, restarted.attempt);
+  if (!added) return fail(409, 'not_retryable');
+  await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', updated_at = ? WHERE id = ? AND status = 'failed'`).bind(now, id).run();
+  return startAndRespond(env, userId, added.id, added.attempt);
 }
 
 async function dismissImport(env, userId, id) {
-  const row = await env.DB.prepare(`UPDATE imports SET status = 'dismissed', updated_at = ? WHERE id = ? AND user_id = ? RETURNING id`)
+  const row = await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', updated_at = ? WHERE id = ? AND user_id = ? AND purpose = 'import' RETURNING id`)
     .bind(Date.now(), id, userId)
     .first();
   return row ? json({ ok: true }) : fail(404, 'not_found');
 }
 
-// ---- Re-running a basic-model recipe ----
+// ---- Scanning a recipe's video again ----
 
+// Any recipe with a link can be scanned again, on the model the user picks, exactly like a
+// new import. When it finishes it replaces the recipe's text.
 async function rerunRecipe(request, env, userId, recipeId) {
-  if (!(await readJson(request))) return fail(400, 'invalid_request');
+  const choice = readModelChoice(await readJson(request));
+  if (!choice) return fail(400, 'invalid_request');
 
-  const recipe = await env.DB.prepare('SELECT source_url, source_model FROM recipes WHERE id = ? AND user_id = ?')
+  const recipe = await env.DB.prepare('SELECT source_url FROM recipes WHERE id = ? AND user_id = ?')
     .bind(recipeId, userId)
     .first();
   if (!recipe) return fail(404, 'not_found');
-  if (recipe.source_model !== env.LLM_BASIC_MODEL) return fail(409, 'not_rerunnable');
-  const link = readLink(recipe.source_url);
+  const link = recipe.source_url === null ? { error: 'manual' } : readLink(recipe.source_url);
   if (link.error) return fail(409, 'not_rerunnable');
+  if (await findRunning(env, userId, link)) return fail(409, 'not_rerunnable');
 
-  const now = Date.now();
-  const { models } = await readModelState(env, userId, now);
-  if (!models.bestAvailable) return fail(429, 'best_model_unavailable');
-
-  let row;
-  try {
-    row = await env.DB.prepare(
-      `INSERT INTO imports (user_id, platform, source_id, source_url, replace_recipe_id, quota_day, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING id, attempt`,
-    )
-      .bind(userId, link.source.platform, link.sourceId, link.sourceUrl, recipeId, quotaDay(now), now, now)
-      .first();
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-    return fail(409, 'not_rerunnable');
-  }
-  return startAndRespond(env, userId, row.id, row.attempt);
+  return (await startNew(env, userId, link, choice, recipeId)) ?? fail(409, 'not_rerunnable');
 }
 
 // Routes /api/imports[/:id[/retry]] and /api/recipes/:id/rerun. Returns null for any

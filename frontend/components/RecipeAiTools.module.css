@@ -1,0 +1,46 @@
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tools p {
+  margin: 0;
+}
+
+.title {
+  font-size: 19px;
+}
+
+/* Each action: its button, then its own small model choice beside it (below on narrow phones). */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+/* A small choice, so it sits on one line with its label instead of taking a full row. */
+.model {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.model :global(.label) {
+  margin: 0;
+}
+
+.modelSelect {
+  width: auto;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}

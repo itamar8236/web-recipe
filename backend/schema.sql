@@ -164,30 +164,36 @@ CREATE TABLE IF NOT EXISTS recipes (
 
 CREATE INDEX IF NOT EXISTS recipes_user_folder ON recipes (user_id, folder_id);
 
--- One row per link a user asked to import. A separate table rather than unfinished rows
--- in recipes: recipes requires a real name, and every list and search would otherwise
--- need a "ready?" filter.
--- Rows stay after finishing (dismissing only sets the status), because the daily caps
--- count them.
--- platform has no CHECK, so adding a source needs no table rebuild.
+-- One row per request for model work: every import from a link, every Retry (a new row,
+-- not the old one restarted), every re-scan of a recipe's video, and every translation.
+-- It is the record of who used the models: a user's daily best-model uses are the rows with used_best = 1, whatever their
+-- purpose. A separate table rather than unfinished rows in recipes: recipes requires a real
+-- name, and every list and search would otherwise need a "ready?" filter.
+-- purpose: 'import' (a link: new, Retry or re-scan; shown as a card) or 'translation'
+-- (text only, no link, never a card; recipe_id is the recipe being edited, or NULL for one
+-- not saved yet).
+-- Rows stay after finishing (dismissing only sets the status), because the caps count them.
+-- platform, source_id and source_url are the link, so only an import has them. platform has
+-- no CHECK, so adding a source needs no table rebuild.
 -- stage is the stage running now or next, so the card can say what is happening.
--- attempt goes up on every Retry. Each stage's writes are guarded by it, so a late write
--- from an older attempt changes nothing.
--- state holds what finished stages produced, so a Retry skips them without depending on
--- how long Workflows keeps its own history.
+-- attempt guards each stage's writes, so a late write from an older Workflow changes
+-- nothing. A Retry is a new row, so new rows keep attempt 1.
+-- state holds what finished stages produced, so a Retry's row copies it and skips them.
 -- error is written before a stage throws, so nothing depends on how Workflows passes
 -- errors along. error_detail says why in words (e.g. Google's message), for debugging
 -- only: it is never sent to the browser.
--- replace_recipe_id is set on a re-run. It deliberately has no foreign key: ON DELETE SET
--- NULL would turn a re-run of a deleted recipe into a new recipe.
--- used_best says this import already took one of the user's daily best-model uses, so
--- retrying it doesn't take another. quota_day is the Pacific date those uses count for.
-CREATE TABLE IF NOT EXISTS imports (
+-- replace_recipe_id is set on a re-scan. It deliberately has no foreign key: ON DELETE SET
+-- NULL would turn a re-scan of a deleted recipe into a new recipe.
+-- used_best says this row took one of the user's daily best-model uses (once a request
+-- reached the best model, even if the row then moved to the basic one). quota_day is the
+-- Pacific date those uses and the caps count for.
+CREATE TABLE IF NOT EXISTS llm_requests (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  platform   TEXT    NOT NULL,
-  source_id  TEXT    NOT NULL,
-  source_url TEXT    NOT NULL,
+  purpose    TEXT    NOT NULL DEFAULT 'import' CHECK (purpose IN ('import', 'translation')),
+  platform   TEXT,
+  source_id  TEXT,
+  source_url TEXT,
   title      TEXT,
   status     TEXT    NOT NULL DEFAULT 'running'
              CHECK (status IN ('running', 'done', 'failed', 'dismissed')),
@@ -201,36 +207,26 @@ CREATE TABLE IF NOT EXISTS imports (
   used_best  INTEGER NOT NULL DEFAULT 0 CHECK (used_best IN (0, 1)),
   quota_day  TEXT    NOT NULL,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  CHECK ((purpose = 'import') = (platform IS NOT NULL AND source_id IS NOT NULL AND source_url IS NOT NULL))
 );
 
-CREATE INDEX IF NOT EXISTS imports_user_status ON imports (user_id, status);
+CREATE INDEX IF NOT EXISTS llm_requests_user_status ON llm_requests (user_id, status);
 
 -- A user can't run the same video twice at once. This is what makes a double tap or a
--- second device show the existing card instead of spending another request.
-CREATE UNIQUE INDEX IF NOT EXISTS imports_one_running
-  ON imports (user_id, platform, source_id) WHERE status = 'running';
+-- second device show the existing card instead of spending another request. Translations
+-- have no link (NULLs never clash), so any number may run.
+CREATE UNIQUE INDEX IF NOT EXISTS llm_requests_one_running
+  ON llm_requests (user_id, platform, source_id) WHERE status = 'running';
 
--- Models Google said are out of quota, and until when. Shared by all users, because
--- Google's limits are per project.
-CREATE TABLE IF NOT EXISTS llm_model_status (
-  model             TEXT    PRIMARY KEY,
-  unavailable_until INTEGER NOT NULL
-);
-
--- The app's own count of requests per Pacific day and model: Google offers no documented
--- way to ask how many are left. A new day is a new row, so the count restarts at Google's
--- reset by itself.
+-- The app's own count of requests per Pacific day and model, shared by all users because
+-- Google's limits are per project: Google offers no documented way to ask how many are
+-- left. It counts every request, including a Workflow's own retries. When Google says a
+-- model's daily quota is used up, its count is set to the limit, which keeps the model
+-- unused until the reset. A new day is a new row, so the count restarts by itself.
 CREATE TABLE IF NOT EXISTS llm_usage (
   day   TEXT    NOT NULL,
   model TEXT    NOT NULL,
   calls INTEGER NOT NULL,
   PRIMARY KEY (day, model)
-);
-
--- "When the best model is out, I accept the basic one, until the next reset." One row per
--- user; an expired row is simply ignored and replaced by the next approval.
-CREATE TABLE IF NOT EXISTS llm_basic_model_approvals (
-  user_id        INTEGER PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
-  approved_until INTEGER NOT NULL
 );
