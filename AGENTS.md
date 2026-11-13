@@ -13,8 +13,8 @@ add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-
 log-out with remembered sessions plus a guest mode, editing your own username and
 password, the folders/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
-a recipe from a YouTube link in the background with a Cloudflare Workflow, plus two AI
-tools on the edit form (translate a recipe, scan its video again). The sections
+a recipe from a YouTube, Facebook or Instagram link in the background with a Cloudflare
+Workflow, plus two AI tools on the edit form (translate a recipe, scan its video again). The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
 ## Known bugs and accepted trade-offs
@@ -33,6 +33,9 @@ resolved. One short line each, linking to the README section with the details.
   total (`backend/README.md` → Import from a YouTube link). Accepted.
 - A few rare import edge cases are left as they are (`backend/README.md` → Import from a
   YouTube link → Known small gaps).
+- Facebook and Instagram are read as an anonymous visitor, so only public posts work, and
+  Meta may block or change this at any time (`backend/README.md` → Facebook and Instagram).
+  Not yet checked from Cloudflare's network. Facebook photo and text posts aren't supported.
 - `ConfirmDialog` opens with focus on its confirm button, not Cancel (`frontend/README.md` →
   UX rules).
 
@@ -41,18 +44,22 @@ resolved. One short line each, linking to the README section with the details.
 **web-recipe** is a small personal web app for a handful of people to keep their recipes.
 
 - Recipes live in **folders** (a flat list) the user creates, renames, and deletes.
-- Add, edit, and delete recipes **manually**, or **from a YouTube link**: the backend
-  sends the video and its description to Google's free LLMs in the background, so it keeps
-  going after the user leaves the app, and **saves the recipe by itself**, with no folder.
-  The user can edit or delete it afterwards. Supported now: **YouTube** only, and only
-  short videos are sent to the LLM (a longer one still works when its description holds
-  the recipe). Other platforms may come later; don't build for them until asked.
+- Add, edit, and delete recipes **manually**, or **from a link**: the backend sends the
+  post's text and video to Google's free LLMs in the background, so it keeps going after
+  the user leaves the app, and **saves the recipe by itself**, with no folder. The user can
+  edit or delete it afterwards. Supported now: **YouTube**, **Facebook** (videos and reels)
+  and **Instagram** (reels, and photo posts by their caption), public posts only. Only
+  short videos are sent to the LLM (a longer one still works when its text holds the
+  recipe); if a video can't be fetched, the text alone is used. Other platforms (TikTok,
+  ...) may come later; don't build for them until asked.
 - An import uses the **best model**, up to 5 a day per user. Every try that calls the best
   model counts toward the 5 (each import, Retry, re-scan and best-model translation), even
   one that ends up on the basic model. After the 5, or when the best model is out for the
   day, the **basic model is used by itself**, with no question, until the quota resets.
   If the best model is still **busy** after one short retry, the import switches to the
-  basic model by itself too.
+  basic model by itself too. When the basic model is busy or out as well, a request with
+  no video (a translation, a caption-only import) is answered by a **fallback** text model
+  from another free provider, if its key is set.
 - The **edit form** holds the AI tools, each with its own Best/Basic choice: **translate**
   the language being written into the other one (Basic by default; any recipe, manual ones
   too; nothing is saved until Save), and, for an imported recipe, **scan its video again**
@@ -99,7 +106,7 @@ resolved. One short line each, linking to the README section with the details.
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Node-style JS on the Workers runtime (`nodejs_compat`); no web framework |
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
 | Background jobs | Cloudflare Workflows                         | Imports only; free on this plan                    |
-| LLM       | Google's free-tier LLMs                            | A best and a basic model, set by config; keys in Worker secrets |
+| LLM       | Google's free-tier LLMs; Groq's free tier as a text-only fallback | A best, a basic and a fallback model, set by config; keys in Worker secrets. Videos are handed to Gemini through its free file store |
 | Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); admin manages users; stays logged in |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-plugin`           |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |
@@ -116,7 +123,9 @@ One Cloudflare Worker  (backend/)
 ├── /api/*   → JSON API (login required) ──► D1 (users, folders, recipes, imports)
 │                                        └──► Workflow (import, in the background)
 │                                               ├──► YouTube Data API (video details)
-│                                               └──► Google LLMs (video → recipe)
+│                                               ├──► Facebook / Instagram (public post page, video file)
+│                                               ├──► Google LLMs (text + video → recipe)
+│                                               └──► Groq (text-only fallback)
 └── /*       → static files built from frontend/ (frontend/out)
 ```
 
@@ -165,6 +174,9 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
 - Run a real video import on a link the owner didn't give in the chat (`local-dev`).
+- Fetch a pasted link as it is, or follow a redirect automatically. The Worker fetches
+  only URLs it builds from a parsed id, on the site's own hosts, checking every hop
+  (`backend/README.md` → Links). No proxies, scraping services, logins or CAPTCHA solvers.
 - Add an API endpoint that skips the login check (only sign-up, login and logout are public), or an
   admin action that skips the admin check.
 - Add a paid service or anything outside the free tiers above.

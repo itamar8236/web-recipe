@@ -7,7 +7,7 @@ backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 ## Current state
 
 The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up, guest
-mode and creating a recipe from a YouTube link. A logged-in user's folders, recipes and favorites are loaded from and saved
+mode and creating a recipe from a YouTube, Facebook or Instagram link. A logged-in user's folders, recipes and favorites are loaded from and saved
 to the backend (D1). A **guest's** live only in memory in `lib/api.js`: nothing is sent
 to the backend, the app starts empty and everything is gone on reload. Components call
 the same `lib/api.js` functions in both modes. Folders are a flat list (no nesting or
@@ -112,7 +112,8 @@ The rest are planned.
 4. **Import cards** (`components/ImportCards`, at the top of the content section, in every
    folder view, not filtered by search):
    - Running: gray with a gentle pulse, the title or link, and "Getting the video
-     details..." or "Reading the recipe...".
+     details...", "Getting the video..." (Facebook and Instagram, whose video is handed to
+     the model as a file) or "Reading the recipe..." (`stageMessage` in `lib/i18n.js`).
    - Ready: "Recipe ready: <name>" with Open (which also dismisses) and ×. Needed because
      the recipe list is oldest-first.
    - Failed: red, the message, Retry when it can help, ×. Retry starts a new import (a new

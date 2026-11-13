@@ -2,7 +2,7 @@
 
 The server side of web-recipe: one Cloudflare Worker in plain JavaScript that serves the
 JSON API, stores data in Cloudflare D1, handles login, calls Google's free LLMs to turn
-video links into recipes, and serves the frontend's static build. Read the root
+YouTube, Facebook and Instagram links into recipes, and serves the frontend's static build. Read the root
 `AGENTS.md` first.
 
 "Current state", the API tables and "Import from a YouTube link" describe what exists; the
@@ -13,7 +13,7 @@ here in the same PR that adds them.
 
 The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
 everything else is the static build from `../frontend/out`, served by Cloudflare. The auth
-API, the folders/recipes API, the YouTube import and translation below exist; the admin
+API, the folders/recipes API, the import from a link and translation below exist; the admin
 endpoints don't yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
 `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
 automatically through Workers Builds (root directory `/`), which builds with
@@ -30,7 +30,10 @@ Code: `src/index.js` (routes and auth), `src/data.js` (folders and recipes),
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
 `workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
 choice, usage counting, reset time), `llm.js` (the only file that knows
-Gemini's format), `errors.js`, and `sources/` (link detection and the YouTube adapter). Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
+Gemini's format, including its file store for videos), `groq.js` (the only file that knows
+Groq's format, for the fallback model), `errors.js`, and `sources/` (link detection and one
+adapter per site: `youtube.js`, `facebook.js`, `instagram.js`, with `meta.js` for what the
+last two share). `scripts/e2e-links.mjs` runs real imports through the local app by hand. Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
 throwaway local D1 built from `schema.sql`; never touches production or `.wrangler/state`).
 
 ## Auth API
@@ -96,6 +99,8 @@ All need a session, work only on the data of the user the session acts for, and 
 | `POST /api/recipes/:id/rerun` `{model?}` | Scan an imported recipe's video again; replaces its text when done | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_rerunnable` (manual recipe, or that video is running); 429 `too_many_imports`, `quota` |
 
 - `import` is `{ id, status, stage, link, title, error, retryable, recipeId, recipeName }`.
+  `stage` is `meta`, `video`, `extract` or `save`. `link` is the stored link, which for a
+  share link changes to the post's own link once the import has followed it.
   `recipeName` is `{ en, he }`, or `null` until there is a recipe. `error` is set only when
   `status` is `failed`.
 - `GET` returns `running`, `failed` and `done` import rows, newest first, never `dismissed`
@@ -174,6 +179,9 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   `npm run db:pull`, `npx wrangler logout`. `db:pull`
   ([`scripts/db-pull.mjs`](scripts/db-pull.mjs)) exports production (read-only), replaces
   the local database with that copy, then applies `schema.sql` locally.
+- **Changing an existing table** needs a one-off file in [`migrations/`](migrations), run
+  once by the owner on production (each file says how at its top). `schema.sql` can't do
+  it: it only creates what is missing.
 - **Schema**: [`schema.sql`](schema.sql) describes every table. It only uses
   `IF NOT EXISTS`, so applying it again is safe. The owner applies it to production by
   hand: `npx wrangler d1 execute recipes-db --remote --file=schema.sql`.
@@ -212,7 +220,9 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
 
 ## Import from a YouTube link
 
-Users paste a link and go back to YouTube, and a normal request stops when they leave, so
+(The heading is kept for the links that point here; it covers all three sites.)
+
+Users paste a link and go back to the video, and a normal request stops when they leave, so
 imports run in a **Cloudflare Workflow**. The recipe is written once, complete, with no
 folder and no review: the user can edit or delete it afterwards.
 
@@ -221,20 +231,73 @@ POST /api/imports {url}
   parse link → guards → choose model → insert llm_requests row → start Workflow → 202
 
 Workflow: each stage is one retried step, and saves its result to the row
-  meta     YouTube Data API: title, description, duration, privacy (no LLM)
-  extract  One call with the description and, if it can be sent, the video
+  meta     The post's details from its site: title, text, subtitles, video facts (no LLM)
+  video    Facebook and Instagram only: stream the video file into Gemini's file store
+  extract  One call with the text and, if it can be sent, the video
   save     One D1 batch: insert the recipe, or replace it on a re-scan, + mark the import done
 ```
 
-**Links.** Only the backend decides which site a link is (`sources/index.js`); the Worker
-never fetches the pasted URL. A new platform is one adapter added to `SOURCES`. Every other
-site answers `link_unsupported`.
+**Links.** Only the backend decides which site a link is (`sources/index.js`), from the
+link's text alone. A new platform is one adapter added to `SOURCES` (the adapter shape is
+described at the top of that file); `stages.js` knows no site. Every other site answers
+`link_unsupported`, and a link on a known site that isn't a post answers `link_invalid`.
+The stored link is always rebuilt from the parsed id, so tracking parameters are dropped
+and every form of one post is the same import.
 
-**Extract.** The video is sent if it's at most `IMPORT_MAX_VIDEO_MINUTES` (3) and public.
-The description counts if it's at least 80 characters. If neither can be sent, it fails
-with no LLM call. One call with whatever can be sent returns the recipe in both languages,
-with the video's own language written first. Everything the model returns is untrusted and
-is validated before it's stored.
+- YouTube: `watch?v=`, `youtu.be/`, `shorts/`, `live/`.
+- Facebook (`facebook.com`, `www.`, `m.`, `web.`, `fb.watch`): `/reel/<id>`,
+  `/watch?v=<id>`, `/video.php?v=<id>`, `/<page>/videos/[<title>/]<id>`, stored as
+  `https://www.facebook.com/watch/?v=<id>`. Share links: `/share/<code>`,
+  `/share/v|r|p/<code>`, `fb.watch/<code>`.
+- Instagram (`instagram.com`, `www.`, `instagr.am`): `[/<user>]/reel|reels|p|tv/<code>`,
+  stored as `https://www.instagram.com/p/<code>/`. Share links: `/share/[reel|p/]<code>`.
+
+**The Worker never fetches a pasted URL as it is.** It fetches only URLs it builds from the
+parsed id, with `redirect: 'manual'`, and follows each redirect by hand only onto the
+site's own hosts (`fetchPage` in `sources/meta.js`). Video and subtitle files are fetched
+only from Meta's CDN (`*.fbcdn.net`, `*.cdninstagram.com`), and the upload address Gemini
+answers with is used only on Google's own host.
+
+**Share links.** A share link doesn't say which post it is, so it starts as its own id
+(`share/r/<code>`). The `meta` stage follows it, writes the post's real id and link on the
+row, and then does the duplicate checks a normal link gets before starting: if the user
+already has that recipe the card fails with `already_imported`, and if the same post is
+already being imported (the unique index) the newer row dismisses itself. A share link that
+leads to something that isn't a video or post fails with `link_unsupported`.
+
+**Facebook and Instagram.** Both are read the way an anonymous visitor's browser reads a
+public post: one page request with the headers a browser sends (Facebook answers 400
+without them), no account, cookies, tokens, proxies or scraping services. The post's data
+is in `<script type="application/json">` blocks; only the one or two blocks that mention
+the post are parsed, and the facts are found by their field names and the post's id, not
+by a fixed path, because the layout differs between a reel page and a watch page.
+
+- Facebook gives the caption, the length, a video file and sometimes an auto-made subtitle
+  track (`.srt`, fetched as extra text). Only videos and reels: a photo or text post is
+  not supported.
+- Instagram gives the caption, a video file and its length (from the streaming manifest).
+  A photo or carousel post has no video and is read from its caption.
+- A page that came without its data blocks still gives the link-preview text
+  (`og:title`/`og:description`) as a caption-only import.
+- This was built and tested from a home connection. Cloudflare's network may be answered
+  differently (a login wall or a block), which shows as `login_required` or
+  `source_blocked` with the reason in `error_detail` and in the logs. Meta can also change
+  its pages at any time; `scripts/e2e-links.mjs` is the check.
+
+**Video.** A video is sent if it's public and at most `IMPORT_MAX_VIDEO_MINUTES` (3); one
+of unknown length is not sent. Gemini reads a YouTube video from its link. A Facebook or
+Instagram video is a file, so the `video` stage streams it from the CDN into Gemini's file
+store (free, deleted by Google after 48 hours) without holding it in memory, refusing a file
+over `IMPORT_MAX_VIDEO_MB` (100). `extract` waits until the file is processed, sends its
+uri, and deletes it once the answer can be used (a bad answer is asked for again and still
+needs it). If the download or upload fails and there is enough text, the import goes on
+with the text and remembers why (`state.videoSkipped`); with no text it fails.
+
+**Extract.** The description counts if it's at least 80 characters, and so do subtitles.
+If neither text nor video can be sent, it fails with no LLM call. One call with whatever
+can be sent returns the recipe in both languages, with the post's own language written
+first. Everything from the site is sent as data, and everything the model returns is
+untrusted and is validated before it's stored.
 
 **Models.** `LLM_BEST_MODEL` and `LLM_BASIC_MODEL` are config, so changing one needs no code
 change. Nobody is ever asked to approve the basic model. The best model is tried first
@@ -243,6 +306,15 @@ basic model is used by itself until the reset. The user can also pick the basic 
 one import. If the best model is still busy (503) after one short retry, that import moves
 to the basic model (see Failures). Scanning an existing recipe's video again (a re-scan,
 `replace_recipe_id`) follows exactly the same rules.
+
+**Fallback model.** `LLM_FALLBACK_MODEL` (`openai/gpt-oss-120b` on Groq's free tier) answers
+when the basic model is busy (503) or out for the day, for requests with **no video**: a
+translation, or an import that has only text to send. It can't watch a video, so a request
+with one still waits for Gemini as described under Failures. It is off until
+`GROQ_API_KEY` is set, and then has its own daily count (`LLM_FALLBACK_DAILY_LIMIT`, 200;
+Groq's free limit when checked was 1,000 requests and 200,000 tokens a day, 8,000 tokens a
+minute). A recipe it wrote has its name in `source_model`; the translate API still answers
+`model: 'basic'`. Users still see only Best and Basic.
 
 **The user's 5.** A row takes one of the 5 (`used_best = 1`, in one statement, so two rows
 can't take the last one) when it is about to call the best model, and keeps it once a
@@ -273,7 +345,11 @@ in `error_detail` (never sent to the browser).
 
 | Case | Code | Automatic retry | User can Retry |
 |---|---|---|---|
-| Removed, or Gemini refused the video and nothing else had the recipe | `video_unavailable` | no | no |
+| Removed or private, or the video couldn't be used and nothing else had the recipe | `video_unavailable` | no | no |
+| The site redirected to a login page, or shows the post only after a login | `login_required` | no | yes |
+| The site answered 403/429/5xx, or sent a page with none of the known parts | `source_blocked` | yes, 3 tries | yes |
+| A share link led to a recipe the user already has | `already_imported` | no | no |
+| A share link led to something that isn't a video or post | `link_unsupported` | no | no |
 | Private or unlisted, description not enough | `video_private` | no | no |
 | Too long, description not enough | `video_too_long` | no | no |
 | No recipe | `no_recipe` | no | no |
@@ -308,12 +384,13 @@ hours, and imports should land in minutes.
 
 A Retry inserts a new row that copies the failed one's `state` and starts a new Workflow.
 Finished stages are skipped through `state.done`, so it doesn't depend on how long
-Workflows keeps its history. Every write is guarded by `status = 'running'` and the
+Workflows keeps its history. `state.version` says which shape the state has; a row holding
+an older shape starts again from its first stage, keeping only its model choice. Every write is guarded by `status = 'running'` and the
 attempt, so a repeated step or a dismissal writes nothing, and a recipe is never saved
 twice. (New rows always have `attempt` 1; older rows retried in place may have more.)
 
-**Provider.** Everything about Gemini's request format is in `llm.js`, so another free
-provider can be swapped in without touching the rest of the backend.
+**Provider.** Everything about Gemini's request format is in `llm.js` and everything about
+Groq's in `groq.js`; `models.js` alone decides which model runs and counts the calls.
 
 **Limits to keep in mind.** Quota is per Google project and shared by all users, about 20
 best-model imports a day in total, and Google says the limits aren't guaranteed. PR previews
@@ -329,6 +406,11 @@ production, and gives `workflow.not_found` before the first deploy.
   two requests. Opening the ready card still works.
 - A running import dismissed through the raw API (the UI has no × on running cards) may still
   finish its LLM call, but saves nothing.
+- An uploaded video stays in Gemini's file store until Google deletes it (48 hours) when
+  its import fails before a usable answer. A Retry made later than that finds the file gone
+  and goes on with the text.
+- When both Gemini models are out for the day a new import is refused with `quota` before
+  it starts, even if the fallback model could have read its text.
 
 **Logging.** `llm.js` logs each Gemini request (the model, the video link and the full
 prompt) and each failure (the status and Google's error text), never the key. Import prompts
@@ -367,10 +449,11 @@ the user taps Save. It works for any recipe, manual ones too, but needs an accou
 
 ## Secrets
 
-`GEMINI_API_KEY` and `YOUTUBE_API_KEY` exist only in the Worker (Worker secrets;
-`.dev.vars` locally, with placeholders in `.dev.vars.example`). Never send them to the
-frontend or commit them. Without a key, `llm.js` and `sources/youtube.js` fail at once and
-send nothing.
+`GEMINI_API_KEY`, `YOUTUBE_API_KEY` and the optional `GROQ_API_KEY` exist only in the
+Worker (Worker secrets; `.dev.vars` locally, with placeholders in `.dev.vars.example`).
+Never send them to the frontend or commit them. Without a key, `llm.js` and
+`sources/youtube.js` fail at once and send nothing, and without `GROQ_API_KEY` the fallback
+model is simply never used. Facebook and Instagram need no key.
 
 ## Deploy
 
