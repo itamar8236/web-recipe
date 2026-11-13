@@ -98,7 +98,7 @@ async function markModelOutForTheDay(env, model, limit, now) {
 
 // The `models` object the API returns, plus whether each model itself is open: the
 // frontend needs only the first, the checks before starting need both. A user's daily
-// best-model uses are the imports rows (of every purpose) that called the best model.
+// best-model uses are the llm_requests rows (of every purpose) that called the best model.
 export async function readModelState(env, userId, now = Date.now()) {
   const best = env.LLM_BEST_MODEL;
   const basic = env.LLM_BASIC_MODEL;
@@ -106,7 +106,7 @@ export async function readModelState(env, userId, now = Date.now()) {
   const day = quotaDay(now);
   const [usage, used] = await env.DB.batch([
     env.DB.prepare('SELECT model, calls FROM llm_usage WHERE day = ? AND model IN (?, ?)').bind(day, best, basic),
-    env.DB.prepare('SELECT COUNT(*) AS n FROM imports WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, day),
+    env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, day),
   ]);
   const callsOf = (model) => usage.results.find((row) => row.model === model)?.calls ?? 0;
 
@@ -147,9 +147,9 @@ const holdsBestUse = (job, day) => job.used_best === 1 && job.quota_day === day;
 // the same time can't go past the cap.
 async function claimBestUse(env, job, day) {
   const row = await env.DB.prepare(
-    `UPDATE imports SET used_best = 1, quota_day = ?1
+    `UPDATE llm_requests SET used_best = 1, quota_day = ?1
       WHERE id = ?2 AND status = 'running' AND attempt = ?3
-        AND (SELECT COUNT(*) FROM imports WHERE user_id = ?4 AND quota_day = ?1 AND used_best = 1) < ?5
+        AND (SELECT COUNT(*) FROM llm_requests WHERE user_id = ?4 AND quota_day = ?1 AND used_best = 1) < ?5
       RETURNING id`,
   )
     .bind(day, job.id, job.attempt, job.user_id, limits(env).bestPerUser)
@@ -187,7 +187,7 @@ async function callUnlessOut({ env, llm, model, limit, request }) {
 }
 
 async function giveBackBestUse(env, job) {
-  await env.DB.prepare(`UPDATE imports SET used_best = 0 WHERE id = ? AND status = 'running' AND attempt = ?`)
+  await env.DB.prepare(`UPDATE llm_requests SET used_best = 0 WHERE id = ? AND status = 'running' AND attempt = ?`)
     .bind(job.id, job.attempt)
     .run();
   job.used_best = 0;

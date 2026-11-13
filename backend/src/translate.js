@@ -1,7 +1,7 @@
 // Translating a recipe's text from one language to the other. The user waits for the
 // answer, so this is one plain request, not a Workflow. The recipe text isn't stored: it
 // comes from the edit form and goes back to it, and is saved only when the user taps Save.
-// Each translation is an imports row with purpose 'translation', like every other model
+// Each translation is an llm_requests row with purpose 'translation', like every other model
 // request, so a best-model one counts toward the user's 5 the same way an import does.
 
 import { readContent } from './data.js';
@@ -59,7 +59,7 @@ function failureOf(error) {
 // recipe not saved yet). Inserted before the call, so a best-model use is claimed on it.
 function insertRow(env, userId, recipeId, now) {
   return env.DB.prepare(
-    `INSERT INTO imports (user_id, purpose, stage, recipe_id, quota_day, created_at, updated_at)
+    `INSERT INTO llm_requests (user_id, purpose, stage, recipe_id, quota_day, created_at, updated_at)
      VALUES (?, 'translation', 'translate', ?, ?, ?, ?)
      RETURNING *`,
   )
@@ -68,7 +68,7 @@ function insertRow(env, userId, recipeId, now) {
 }
 
 function finishRow(env, job, fields) {
-  return env.DB.prepare(`UPDATE imports SET status = ?, state = ?, error = ?, error_detail = ?, updated_at = ? WHERE id = ?`)
+  return env.DB.prepare(`UPDATE llm_requests SET status = ?, state = ?, error = ?, error_detail = ?, updated_at = ? WHERE id = ?`)
     .bind(fields.status, JSON.stringify(fields.state ?? {}), fields.error ?? null, fields.detail ?? null, Date.now(), job.id)
     .run();
 }

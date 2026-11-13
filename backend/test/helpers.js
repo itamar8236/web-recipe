@@ -30,7 +30,7 @@ export const insertUser = async (username = 'dana') =>
       .first()
   ).id;
 
-// An imports row with sensible defaults; `fields` overrides any column.
+// An llm_requests row with sensible defaults; `fields` overrides any column.
 export const insertImport = (userId, fields = {}) => {
   const row = {
     user_id: userId,
@@ -44,7 +44,7 @@ export const insertImport = (userId, fields = {}) => {
   };
   const columns = Object.keys(row);
   return env.DB.prepare(
-    `INSERT INTO imports (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')}) RETURNING *`,
+    `INSERT INTO llm_requests (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')}) RETURNING *`,
   )
     .bind(...Object.values(row))
     .first();

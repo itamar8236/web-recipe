@@ -163,7 +163,7 @@ describe('session', () => {
     expect(await out.json()).toEqual({ ok: true });
     expect(out.headers.getSetCookie().some((c) => c.startsWith('session=;'))).toBe(true);
     expect((await call('/api/auth/me', { cookie })).status).toBe(401);
-    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM imports WHERE user_id = ?').bind(userId).first()).n).toBe(2);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests WHERE user_id = ?').bind(userId).first()).n).toBe(2);
   });
 
   it('logs out with a JSON body too, and twice in a row', async () => {

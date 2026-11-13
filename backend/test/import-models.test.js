@@ -35,8 +35,8 @@ const useUpBest = async (userId, count) => {
   for (let i = 0; i < count; i++) await newJob(userId, { status: 'done', used_best: 1 });
 };
 const usedBestCount = async (userId) =>
-  (await env.DB.prepare('SELECT COUNT(*) AS n FROM imports WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, today()).first()).n;
-const reload = (job) => env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(job.id).first();
+  (await env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, today()).first()).n;
+const reload = (job) => env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(job.id).first();
 
 const answering = (...results) => {
   const queue = [...results];

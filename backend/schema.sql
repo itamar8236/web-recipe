@@ -166,8 +166,7 @@ CREATE INDEX IF NOT EXISTS recipes_user_folder ON recipes (user_id, folder_id);
 
 -- One row per request for model work: every import from a link, every Retry (a new row,
 -- not the old one restarted), every re-scan of a recipe's video, and every translation.
--- The name stays "imports" so production needs no rename. It is the record of who used the
--- models: a user's daily best-model uses are the rows with used_best = 1, whatever their
+-- It is the record of who used the models: a user's daily best-model uses are the rows with used_best = 1, whatever their
 -- purpose. A separate table rather than unfinished rows in recipes: recipes requires a real
 -- name, and every list and search would otherwise need a "ready?" filter.
 -- purpose: 'import' (a link: new, Retry or re-scan; shown as a card) or 'translation'
@@ -188,7 +187,7 @@ CREATE INDEX IF NOT EXISTS recipes_user_folder ON recipes (user_id, folder_id);
 -- used_best says this row took one of the user's daily best-model uses (once a request
 -- reached the best model, even if the row then moved to the basic one). quota_day is the
 -- Pacific date those uses and the caps count for.
-CREATE TABLE IF NOT EXISTS imports (
+CREATE TABLE IF NOT EXISTS llm_requests (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   purpose    TEXT    NOT NULL DEFAULT 'import' CHECK (purpose IN ('import', 'translation')),
@@ -212,13 +211,13 @@ CREATE TABLE IF NOT EXISTS imports (
   CHECK ((purpose = 'import') = (platform IS NOT NULL AND source_id IS NOT NULL AND source_url IS NOT NULL))
 );
 
-CREATE INDEX IF NOT EXISTS imports_user_status ON imports (user_id, status);
+CREATE INDEX IF NOT EXISTS llm_requests_user_status ON llm_requests (user_id, status);
 
 -- A user can't run the same video twice at once. This is what makes a double tap or a
 -- second device show the existing card instead of spending another request. Translations
 -- have no link (NULLs never clash), so any number may run.
-CREATE UNIQUE INDEX IF NOT EXISTS imports_one_running
-  ON imports (user_id, platform, source_id) WHERE status = 'running';
+CREATE UNIQUE INDEX IF NOT EXISTS llm_requests_one_running
+  ON llm_requests (user_id, platform, source_id) WHERE status = 'running';
 
 -- The app's own count of requests per Pacific day and model, shared by all users because
 -- Google's limits are per project: Google offers no documented way to ask how many are

@@ -152,9 +152,8 @@ YouTube link", which exists.
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
   and Hebrew** so either version can be edited. A recipe sits in one of its owner's
   folders (or none). A favorite is a flag on the recipe, since only its owner sees it.
-- **Model requests** live in the `imports` table (the name stayed, so production needs no
-  rename): **one row per request** a user makes, with a `purpose`: `import` (a new import,
-  each Retry, each re-scan) or `translation` (linked to the recipe by `recipe_id`). So an
+- **Model requests** live in the `llm_requests` table: **one row per request** a user
+  makes, with a `purpose`: `import` (a new import, each Retry, each re-scan) or `translation` (linked to the recipe by `recipe_id`). So an
   unfinished import never appears as a recipe, and the rows are the record of who used the
   models: a user's daily best-model uses are their rows with `used_best = 1`. A row stays
   after it finishes, because the caps count it. `llm_usage` holds the app's own count of
@@ -219,7 +218,7 @@ folder and no review: the user can edit or delete it afterwards.
 
 ```
 POST /api/imports {url}
-  parse link → guards → choose model → insert imports row → start Workflow → 202
+  parse link → guards → choose model → insert llm_requests row → start Workflow → 202
 
 Workflow: each stage is one retried step, and saves its result to the row
   meta     YouTube Data API: title, description, duration, privacy (no LLM)
@@ -336,7 +335,7 @@ prompt) and each failure (the status and Google's error text), never the key. Im
 hold only our instructions and a public video description. A translation's prompt holds the
 user's own recipe, so it is never logged (`logPrompt: false`). Production keeps the logs for 3
 days (Workers Logs, `observability` in `wrangler.jsonc`), and `npx wrangler tail` shows
-them live. A failed import also keeps the reason in `imports.error_detail`.
+them live. A failed import also keeps the reason in `llm_requests.error_detail`.
 
 **Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
 request. Real imports run locally on the dev keys in `.dev.vars`, which use a test quota;
@@ -350,7 +349,7 @@ the user taps Save. It works for any recipe, manual ones too, but needs an accou
 
 - One plain request, not a Workflow: the user waits for it, and a text-only call takes
   seconds. No video and no link are sent.
-- Each translation is an `imports` row with `purpose = 'translation'`, inserted before the
+- Each translation is an `llm_requests` row with `purpose = 'translation'`, inserted before the
   call (status `running`, then `done` or `failed` with its `error`), with `recipe_id` set to
   the recipe being edited (`NULL` for one not saved yet) and the answering model in `state`.
   The recipe text itself is never stored there. Translations never show as cards and don't

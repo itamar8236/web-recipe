@@ -108,7 +108,7 @@ const atSave = (userId, recipe = ONE, fields = {}) =>
     }),
     ...fields,
   });
-const reload = (row) => env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(row.id).first();
+const reload = (row) => env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(row.id).first();
 const count = async (table) => (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n;
 // A model Google said is out for the day: its count is at its limit.
 const markOut = (model, calls) => env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(today(), model, calls).run();
@@ -456,7 +456,7 @@ describe('runStage rules', () => {
   it('writes no progress for an import dismissed during the stage', async () => {
     const row = await atExtract(await insertUser());
     const llm = vi.fn(async () => {
-      await env.DB.prepare(`UPDATE imports SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
+      await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
       return ONE;
     });
     await runExtract(row, llm);
@@ -517,7 +517,7 @@ describe('stage: save', () => {
   it('writes nothing for a dismissed import', async () => {
     const row = await atSave(await insertUser());
     const job = await loadJob(row);
-    await env.DB.prepare(`UPDATE imports SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
+    await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
     await directSave(job);
     expect(await count('recipes')).toBe(0);
     expect((await reload(row)).status).toBe('dismissed');
@@ -617,7 +617,7 @@ describe('stage: save', () => {
       await directSave(await loadJob(row, { attempt: 1 }));
       expect((await recipes())[0].name_en).toBe('Old name');
       const job = await loadJob(row);
-      await env.DB.prepare(`UPDATE imports SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
+      await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed' WHERE id = ?`).bind(row.id).run();
       await directSave(job);
       expect((await recipes())[0].name_en).toBe('Old name');
     });

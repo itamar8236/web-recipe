@@ -33,7 +33,7 @@ const translate = async (body, llm, userId) =>
     llm,
   );
 const translationRows = async () =>
-  (await env.DB.prepare(`SELECT * FROM imports WHERE purpose = 'translation' ORDER BY id`).all()).results;
+  (await env.DB.prepare(`SELECT * FROM llm_requests WHERE purpose = 'translation' ORDER BY id`).all()).results;
 const useUpBestImports = async (userId, count) => {
   for (let i = 0; i < count; i++) {
     await insertImport(userId, { source_id: `video${String(i).padStart(6, '0')}`, status: 'done', used_best: 1, quota_day: today() });

@@ -99,7 +99,7 @@ describe('video length', () => {
   });
 });
 
-describe('imports table rules', () => {
+describe('llm_requests table rules', () => {
   it('fills in the defaults a new import needs', async () => {
     const row = await insertImport(await insertUser('dana'));
     expect(row).toMatchObject({ status: 'running', stage: 'meta', attempt: 1, state: '{}', used_best: 0, error: null });
@@ -133,7 +133,7 @@ describe('imports table rules', () => {
     const userId = await insertUser('dana');
     await insertImport(userId);
     await env.DB.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
-    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM imports').first()).n).toBe(0);
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests').first()).n).toBe(0);
   });
 
   it('defaults the purpose to import, which needs the link', async () => {
@@ -159,7 +159,7 @@ describe('imports table rules', () => {
       .first();
     const row = await insertImport(userId, { recipe_id: recipe.id, replace_recipe_id: recipe.id });
     await env.DB.prepare('DELETE FROM recipes WHERE id = ?').bind(recipe.id).run();
-    const after = await env.DB.prepare('SELECT recipe_id, replace_recipe_id FROM imports WHERE id = ?').bind(row.id).first();
+    const after = await env.DB.prepare('SELECT recipe_id, replace_recipe_id FROM llm_requests WHERE id = ?').bind(row.id).first();
     expect(after).toEqual({ recipe_id: null, replace_recipe_id: recipe.id });
   });
 });
@@ -190,7 +190,7 @@ describe('import endpoints', () => {
   const startImport = (cookie, url = LINK, extra = {}) => post(cookie, '/api/imports', { url, ...extra });
   const list = async (cookie) => (await send(cookie, 'GET', '/api/imports')).json();
   const errorOf = async (response) => (await response.json()).error;
-  const rows = async () => (await env.DB.prepare('SELECT * FROM imports ORDER BY id').all()).results;
+  const rows = async () => (await env.DB.prepare('SELECT * FROM llm_requests ORDER BY id').all()).results;
 
   let videoNumber = 0;
   const otherVideo = (fields = {}) => ({ source_id: `vid${String(++videoNumber).padStart(8, '0')}`, source_url: `https://www.youtube.com/watch?v=vid${videoNumber}`, quota_day: today(), ...fields });
@@ -467,12 +467,12 @@ describe('import endpoints', () => {
           get(target, name) {
             if (name !== 'prepare') return typeof target[name] === 'function' ? target[name].bind(target) : target[name];
             return (sql) => {
-              if (!sql.startsWith('INSERT INTO imports')) return target.prepare(sql);
+              if (!sql.startsWith('INSERT INTO llm_requests')) return target.prepare(sql);
               return {
                 bind: () => ({
                   first: async () => {
                     await beforeRefusing();
-                    throw new Error('UNIQUE constraint failed: imports.user_id');
+                    throw new Error('UNIQUE constraint failed: llm_requests.user_id');
                   },
                 }),
               };
@@ -604,13 +604,13 @@ describe('import endpoints', () => {
       const noa = await signUp('noa');
       const stuck = await insertImport(noa.userId, otherVideo({ updated_at: 1 }));
       await list(dana.cookie);
-      expect((await env.DB.prepare('SELECT status FROM imports WHERE id = ?').bind(stuck.id).first()).status).toBe('running');
+      expect((await env.DB.prepare('SELECT status FROM llm_requests WHERE id = ?').bind(stuck.id).first()).status).toBe('running');
     });
   });
 
   describe('POST /api/imports/:id/retry', () => {
     const retry = (cookie, id, body = {}) => post(cookie, `/api/imports/${id}/retry`, body);
-    const reload = (row) => env.DB.prepare('SELECT * FROM imports WHERE id = ?').bind(row.id).first();
+    const reload = (row) => env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(row.id).first();
 
     const newestRow = async () => (await rows()).at(-1);
 

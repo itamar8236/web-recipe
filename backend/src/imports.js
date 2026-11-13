@@ -21,7 +21,7 @@ const isUniqueViolation = (error) => String(error.message).includes('UNIQUE');
 // state is deliberately absent: it holds whole video descriptions and recipes, and
 // polling reads this often.
 const IMPORT_SELECT = `SELECT i.id, i.status, i.stage, i.source_url, i.title, i.error, i.recipe_id, r.name_en, r.name_he
-  FROM imports i LEFT JOIN recipes r ON r.id = i.recipe_id`;
+  FROM llm_requests i LEFT JOIN recipes r ON r.id = i.recipe_id`;
 
 // Only these rows are cards: translations are not imports.
 const IS_IMPORT = `i.purpose = 'import'`;
@@ -72,8 +72,8 @@ async function startAndRespond(env, userId, id, attempt) {
 // Both caps, as one SQL condition: checked first so the answer comes before the model
 // checks, and again inside the INSERT so two requests at once can't both take the last slot.
 // Every try counts (a Retry is a row too); translations don't.
-const UNDER_CAPS = `(SELECT COUNT(*) FROM imports WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import') < ?3
-  AND (SELECT COUNT(*) FROM imports WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import' AND status = 'running') < ?4`;
+const UNDER_CAPS = `(SELECT COUNT(*) FROM llm_requests WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import') < ?3
+  AND (SELECT COUNT(*) FROM llm_requests WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import' AND status = 'running') < ?4`;
 
 const capValues = (env, userId, day) => [userId, day, Number(env.IMPORT_DAILY_LIMIT), Number(env.IMPORT_MAX_RUNNING)];
 
@@ -105,7 +105,7 @@ async function startNew(env, userId, link, { basicChosen }, replaceRecipeId = nu
   let row;
   try {
     row = await env.DB.prepare(
-      `INSERT INTO imports (user_id, platform, source_id, source_url, state, replace_recipe_id, quota_day, created_at, updated_at)
+      `INSERT INTO llm_requests (user_id, platform, source_id, source_url, state, replace_recipe_id, quota_day, created_at, updated_at)
        SELECT ?1, ?5, ?6, ?7, ?9, ?10, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
@@ -151,7 +151,7 @@ async function createImport(request, env, userId) {
 async function listImports(env, userId) {
   const now = Date.now();
   await env.DB.prepare(
-    `UPDATE imports SET status = 'failed', error = 'timed_out', updated_at = ?
+    `UPDATE llm_requests SET status = 'failed', error = 'timed_out', updated_at = ?
       WHERE user_id = ? AND status = 'running' AND updated_at < ?`,
   )
     .bind(now, userId, now - STUCK_AFTER_MS)
@@ -192,7 +192,7 @@ async function retryImport(request, env, userId, id) {
     `SELECT status, error, source_url, replace_recipe_id,
             json_extract(state, '$.model') AS extracted_model,
             json_extract(state, '$.basicChosen') AS basic_chosen
-       FROM imports WHERE id = ? AND user_id = ? AND purpose = 'import'`,
+       FROM llm_requests WHERE id = ? AND user_id = ? AND purpose = 'import'`,
   )
     .bind(id, userId)
     .first();
@@ -211,9 +211,9 @@ async function retryImport(request, env, userId, id) {
   let added;
   try {
     added = await env.DB.prepare(
-      `INSERT INTO imports (user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, quota_day, created_at, updated_at)
+      `INSERT INTO llm_requests (user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, quota_day, created_at, updated_at)
        SELECT user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, ?2, ?5, ?5
-         FROM imports WHERE id = ?6 AND status = 'failed' AND ${UNDER_CAPS}
+         FROM llm_requests WHERE id = ?6 AND status = 'failed' AND ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
       .bind(...capValues(env, userId, day), now, id)
@@ -223,12 +223,12 @@ async function retryImport(request, env, userId, id) {
     return fail(409, 'not_retryable');
   }
   if (!added) return fail(409, 'not_retryable');
-  await env.DB.prepare(`UPDATE imports SET status = 'dismissed', updated_at = ? WHERE id = ? AND status = 'failed'`).bind(now, id).run();
+  await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', updated_at = ? WHERE id = ? AND status = 'failed'`).bind(now, id).run();
   return startAndRespond(env, userId, added.id, added.attempt);
 }
 
 async function dismissImport(env, userId, id) {
-  const row = await env.DB.prepare(`UPDATE imports SET status = 'dismissed', updated_at = ? WHERE id = ? AND user_id = ? AND purpose = 'import' RETURNING id`)
+  const row = await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', updated_at = ? WHERE id = ? AND user_id = ? AND purpose = 'import' RETURNING id`)
     .bind(Date.now(), id, userId)
     .first();
   return row ? json({ ok: true }) : fail(404, 'not_found');
