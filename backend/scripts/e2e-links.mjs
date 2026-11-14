@@ -3,11 +3,13 @@
 // is swapped. It is not part of `npm test`: it calls the real sites and spends real model
 // quota (the dev keys in .dev.vars), so run it only on links the owner gave.
 //
-// Start the app first (`npm run dev`, from backend/), then:
-//   node scripts/e2e-links.mjs <links file> [--model basic|best] [--only <text>] [--show]
+// Start the app first (`npm run dev`, from backend/), then give it the links themselves,
+// in quotes, and/or files of links:
+//   node scripts/e2e-links.mjs "https://www.instagram.com/reel/..." "https://youtu.be/..."
+//   node scripts/e2e-links.mjs links.txt [--model basic|best] [--only <text>] [--show]
 //                              [--base http://localhost:8787] [--out results.json]
 //
-// The links file has one link per line; other lines are ignored. Imports run on a test
+// A links file has one link per line; other lines are ignored. Imports run on a test
 // account made for this script, whose recipes and cards are cleared at the start, so every
 // run begins clean. More than 10 links a day need the daily cap raised for the session:
 //   npm run dev -- --var IMPORT_DAILY_LIMIT:200
@@ -21,18 +23,18 @@ const GIVE_UP_MS = 25 * 60 * 1000;
 const PAUSE_BETWEEN_LINKS_MS = 5000;
 
 function readArgs(argv) {
-  const args = { file: null, model: 'basic', only: null, show: false, base: 'http://localhost:8787', out: null };
+  const args = { inputs: [], model: 'basic', only: null, show: false, base: 'http://localhost:8787', out: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--show') args.show = true;
     else if (argv[i].startsWith('--')) args[argv[i].slice(2)] = argv[++i];
-    else args.file = argv[i];
+    else args.inputs.push(argv[i]);
   }
   return args;
 }
 
 const args = readArgs(process.argv.slice(2));
-if (!args.file || !['basic', 'best'].includes(args.model)) {
-  console.error('Usage: node scripts/e2e-links.mjs <links file> [--model basic|best] [--only <text>] [--show] [--base <url>] [--out <file>]');
+if (!args.inputs.length || !['basic', 'best'].includes(args.model)) {
+  console.error('Usage: node scripts/e2e-links.mjs <link or links file>... [--model basic|best] [--only <text>] [--show] [--base <url>] [--out <file>]');
   process.exit(1);
 }
 if (!['localhost', '127.0.0.1'].includes(new URL(args.base).hostname)) {
@@ -108,10 +110,12 @@ function printRecipe({ en, he }) {
   }
 }
 
-const links = readFileSync(args.file, 'utf8')
-  .split(/\r?\n/)
+const isLink = (text) => /^https?:\/\//.test(text);
+// Each input is a link, or a file whose lines are read for links.
+const links = args.inputs
+  .flatMap((input) => (isLink(input) ? [input] : readFileSync(input, 'utf8').split(/\r?\n/)))
   .map((line) => line.trim())
-  .filter((line) => /^https?:\/\//.test(line) && (!args.only || line.includes(args.only)));
+  .filter((line) => isLink(line) && (!args.only || line.includes(args.only)));
 
 await logIn();
 await clearAccount();
