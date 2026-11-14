@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from './api';
-import { errorMessage, formatTime, pickLanguage, strings } from './i18n';
+import { errorMessage, formatTime, pickLanguage, stageMessage, strings } from './i18n';
 
 const content = (name, ingredients = [], steps = []) => ({ name, ingredients, steps });
 
@@ -237,10 +237,12 @@ describe('errorMessage', () => {
 
   it.each([
     ['link_invalid', "That doesn't look like a video link"],
-    ['link_unsupported', 'Only YouTube links for now'],
+    ['link_unsupported', 'Only YouTube, Facebook and Instagram links for now'],
     ['already_imported', 'You already have this recipe'],
     ['too_many_imports', 'Wait for current ones, or try tomorrow'],
-    ['video_unavailable', 'Video not found'],
+    ['video_unavailable', 'Video or post not found'],
+    ['login_required', 'This post needs a login. Only public posts can be imported.'],
+    ['source_blocked', "Couldn't reach the site. Try again later."],
     ['video_private', 'The video must be public'],
     ['video_too_long', 'Only short videos for now'],
     ['no_recipe', 'No recipe found, add it manually'],
@@ -253,7 +255,7 @@ describe('errorMessage', () => {
     expect(errorMessage(strings.he, { code })).not.toBe(strings.he.errGeneric);
   });
 
-  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'best_model_unavailable', 'model_busy', 'nothing_to_translate', 'import_needs_login'])(
+  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'model_busy', 'nothing_to_translate', 'import_needs_login'])(
     '%s has its own message in both languages',
     (code) => {
       expect(errorMessage(strings.en, { code })).not.toBe(strings.en.errGeneric);
@@ -274,6 +276,20 @@ describe('errorMessage', () => {
   });
 });
 
+describe('stageMessage', () => {
+  it.each([
+    ['meta', 'Getting the video details...'],
+    ['video', 'Getting the video...'],
+    ['extract', 'Reading the recipe...'],
+    ['save', 'Reading the recipe...'],
+    ['a stage added later', 'Reading the recipe...'],
+  ])('says what is happening during %s', (stage, message) => {
+    expect(stageMessage(strings.en, stage)).toBe(message);
+    expect(stageMessage(strings.he, stage)).toBeTruthy();
+    expect(stageMessage(strings.he, stage)).not.toBe(message);
+  });
+});
+
 describe('strings', () => {
   it('has the same keys in English and Hebrew', () => {
     expect(Object.keys(strings.he).sort()).toEqual(Object.keys(strings.en).sort());
@@ -289,8 +305,7 @@ describe('strings', () => {
   it('puts the name or time into the messages that need one', () => {
     for (const lang of ['en', 'he']) {
       expect(strings[lang].recipeReady('X')).toContain('X');
-      expect(strings[lang].usingBasicModel('10:00')).toContain('10:00');
-      expect(strings[lang].bestLeftToday(4)).toContain('4');
+      expect(strings[lang].errQuota('10:00')).toContain('10:00');
     }
   });
 });
@@ -315,7 +330,7 @@ describe('guest: imports need an account', () => {
     ['retryImport', () => api.retryImport(1)],
     ['dismissImport', () => api.dismissImport(1)],
     ['rerunRecipe', () => api.rerunRecipe(1)],
-    ['translateRecipe', () => api.translateRecipe('en', { name: 'Tea', ingredients: [], steps: [] }, 'basic')],
+    ['translateRecipe', () => api.translateRecipe('en', { name: 'Tea', ingredients: [], steps: [] })],
   ])('%s is refused and never calls the backend', async (_, action) => {
     vi.stubGlobal('fetch', vi.fn());
     await expect(action()).rejects.toMatchObject({ code: 'import_needs_login' });
@@ -351,14 +366,6 @@ describe('logged in: imports', () => {
     expect(lastCall()).toEqual({ path: '/api/imports', method: 'POST', body: { url: 'https://youtu.be/x' } });
   });
 
-  it('sends the model only when the user picked the basic one', async () => {
-    mockFetch(202, { import: card });
-    await api.startImport('https://youtu.be/x', 'basic');
-    expect(lastCall().body).toEqual({ url: 'https://youtu.be/x', model: 'basic' });
-    await api.startImport('https://youtu.be/x', 'best');
-    expect(lastCall().body).toEqual({ url: 'https://youtu.be/x' });
-  });
-
   it('retries and returns the new card', async () => {
     mockFetch(202, { import: card });
     expect(await api.retryImport(4)).toEqual(card);
@@ -371,22 +378,22 @@ describe('logged in: imports', () => {
     expect(lastCall()).toMatchObject({ path: '/api/imports/5', method: 'DELETE' });
   });
 
-  it('scans a recipe again, sending the model only when it is the basic one', async () => {
+  it('scans a recipe again, asking for the best model only when the user wants it', async () => {
     mockFetch(202, { import: card });
     expect(await api.rerunRecipe(7)).toEqual(card);
     expect(lastCall()).toEqual({ path: '/api/recipes/7/rerun', method: 'POST', body: {} });
-    await api.rerunRecipe(7, 'basic');
-    expect(lastCall().body).toEqual({ model: 'basic' });
+    await api.rerunRecipe(7, true);
+    expect(lastCall().body).toEqual({ model: 'best' });
   });
 
   it('translates one language and returns only the text', async () => {
     const content = { name: 'Tea', ingredients: ['Water'], steps: ['Boil'] };
     const hebrew = { name: 'תה', ingredients: ['מים'], steps: ['מרתיחים'] };
-    mockFetch(200, { content: hebrew, model: 'basic' });
-    expect(await api.translateRecipe('en', content, 'best')).toEqual({ content: hebrew, model: 'basic' });
-    expect(lastCall()).toEqual({ path: '/api/translate', method: 'POST', body: { from: 'en', content, model: 'best' } });
-    await api.translateRecipe('en', content, 'basic', 12);
-    expect(lastCall().body).toEqual({ from: 'en', content, model: 'basic', recipeId: 12 });
+    mockFetch(200, { content: hebrew });
+    expect(await api.translateRecipe('en', content)).toEqual(hebrew);
+    expect(lastCall()).toEqual({ path: '/api/translate', method: 'POST', body: { from: 'en', content } });
+    await api.translateRecipe('en', content, 12);
+    expect(lastCall().body).toEqual({ from: 'en', content, recipeId: 12 });
   });
 
   it('passes on the backend error codes', async () => {

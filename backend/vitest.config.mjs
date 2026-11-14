@@ -9,7 +9,8 @@ export default defineConfig({
     cloudflareTest({
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
-        bindings: { GEMINI_API_KEY: 'fake-gemini-key', YOUTUBE_API_KEY: 'fake-youtube-key' },
+        // An empty Groq key keeps the fallback model off, whatever .dev.vars holds.
+        bindings: { GEMINI_API_KEY: 'fake-gemini-key', YOUTUBE_API_KEY: 'fake-youtube-key', GROQ_API_KEY: '' },
         outboundService: () => new Response('blocked by the test setup', { status: 599 }),
       },
     }),

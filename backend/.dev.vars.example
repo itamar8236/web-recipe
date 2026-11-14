@@ -2,3 +2,5 @@
 # quota is separate from production's. Agents never read .dev.vars.
 GEMINI_API_KEY=replace-with-your-gemini-key
 YOUTUBE_API_KEY=replace-with-your-youtube-data-api-key
+# Optional: the text-only fallback model stays off without it.
+GROQ_API_KEY=replace-with-your-groq-key

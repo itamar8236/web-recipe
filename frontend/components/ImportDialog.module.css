@@ -65,21 +65,6 @@
   margin-block-start: 6px;
 }
 
-/* A small choice, so it sits on one line with its label instead of taking a full row. */
-.model {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.model :global(.label) {
-  margin: 0;
-}
-
-.modelSelect {
-  width: auto;
-}
-
 .actions {
   display: flex;
   flex-wrap: wrap;

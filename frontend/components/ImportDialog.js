@@ -3,14 +3,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from './Language';
-import { errorMessage, formatTime } from '@/lib/i18n';
+import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './ImportDialog.module.css';
 
 // What "+ Add recipe" opens for a logged-in user. It asks only for the link: the backend
-// works out the site. Only "Write it manually" opens the manual form; closing the dialog
-// in any other way leaves the user on Home.
-export default function ImportDialog({ models, backAt, manualHref, onClose, onStarted, onModelsStale }) {
+// works out the site and which model reads it. Only "Write it manually" opens the manual
+// form; closing the dialog in any other way leaves the user on Home. `backAt` is when a
+// used-up daily limit resets, for the error that mentions it.
+export default function ImportDialog({ backAt, manualHref, onClose, onStarted, onModelsStale }) {
   const { t } = useLanguage();
   const router = useRouter();
   const ref = useRef(null);
@@ -18,7 +19,6 @@ export default function ImportDialog({ models, backAt, manualHref, onClose, onSt
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [model, setModel] = useState('best');
 
   useEffect(() => {
     ref.current.showModal();
@@ -38,7 +38,7 @@ export default function ImportDialog({ models, backAt, manualHref, onClose, onSt
     setBusy(true);
     setError('');
     try {
-      onStarted(await api.startImport(url, model));
+      onStarted(await api.startImport(url));
     } catch (err) {
       setError(errorMessage(t, { code: err.code, retryAt: backAt }));
       if (err.code === 'quota') onModelsStale();
@@ -50,9 +50,6 @@ export default function ImportDialog({ models, backAt, manualHref, onClose, onSt
     event.preventDefault();
     if (url.trim()) start();
   }
-
-  // Nobody is asked: when the best model can't be used, the basic one is used by itself.
-  const onBasicModel = model === 'best' && models && !models.bestAvailable;
 
   return (
     <dialog
@@ -98,23 +95,6 @@ export default function ImportDialog({ models, backAt, manualHref, onClose, onSt
             />
             {error && <p className="error" role="alert">{error}</p>}
           </div>
-
-          <div className={styles.model}>
-            <label className="label" htmlFor="import-model">{t.modelChoice}</label>
-            <select
-              id="import-model"
-              className={`field ${styles.modelSelect}`}
-              value={model}
-              disabled={busy}
-              onChange={(event) => setModel(event.target.value)}
-            >
-              <option value="best">{t.modelBest}</option>
-              <option value="basic">{t.modelBasic}</option>
-            </select>
-          </div>
-
-          {models && <p className="hint">{t.bestLeftToday(Math.min(models.bestLeftForUser, models.bestLeftToday))}</p>}
-          {onBasicModel && <p className="hint">{t.usingBasicModel(formatTime(t, backAt))}</p>}
 
           <div className={styles.actions}>
             <button type="submit" className="button" disabled={busy || !url.trim()}>
