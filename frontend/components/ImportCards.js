@@ -83,10 +83,10 @@ export function useImports(enabled, onRecipeReady) {
     [refresh],
   );
 
-  // The moment the best model can be tried again, for the messages that mention it.
-  const backAt = models?.bestAvailableAt ?? models?.resetsAt;
+  // When the models' daily limits reset, for the message that says to try again then.
+  const backAt = models?.resetsAt;
 
-  return { imports, models, backAt, refresh, addImport, dismissImport };
+  return { imports, backAt, refresh, addImport, dismissImport };
 }
 
 function recipeNameIn(lang, recipeName) {

@@ -31,7 +31,7 @@ export default function HomePage() {
   const reloadRecipes = useCallback(() => {
     api.getRecipes().then(setRecipes).catch(() => {});
   }, []);
-  const { imports, models, backAt, refresh, addImport, dismissImport } = useImports(canImport, reloadRecipes);
+  const { imports, backAt, refresh, addImport, dismissImport } = useImports(canImport, reloadRecipes);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -187,7 +187,6 @@ export default function HomePage() {
 
       {importOpen && (
         <ImportDialog
-          models={models}
           backAt={backAt}
           manualHref={newRecipeHref}
           onClose={() => setImportOpen(false)}

@@ -16,7 +16,7 @@
   font-size: 19px;
 }
 
-/* Each action: its button, then its own small model choice beside it (below on narrow phones). */
+/* Each action: its button, and for the scan its one choice beside it (below on narrow phones). */
 .row {
   display: flex;
   flex-wrap: wrap;
@@ -24,19 +24,19 @@
   gap: 10px 16px;
 }
 
-/* A small choice, so it sits on one line with its label instead of taking a full row. */
-.model {
+/* The whole line is the tap target, with room for a finger. */
+.choice {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
 }
 
-.model :global(.label) {
-  margin: 0;
-}
-
-.modelSelect {
-  width: auto;
+.choice input {
+  width: 20px;
+  height: 20px;
+  flex: none;
 }
 
 .actions {
