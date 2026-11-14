@@ -61,7 +61,8 @@ resolved. One short line each, linking to the README section with the details.
   offered only on "Scan the video again". Every try that calls it counts toward the 5.
   When it can't be used, the scan goes on with the usual models by itself, with no question.
 - The **edit form** holds the AI tools: **translate** the language being written into the
-  other one (any recipe, manual ones too; nothing is saved until Save), and, for an
+  other one (any recipe, manual ones too); when it works, the recipe is saved with the form's
+  current text and the edit form closes. For an
   imported recipe, **scan its video again**, which runs like a new import and replaces
   the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both

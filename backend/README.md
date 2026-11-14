@@ -436,8 +436,9 @@ agents don't ask for the best model unless the owner says so (`local-dev` skill)
 ## Translation
 
 The edit form's "Translate" sends the language being written to `POST /api/translate`,
-which answers with the other language; the form fills it in, and nothing is stored until
-the user taps Save. It works for any recipe, manual ones too, but needs an account.
+which answers with the other language and stores nothing. The form then fills it in and
+saves the recipe at once with a normal `POST`/`PUT /api/recipes` (the frontend's job; this
+endpoint never writes a recipe). It works for any recipe, manual ones too, but needs an account.
 
 - One plain request, not a Workflow: the user waits for it, and a text-only call takes
   seconds. No video and no link are sent.
