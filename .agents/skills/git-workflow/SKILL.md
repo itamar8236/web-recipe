@@ -74,7 +74,7 @@ PR title = Conventional Commit format. Body:
 ```
 ## Summary
 ## Changes
-## How to test
+## How to test      (owner's steps first: see "Let the owner test it")
 ## Notes / follow-ups
 ```
 Add screenshots for visible UI changes and `Closes #N` for linked issues. Keep PRs
@@ -84,6 +84,24 @@ when relative to merging, and what breaks and for how long (`AGENTS.md` → How 
 
 Never force-push to shared branches, never push to `main`, never merge your own PR
 without the owner's approval.
+
+### Let the owner test it
+The owner tests PRs in their main checkout, which has their packages, `.dev.vars` and
+local DB. A branch can be checked out in only one folder, so after every push free it:
+```bash
+git switch --detach
+```
+Start **How to test** in the PR body with the owner's steps, saying only the extra
+setup this PR needs:
+```
+1. `gh pr checkout <number>`
+2. (only if needed) `npm install` in `frontend/` or `backend/`; `npm --prefix backend run db:schema:local`
+3. `npm --prefix frontend run build; if ($?) { npm --prefix backend run dev }`, open http://localhost:8787
+4. When done: Ctrl+C, then `git switch main`
+```
+Running `gh pr checkout <number>` again picks up newer commits. To add commits later,
+take the branch back in your worktree first: `git switch <branch>` (if the owner has it
+checked out, ask them to `git switch main`).
 
 ## 5. After the merge
 Remove the worktree (Claude Code and Codex usually do this when the session is closed or

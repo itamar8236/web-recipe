@@ -221,7 +221,7 @@ Before every push:
     Code sees no skills. One-time fix per clone and per worktree, no admin needed (Git
     Bash, repo or worktree root):
     `rm .claude/skills && cmd //c "mklink /J .claude\skills .agents\skills" && git update-index --skip-worktree .claude/skills`
-  - `git-workflow`: branch, commit, push, open a PR
+  - `git-workflow`: branch, commit, push, open a PR, and how the owner tests it
   - `new-feature`: feature checklist across backend and frontend
   - `bug-fix`: reproduce, test, fix, verify
   - `frontend-ui`: UI work in `frontend/`
