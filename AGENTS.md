@@ -147,6 +147,7 @@ One Cloudflare Worker  (backend/)
 ├── frontend/         # Next.js app (static export)
 ├── .agents/skills/   # Shared agent skills (source of truth)
 ├── .claude/          # Claude Code settings; skills is a symlink to ../.agents/skills
+├── .worktreeinclude  # Git-ignored files copied into new agent worktrees (no secrets in it)
 ├── AGENTS.md         # This file: rules for every agent
 └── CLAUDE.md         # Just `@AGENTS.md`, so Claude Code loads this file
 ```
@@ -192,8 +193,9 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
   in the same PR whenever it changes what they describe: this file (product, stack,
   commands, rules), `backend/README.md` (schema, API, auth, LLM flow, env),
   `frontend/README.md` (screens, UX), and skills. Remove docs that became wrong.
-- Git: always `git checkout main && git pull` before creating a new branch, use
-  Conventional Commits, and PR into `main`. Full steps in the `git-workflow` skill.
+- Git: one task = one session = one **git worktree** on a new branch from an up-to-date
+  `origin/main`, so parallel sessions never share a working tree. Use Conventional
+  Commits and PR into `main`. Full steps in the `git-workflow` skill.
 
 ## Verifying
 
@@ -211,13 +213,17 @@ Before every push:
   git symlink to `../.agents/skills` so Claude Code finds the same files; there is no
   copy to keep in sync. Edit and commit only `.agents/skills/`.
   - Windows without symlink support checks the link out as a small text file, so Claude
-    Code sees no skills. One-time fix per clone, no admin needed (Git Bash, repo root):
+    Code sees no skills. One-time fix per clone and per worktree, no admin needed (Git
+    Bash, repo or worktree root):
     `rm .claude/skills && cmd //c "mklink /J .claude\skills .agents\skills" && git update-index --skip-worktree .claude/skills`
   - `git-workflow`: branch, commit, push, open a PR
   - `new-feature`: feature checklist across backend and frontend
   - `bug-fix`: reproduce, test, fix, verify
   - `frontend-ui`: UI work in `frontend/`
   - `local-dev`: run and test the app against a local copy of the DB, never production
+- **Worktrees**: each session works in its own git worktree (`git-workflow` skill →
+  Start a task). A new worktree has no `node_modules`, no `.dev.vars` / `.env` and an
+  empty local DB; the skill says how to set it up and how to remove it after the merge.
 - **Claude Code settings**: `.claude/settings.json` (committed) blocks force-pushes,
   pushes to `main`, and reading secret files. Personal overrides go in
   `.claude/settings.local.json` (git-ignored).

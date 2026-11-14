@@ -1,0 +1,2 @@
+# Git-ignored files that Claude Code and Codex copy into each new worktree they create.
+backend/.dev.vars
