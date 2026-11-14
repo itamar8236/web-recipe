@@ -122,9 +122,9 @@ All need a session, work only on the data of the user the session acts for, and 
   `IMPORT_DAILY_LIMIT` (10 a day) count import rows, so every Retry and re-scan too, but not
   translations. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`,
   translations included.
-- A Retry is a **new row**: it copies the failed row's link, title, stage and `state` (so
-  finished stages are skipped), starts its own Workflow, and the failed row becomes
-  `dismissed`. It answers `not_retryable` if the same video is already running or saved
+- A Retry is a **new row**: it copies the failed row's link, title and model choice, starts
+  over from the first stage in its own Workflow, and the failed row becomes `dismissed`.
+  Only a failed save keeps its `state` and stage, since it already holds the recipe. It answers `not_retryable` if the same video is already running or saved
   (for a re-scan: if its recipe was deleted). A failed `model_approval_needed` row (from
   before approvals were dropped) can be retried and just runs.
 
@@ -384,9 +384,14 @@ No wait has jitter: there are too few users for their retries to pile up, and a 
 must sleep the same on every replay. Google's Batch API is not used: its results can take
 hours, and imports should land in minutes.
 
-A Retry inserts a new row that copies the failed one's `state` and starts a new Workflow.
-Finished stages are skipped through `state.done`, so it doesn't depend on how long
-Workflows keeps its history. `state.version` says which shape the state has; a row holding
+A Retry inserts a new row and starts a new Workflow from the first stage, keeping only the
+model choice (`state.basicChosen`). It doesn't reuse what the earlier stages left, because
+that expires: Meta's video links are signed for a limited time and Google deletes an
+uploaded video after 48 hours, and getting them again costs no model request. The one
+exception is a failed save, whose `state` holds the recipe the model already wrote: it is
+copied, so no model is called again. Within one Workflow, finished stages are skipped
+through `state.done`, so a repeated step doesn't depend on how long Workflows keeps its
+history. `state.version` says which shape the state has; a row holding
 an older shape starts again from its first stage, keeping only its model choice. Every write is guarded by `status = 'running'` and the
 attempt, so a repeated step or a dismissal writes nothing, and a recipe is never saved
 twice. (New rows always have `attempt` 1; older rows retried in place may have more.)
@@ -409,8 +414,7 @@ production, and gives `workflow.not_found` before the first deploy.
 - A running import dismissed through the raw API (the UI has no × on running cards) may still
   finish its LLM call, but saves nothing.
 - An uploaded video stays in Gemini's file store until Google deletes it (48 hours) when
-  its import fails before a usable answer. A Retry made later than that finds the file gone
-  and goes on with the text.
+  its import fails before a usable answer. A Retry uploads the video again.
 - When both Gemini models are out for the day a new import is refused with `quota` before
   it starts, even if the fallback model could have read its text.
 

@@ -191,9 +191,16 @@ async function retryRefusal(env, userId, row, now) {
   return startRefusal(await readModelState(env, userId, now), { basicChosen: row.basic_chosen === 1 });
 }
 
-// A Retry is a new row that starts where the failed one stopped (finished stages are kept
-// in its state), and the failed card goes away. Being a new row, it counts toward the caps
-// and, if it calls the best model, toward the user's 5, like any other try.
+// A Retry is a new row, and the failed card goes away. Being a new row, it counts toward
+// the caps and, if it calls the best model, toward the user's 5, like any other try.
+// It starts over from the first stage, keeping only the model choice: what the earlier
+// stages left (a site's signed video link, an uploaded video file) expires, and getting it
+// again costs no model request. Only a failed save keeps its state, because it holds the
+// recipe the model already wrote.
+const RETRY_STAGE = `CASE WHEN json_extract(state, '$.model') IS NOT NULL THEN stage ELSE 'meta' END`;
+const RETRY_STATE = `CASE WHEN json_extract(state, '$.model') IS NOT NULL THEN state
+  WHEN json_extract(state, '$.basicChosen') THEN '{"basicChosen":true}' ELSE '{}' END`;
+
 async function retryImport(request, env, userId, id) {
   if (!(await readJson(request))) return fail(400, 'invalid_request');
 
@@ -221,7 +228,7 @@ async function retryImport(request, env, userId, id) {
   try {
     added = await env.DB.prepare(
       `INSERT INTO llm_requests (user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, quota_day, created_at, updated_at)
-       SELECT user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, ?2, ?5, ?5
+       SELECT user_id, platform, source_id, source_url, title, ${RETRY_STAGE}, ${RETRY_STATE}, replace_recipe_id, ?2, ?5, ?5
          FROM llm_requests WHERE id = ?6 AND status = 'failed' AND ${UNDER_CAPS}
        RETURNING id, attempt`,
     )

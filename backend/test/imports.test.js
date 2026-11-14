@@ -431,6 +431,13 @@ describe('import endpoints', () => {
         await markOut(BEST);
         expect((await post(cookie, `/api/imports/${row.id}/retry`)).status).toBe(202);
       });
+
+      it('keeps the choice, and nothing else, when the retry starts over', async () => {
+        const { cookie, userId } = await signUp();
+        const row = await failedImport(userId, { state: '{"basicChosen":true,"done":["meta","video"],"file":{"name":"files/old"}}', stage: 'extract' });
+        expect((await post(cookie, `/api/imports/${row.id}/retry`)).status).toBe(202);
+        expect((await rows()).at(-1)).toMatchObject({ stage: 'meta', state: '{"basicChosen":true}' });
+      });
     });
 
     it('answers 429 quota when both models are out', async () => {
@@ -597,15 +604,17 @@ describe('import endpoints', () => {
 
     const newestRow = async () => (await rows()).at(-1);
 
-    it('starts a new row that keeps the state and stage, and dismisses the failed one', async () => {
+    it('starts a new row from the first stage, and dismisses the failed one', async () => {
       const { cookie, userId } = await signUp();
-      const row = await failedImport(userId, { state: '{"done":["meta"],"meta":{}}', stage: 'extract', title: 'Tea', error_detail: 'Gemini 503' });
+      // What the earlier stages left expires (a signed video link, an uploaded file), so none of it is kept.
+      const state = '{"done":["meta","video"],"meta":{"video":{"downloadUrl":"https://old"}},"file":{"name":"files/old"},"version":2}';
+      const row = await failedImport(userId, { state, stage: 'extract', title: 'Tea', error_detail: 'Gemini 503' });
       const response = await retry(cookie, row.id);
       expect(response.status).toBe(202);
       const added = await newestRow();
       expect(added.id).not.toBe(row.id);
-      expect(added).toMatchObject({ status: 'running', attempt: 1, error: null, error_detail: null, used_best: 0, purpose: 'import', title: 'Tea', stage: 'extract', state: '{"done":["meta"],"meta":{}}', source_url: CANONICAL, quota_day: today() });
-      expect((await response.json()).import).toMatchObject({ id: added.id, status: 'running', error: null, stage: 'extract' });
+      expect(added).toMatchObject({ status: 'running', attempt: 1, error: null, error_detail: null, used_best: 0, purpose: 'import', title: 'Tea', stage: 'meta', state: '{}', source_url: CANONICAL, quota_day: today() });
+      expect((await response.json()).import).toMatchObject({ id: added.id, status: 'running', error: null, stage: 'meta' });
       expect((await reload(row)).status).toBe('dismissed');
       expect(workflow.create).toHaveBeenCalledWith({ id: `import-${added.id}-1`, params: { importId: added.id, attempt: 1 } });
     });
@@ -694,6 +703,8 @@ describe('import endpoints', () => {
       await markOut(BEST);
       await markOut(BASIC);
       expect((await retry(cookie, row.id)).status).toBe(202);
+      // A failed save holds the recipe the model wrote, so it alone keeps its state and stage.
+      expect(await newestRow()).toMatchObject({ stage: 'save', state: '{"model":"m","recipe":{},"done":["meta","extract"]}' });
     });
 
     it('on a later day counts for that day', async () => {
