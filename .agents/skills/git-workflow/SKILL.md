@@ -53,6 +53,8 @@ PR title = Conventional Commit format. Body:
 ```
 Add screenshots for visible UI changes and `Closes #N` for linked issues. Keep PRs
 small and focused; the branch is deleted after the owner merges.
+If the PR breaks anything, say under Notes (and in chat) what the owner must do and
+when relative to merging, and what breaks and for how long (`AGENTS.md` → How to work here).
 
 Never force-push to shared branches, never push to `main`, never merge your own PR
 without the owner's approval.

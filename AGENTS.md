@@ -92,6 +92,10 @@ resolved. One short line each, linking to the README section with the details.
   feature or bug fix needs. No drive-by refactors; note other issues in the PR instead.
 - **Simple first.** Smallest working solution. No speculative abstractions, options,
   or dependencies. Working code beats clever code.
+- **Breaking changes are allowed** when they're the more correct fix (e.g. renaming a
+  table after a fix), never as a drive-by. The site being down for a few moments is
+  fine. Tell the owner, in chat and in the PR, what they must do (e.g. run a migration
+  on production) and when relative to merging, and what breaks and for how long.
 - **Ask when unsure.** If a requirement is ambiguous, ask the owner instead of guessing.
 - **Flag contradictions.** If a prompt seems to contradict an `.md` file (this file, a
   README, or a skill), stop and ask whoever gave the prompt which one is right: change

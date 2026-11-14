@@ -181,7 +181,8 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   the local database with that copy, then applies `schema.sql` locally.
 - **Changing an existing table** needs a one-off file in [`migrations/`](migrations), run
   once by the owner on production (each file says how at its top). `schema.sql` can't do
-  it: it only creates what is missing.
+  it: it only creates what is missing. It may break the site for a few moments; the PR
+  says when to run it relative to merging and what breaks (`AGENTS.md` → How to work here).
 - **Schema**: [`schema.sql`](schema.sql) describes every table. It only uses
   `IF NOT EXISTS`, so applying it again is safe. The owner applies it to production by
   hand: `npx wrangler d1 execute recipes-db --remote --file=schema.sql`.
