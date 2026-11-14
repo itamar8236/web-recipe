@@ -181,7 +181,8 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   the local database with that copy, then applies `schema.sql` locally.
 - **Changing an existing table** needs a one-off file in [`migrations/`](migrations), run
   once by the owner on production (each file says how at its top). `schema.sql` can't do
-  it: it only creates what is missing.
+  it: it only creates what is missing. It may break the site for a few moments; the PR
+  says when to run it relative to merging and what breaks (`AGENTS.md` → How to work here).
 - **Schema**: [`schema.sql`](schema.sql) describes every table. It only uses
   `IF NOT EXISTS`, so applying it again is safe. The owner applies it to production by
   hand: `npx wrangler d1 execute recipes-db --remote --file=schema.sql`.
@@ -436,8 +437,9 @@ agents don't ask for the best model unless the owner says so (`local-dev` skill)
 ## Translation
 
 The edit form's "Translate" sends the language being written to `POST /api/translate`,
-which answers with the other language; the form fills it in, and nothing is stored until
-the user taps Save. It works for any recipe, manual ones too, but needs an account.
+which answers with the other language and stores nothing. The form then fills it in and
+saves the recipe at once with a normal `POST`/`PUT /api/recipes` (the frontend's job; this
+endpoint never writes a recipe). It works for any recipe, manual ones too, but needs an account.
 
 - One plain request, not a Workflow: the user waits for it, and a text-only call takes
   seconds. No video and no link are sent.

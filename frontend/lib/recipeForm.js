@@ -1,0 +1,19 @@
+// The edit form keeps each language as text (one ingredient / step per line); the api
+// stores lines.
+export const blankText = { name: '', ingredients: '', steps: '' };
+
+export const toText = (content) => ({
+  name: content.name,
+  ingredients: content.ingredients.join('\n'),
+  steps: content.steps.join('\n'),
+});
+
+export const toContent = (text) => ({
+  name: text.name,
+  ingredients: text.ingredients.split('\n'),
+  steps: text.steps.split('\n'),
+});
+
+// The form after a translation into `into` arrived: everything the user typed stays as
+// it is, and only the other language is replaced, so it can be saved right away.
+export const withTranslation = (form, into, content) => ({ ...form, [into]: toText(content) });

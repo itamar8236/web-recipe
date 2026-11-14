@@ -6,7 +6,8 @@ description: How to run, test, and verify web-recipe locally against the local c
 # Running and testing web-recipe locally
 
 Always work against the **local** D1 database (`backend/.wrangler/state`). It's a copy
-of production that the owner refreshes. Production (`recipes-db` on Cloudflare) holds
+of production that the owner refreshes. Each git worktree has its own copy, so a new
+worktree starts empty (step 1 below). Production (`recipes-db` on Cloudflare) holds
 real users' recipes; only the owner reads or changes it.
 
 Assume wrangler is **logged out**: the owner logs in only for a moment to refresh the
@@ -20,7 +21,7 @@ local copy, so agents can't reach production even by accident.
 - Never add `"remote": true` to `backend/wrangler.jsonc`.
 - Never run `wrangler deploy` / `npm run deploy`. Deploys happen only on merge to `main`.
 - Production schema or data changes are the owner's job. If one is needed, write it in
-  the PR (e.g. "run `npx wrangler d1 execute recipes-db --remote --file=schema.sql`").
+  the PR with when to run it relative to merging (e.g. "run `npx wrangler d1 execute recipes-db --remote --file=schema.sql`").
 - `backend/.wrangler/prod-dump.sql` contains real user data: never commit it (`.wrangler/`
   is gitignored), copy it elsewhere, or paste its contents in PRs, issues, or chat.
 - Never read `backend/.dev.vars` or `.env`. `.dev.vars` holds the owner's dev keys, which

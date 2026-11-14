@@ -61,7 +61,8 @@ resolved. One short line each, linking to the README section with the details.
   offered only on "Scan the video again". Every try that calls it counts toward the 5.
   When it can't be used, the scan goes on with the usual models by itself, with no question.
 - The **edit form** holds the AI tools: **translate** the language being written into the
-  other one (any recipe, manual ones too; nothing is saved until Save), and, for an
+  other one (any recipe, manual ones too); when it works, the recipe is saved with the form's
+  current text and the edit form closes. For an
   imported recipe, **scan its video again**, which runs like a new import and replaces
   the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
@@ -92,6 +93,10 @@ resolved. One short line each, linking to the README section with the details.
   feature or bug fix needs. No drive-by refactors; note other issues in the PR instead.
 - **Simple first.** Smallest working solution. No speculative abstractions, options,
   or dependencies. Working code beats clever code.
+- **Breaking changes are allowed** when they're the more correct fix (e.g. renaming a
+  table after a fix), never as a drive-by. The site being down for a few moments is
+  fine. Tell the owner, in chat and in the PR, what they must do (e.g. run a migration
+  on production) and when relative to merging, and what breaks and for how long.
 - **Ask when unsure.** If a requirement is ambiguous, ask the owner instead of guessing.
 - **Flag contradictions.** If a prompt seems to contradict an `.md` file (this file, a
   README, or a skill), stop and ask whoever gave the prompt which one is right: change
@@ -147,6 +152,7 @@ One Cloudflare Worker  (backend/)
 ├── frontend/         # Next.js app (static export)
 ├── .agents/skills/   # Shared agent skills (source of truth)
 ├── .claude/          # Claude Code settings; skills is a symlink to ../.agents/skills
+├── .worktreeinclude  # Git-ignored files copied into new agent worktrees (no secrets in it)
 ├── AGENTS.md         # This file: rules for every agent
 └── CLAUDE.md         # Just `@AGENTS.md`, so Claude Code loads this file
 ```
@@ -192,8 +198,9 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
   in the same PR whenever it changes what they describe: this file (product, stack,
   commands, rules), `backend/README.md` (schema, API, auth, LLM flow, env),
   `frontend/README.md` (screens, UX), and skills. Remove docs that became wrong.
-- Git: always `git checkout main && git pull` before creating a new branch, use
-  Conventional Commits, and PR into `main`. Full steps in the `git-workflow` skill.
+- Git: one task = one session = one **git worktree** on a new branch from an up-to-date
+  `origin/main`, so parallel sessions never share a working tree. Use Conventional
+  Commits and PR into `main`. Full steps in the `git-workflow` skill.
 
 ## Verifying
 
@@ -211,13 +218,17 @@ Before every push:
   git symlink to `../.agents/skills` so Claude Code finds the same files; there is no
   copy to keep in sync. Edit and commit only `.agents/skills/`.
   - Windows without symlink support checks the link out as a small text file, so Claude
-    Code sees no skills. One-time fix per clone, no admin needed (Git Bash, repo root):
+    Code sees no skills. One-time fix per clone and per worktree, no admin needed (Git
+    Bash, repo or worktree root):
     `rm .claude/skills && cmd //c "mklink /J .claude\skills .agents\skills" && git update-index --skip-worktree .claude/skills`
-  - `git-workflow`: branch, commit, push, open a PR
+  - `git-workflow`: branch, commit, push, open a PR, and how the owner tests it
   - `new-feature`: feature checklist across backend and frontend
   - `bug-fix`: reproduce, test, fix, verify
   - `frontend-ui`: UI work in `frontend/`
   - `local-dev`: run and test the app against a local copy of the DB, never production
+- **Worktrees**: each session works in its own git worktree (`git-workflow` skill →
+  Start a task). A new worktree has no `node_modules`, no `.dev.vars` / `.env` and an
+  empty local DB; the skill says how to set it up and how to remove it after the merge.
 - **Claude Code settings**: `.claude/settings.json` (committed) blocks force-pushes,
   pushes to `main`, and reading secret files. Personal overrides go in
   `.claude/settings.local.json` (git-ignored).
