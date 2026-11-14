@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
@@ -8,22 +8,8 @@ import { useLanguage } from '@/components/Language';
 import RecipeAiTools from '@/components/RecipeAiTools';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
+import { blankText, toContent, toText, withTranslation } from '@/lib/recipeForm';
 import styles from '../recipe.module.css';
-
-const blank = { name: '', ingredients: '', steps: '' };
-
-// The form edits text; the api stores one line per ingredient / step.
-const toText = (content) => ({
-  name: content.name,
-  ingredients: content.ingredients.join('\n'),
-  steps: content.steps.join('\n'),
-});
-const toLines = (text) => text.split('\n');
-const toContent = (form) => ({
-  name: form.name,
-  ingredients: toLines(form.ingredients),
-  steps: toLines(form.steps),
-});
 
 function RecipeForm() {
   const { lang, t } = useLanguage();
@@ -33,7 +19,7 @@ function RecipeForm() {
 
   const [folders, setFolders] = useState([]);
   const [folderId, setFolderId] = useState(params.get('folder') ? Number(params.get('folder')) : null);
-  const [form, setForm] = useState({ en: blank, he: blank });
+  const [form, setForm] = useState({ en: blankText, he: blankText });
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'missing' | 'error'
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [saving, setSaving] = useState(false);
@@ -42,6 +28,12 @@ function RecipeForm() {
   const [aiBusy, setAiBusy] = useState(false);
   // Translating and scanning need an account, like importing.
   const loggedIn = useAuth().status === 'user';
+  // A translation saves when it arrives, so it needs what the user has typed by then,
+  // not what the form held when they tapped Translate.
+  const latest = useRef({ form, folderId });
+  useEffect(() => {
+    latest.current = { form, folderId };
+  }, [form, folderId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,21 +102,33 @@ function RecipeForm() {
     setForm({ ...form, [lang]: { ...form[lang], [field]: value } });
   }
 
-  async function submit(event) {
-    event.preventDefault();
+  // Saves and opens the recipe view; on failure stays here with the form as it is.
+  async function save(values, folder) {
     setSaving(true);
     setError('');
     try {
       const saved = await api.saveRecipe(id, {
-        folderId,
-        en: toContent(form.en),
-        he: toContent(form.he),
+        folderId: folder,
+        en: toContent(values.en),
+        he: toContent(values.he),
       });
       router.push(`/recipe?id=${saved.id}`);
     } catch (err) {
       setError(errorMessage(t, err));
       setSaving(false);
     }
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    save(form, folderId);
+  }
+
+  // A finished translation is saved at once, with the user's unsaved edits.
+  async function saveTranslation(into, content) {
+    const next = withTranslation(latest.current.form, into, content);
+    setForm(next);
+    await save(next, latest.current.folderId);
   }
 
   // The form edits only the app's current language; the other language is kept as is,
@@ -175,7 +179,7 @@ function RecipeForm() {
           otherHasText={Boolean(form[other].name.trim() || form[other].ingredients.trim() || form[other].steps.trim())}
           recipeId={id}
           rescanId={id !== null && link ? id : null}
-          onTranslated={(content) => setForm((latest) => ({ ...latest, [other]: toText(content) }))}
+          onTranslated={(content) => saveTranslation(other, content)}
           onBusyChange={setAiBusy}
         />
       )}
