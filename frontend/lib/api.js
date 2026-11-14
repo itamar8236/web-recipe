@@ -208,13 +208,10 @@ export async function getImports() {
   return dataRequest('/api/imports');
 }
 
-// Only the link is sent: the backend works out which site it is. `model` is 'best' or
-// 'basic'; with 'best' the backend still moves to the basic model by itself when needed.
-export async function startImport(url, model = 'best') {
+// Only the link is sent: the backend works out which site it is, and which model reads it.
+export async function startImport(url) {
   refuseGuest();
-  const body = { url };
-  if (model === 'basic') body.model = 'basic';
-  return (await dataRequest('/api/imports', 'POST', body)).import;
+  return (await dataRequest('/api/imports', 'POST', { url })).import;
 }
 
 // Returns the new card: a Retry is a new import, and the failed card goes away.
@@ -228,23 +225,20 @@ export async function dismissImport(id) {
   await dataRequest(`/api/imports/${id}`, 'DELETE');
 }
 
-// Scans an imported recipe's video again, replacing its text when done. Same model choice
-// as startImport.
-export async function rerunRecipe(id, model = 'best') {
+// Scans an imported recipe's video again, replacing its text when done. `useBest` asks for
+// the best model, the one model choice a user has; the backend still goes on with the
+// usual models by itself when that one can't be used.
+export async function rerunRecipe(id, useBest = false) {
   refuseGuest();
-  const body = {};
-  if (model === 'basic') body.model = 'basic';
-  return (await dataRequest(`/api/recipes/${id}/rerun`, 'POST', body)).import;
+  return (await dataRequest(`/api/recipes/${id}/rerun`, 'POST', useBest ? { model: 'best' } : {})).import;
 }
 
 // Translates one language's text ({ name, ingredients, steps }) from `from` ('en' or 'he')
-// into the other, with `model` 'best' or 'basic'. `recipeId` is the recipe being edited, or
-// null for one not saved yet. Nothing is saved: returns { content, model }, where `model`
-// says which one answered (the basic one steps in when the best one can't be used).
-export async function translateRecipe(from, content, model, recipeId = null) {
+// into the other. `recipeId` is the recipe being edited, or null for one not saved yet.
+// Nothing is saved: returns the translated content.
+export async function translateRecipe(from, content, recipeId = null) {
   refuseGuest();
-  const body = { from, content, model };
+  const body = { from, content };
   if (recipeId !== null) body.recipeId = recipeId;
-  const data = await dataRequest('/api/translate', 'POST', body);
-  return { content: data.content, model: data.model };
+  return (await dataRequest('/api/translate', 'POST', body)).content;
 }

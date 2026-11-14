@@ -1,7 +1,7 @@
 // The import endpoints. Everything here is behind the login check and works only on the
 // data of the user the session acts for. The work itself happens in import/workflow.js.
-// Every start, Retry and re-scan is its own imports row (purpose 'import'), so each try
-// that calls the best model counts toward the user's 5; translations are rows too, but
+// Every start, Retry and re-scan is its own llm_requests row (purpose 'import'), so each
+// try that calls the best model counts toward the user's 5; translations are rows too, but
 // with purpose 'translation' (translate.js), and never show as cards.
 
 import { fail, json, readJson } from './http.js';
@@ -13,8 +13,17 @@ const STUCK_AFTER_MS = 30 * 60 * 1000;
 
 // A Retry can only help with these: the rest depend on the video itself.
 // model_approval_needed is only on rows from before the basic model stopped needing an
-// approval; a Retry now just runs them.
-const RETRYABLE_ERRORS = new Set(['llm_error', 'bad_result', 'model_approval_needed', 'quota', 'timed_out']);
+// approval; a Retry now just runs them. A site that blocked the request or asked for a
+// login may answer differently later, and trying again costs no model request.
+const RETRYABLE_ERRORS = new Set([
+  'llm_error',
+  'bad_result',
+  'model_approval_needed',
+  'quota',
+  'timed_out',
+  'source_blocked',
+  'login_required',
+]);
 
 const isUniqueViolation = (error) => String(error.message).includes('UNIQUE');
 
@@ -82,24 +91,25 @@ async function isUnderCaps(env, userId, day) {
   return row.ok === 1;
 }
 
-// Reads the model choice every start takes: `model` is 'best' (default) or 'basic'. Null
-// when invalid. With 'best', the basic model still answers by itself when the best one
-// can't be used; with 'basic', the best one is never tried.
+// Reads the model choice every start takes. Leaving `model` out is the normal case: the
+// import models are tried in order. 'best' asks for the best model first; the import
+// still goes on by itself when that one can't be used. Null when invalid. ('basic' is what
+// a page from before the choice was removed may still send; it means the normal case.)
 function readModelChoice(body) {
   const validModel = body?.model === undefined || body.model === 'best' || body.model === 'basic';
   if (!body || !validModel) return null;
-  return { basicChosen: body.model === 'basic' };
+  return { bestChosen: body.model === 'best' };
 }
 
 // Checks the caps and the model, then inserts the row and starts it. `replaceRecipeId` is
 // set when an existing recipe's video is scanned again. Returns null when the same video
 // started a moment ago (another tap or device), for the caller to answer.
-async function startNew(env, userId, link, { basicChosen }, replaceRecipeId = null) {
+async function startNew(env, userId, link, { bestChosen }, replaceRecipeId = null) {
   const now = Date.now();
   const day = quotaDay(now);
   if (!(await isUnderCaps(env, userId, day))) return fail(429, 'too_many_imports');
 
-  const refusal = startRefusal(await readModelState(env, userId, now), { basicChosen });
+  const refusal = startRefusal(await readModelState(env, userId, now), { bestChosen });
   if (refusal) return fail(429, refusal);
 
   let row;
@@ -115,7 +125,7 @@ async function startNew(env, userId, link, { basicChosen }, replaceRecipeId = nu
         link.sourceId,
         link.sourceUrl,
         now,
-        JSON.stringify(basicChosen ? { basicChosen: true } : {}),
+        JSON.stringify(bestChosen ? { bestChosen: true } : {}),
         replaceRecipeId,
       )
       .first();
@@ -179,19 +189,26 @@ async function isStillWanted(env, userId, row) {
 // A failed save has its recipe already, so it needs no model at all.
 async function retryRefusal(env, userId, row, now) {
   if (row.extracted_model !== null) return null;
-  return startRefusal(await readModelState(env, userId, now), { basicChosen: row.basic_chosen === 1 });
+  return startRefusal(await readModelState(env, userId, now), { bestChosen: row.best_chosen === 1 });
 }
 
-// A Retry is a new row that starts where the failed one stopped (finished stages are kept
-// in its state), and the failed card goes away. Being a new row, it counts toward the caps
-// and, if it calls the best model, toward the user's 5, like any other try.
+// A Retry is a new row, and the failed card goes away. Being a new row, it counts toward
+// the caps and, if it calls the best model, toward the user's 5, like any other try.
+// It starts over from the first stage, keeping only the model choice: what the earlier
+// stages left (a site's signed video link, an uploaded video file) expires, and getting it
+// again costs no model request. Only a failed save keeps its state, because it holds the
+// recipe the model already wrote.
+const RETRY_STAGE = `CASE WHEN json_extract(state, '$.model') IS NOT NULL THEN stage ELSE 'meta' END`;
+const RETRY_STATE = `CASE WHEN json_extract(state, '$.model') IS NOT NULL THEN state
+  WHEN json_extract(state, '$.bestChosen') THEN '{"bestChosen":true}' ELSE '{}' END`;
+
 async function retryImport(request, env, userId, id) {
   if (!(await readJson(request))) return fail(400, 'invalid_request');
 
   const row = await env.DB.prepare(
     `SELECT status, error, source_url, replace_recipe_id,
             json_extract(state, '$.model') AS extracted_model,
-            json_extract(state, '$.basicChosen') AS basic_chosen
+            json_extract(state, '$.bestChosen') AS best_chosen
        FROM llm_requests WHERE id = ? AND user_id = ? AND purpose = 'import'`,
   )
     .bind(id, userId)
@@ -212,7 +229,7 @@ async function retryImport(request, env, userId, id) {
   try {
     added = await env.DB.prepare(
       `INSERT INTO llm_requests (user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, quota_day, created_at, updated_at)
-       SELECT user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, ?2, ?5, ?5
+       SELECT user_id, platform, source_id, source_url, title, ${RETRY_STAGE}, ${RETRY_STATE}, replace_recipe_id, ?2, ?5, ?5
          FROM llm_requests WHERE id = ?6 AND status = 'failed' AND ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
@@ -236,7 +253,7 @@ async function dismissImport(env, userId, id) {
 
 // ---- Scanning a recipe's video again ----
 
-// Any recipe with a link can be scanned again, on the model the user picks, exactly like a
+// Any recipe with a link can be scanned again, with the best model if the user asks, exactly like a
 // new import. When it finishes it replaces the recipe's text.
 async function rerunRecipe(request, env, userId, recipeId) {
   const choice = readModelChoice(await readJson(request));

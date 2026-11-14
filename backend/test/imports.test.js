@@ -1,6 +1,8 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { facebook } from '../src/import/sources/facebook.js';
 import { detectSource, readLink, SOURCES } from '../src/import/sources/index.js';
+import { instagram } from '../src/import/sources/instagram.js';
 import { youtube } from '../src/import/sources/youtube.js';
 import { nextQuotaReset, quotaDay } from '../src/import/models.js';
 import worker from '../src/index.js';
@@ -61,9 +63,6 @@ describe('link detection', () => {
   });
 
   it.each([
-    ['Facebook', 'https://www.facebook.com/watch/?v=1234567890'],
-    ['Facebook short', 'https://fb.watch/abcdefg/'],
-    ['Instagram', 'https://www.instagram.com/reel/Cabcdefghij/'],
     ['TikTok', 'https://www.tiktok.com/@cook/video/1234567890123456789'],
     ['an unknown site', 'https://example.com/recipe'],
     ['a lookalike host', `https://youtube.com.evil.example/watch?v=${ID}`],
@@ -74,28 +73,12 @@ describe('link detection', () => {
     expect(readLink(text)).toEqual({ error: 'link_unsupported' });
   });
 
-  it('has YouTube as the only source for now, found through detectSource', () => {
-    expect(SOURCES).toEqual([youtube]);
+  it('has three sources, each found through detectSource by its own hosts', () => {
+    expect(SOURCES).toEqual([youtube, facebook, instagram]);
     expect(detectSource(new URL(CANONICAL))).toBe(youtube);
+    expect(detectSource(new URL('https://m.facebook.com/reel/1234567890'))).toBe(facebook);
+    expect(detectSource(new URL('https://instagr.am/p/Cabcdefghij/'))).toBe(instagram);
     expect(detectSource(new URL('https://example.com/'))).toBeUndefined();
-  });
-});
-
-describe('video length', () => {
-  it.each([
-    ['PT3M', 180],
-    ['PT12M3S', 723],
-    ['PT59S', 59],
-    ['PT1H2M3S', 3723],
-    ['P1DT1S', 86401],
-    ['P1W', 604800],
-    ['P0D', 0],
-  ])('reads %s as %i seconds', (duration, seconds) => {
-    expect(youtube.durationSeconds(duration)).toBe(seconds);
-  });
-
-  it.each(['', '3 minutes', 'T3M'])('reads %j as unknown', (duration) => {
-    expect(youtube.durationSeconds(duration)).toBeNull();
   });
 });
 
@@ -166,7 +149,9 @@ describe('llm_requests table rules', () => {
 
 describe('import endpoints', () => {
   const BEST = env.LLM_BEST_MODEL;
-  const BASIC = env.LLM_BASIC_MODEL;
+  const IMPORT_MODELS = env.LLM_IMPORT_MODELS.split(',');
+  // The model an import with no choice ends on when nothing is busy.
+  const MODEL = IMPORT_MODELS[0];
   const LINK = `https://youtu.be/${ID}`;
   const today = () => quotaDay(Date.now());
   const SOON = () => Date.now() + 3600000;
@@ -197,13 +182,15 @@ describe('import endpoints', () => {
   const failedImport = (userId, fields = {}) =>
     insertImport(userId, { status: 'failed', error: 'llm_error', quota_day: today(), updated_at: Date.now(), ...fields });
   // A model Google said is out for the day: its count is at its limit.
-  const markOut = (model) =>
-    env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(today(), model, model === BEST ? 20 : 500).run();
+  const markOut = (model) => env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, 100000)').bind(today(), model).run();
+  const markImportModelsOut = async () => {
+    for (const model of IMPORT_MODELS) await markOut(model);
+  };
   const useUpBest = async (userId, count = 5) => {
     for (let i = 0; i < count; i++) await insertImport(userId, otherVideo({ status: 'done', used_best: 1 }));
   };
   const insertRecipe = async (userId, fields = {}) => {
-    const row = { user_id: userId, platform: 'youtube', source_url: CANONICAL, source_model: BASIC, name_en: 'Tea', name_he: 'תה', ...fields };
+    const row = { user_id: userId, platform: 'youtube', source_url: CANONICAL, source_model: MODEL, name_en: 'Tea', name_he: 'תה', ...fields };
     const columns = Object.keys(row);
     return env.DB.prepare(`INSERT INTO recipes (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')}) RETURNING *`)
       .bind(...Object.values(row))
@@ -291,8 +278,8 @@ describe('import endpoints', () => {
       ['playlist', 'https://www.youtube.com/playlist?list=PL123', 'link_invalid'],
       ['bad id', 'https://youtu.be/abc', 'link_invalid'],
       ['plain text', 'not a link', 'link_invalid'],
-      ['Facebook', 'https://www.facebook.com/watch/?v=123', 'link_unsupported'],
-      ['Instagram', 'https://www.instagram.com/reel/abc/', 'link_unsupported'],
+      ['a Facebook profile', 'https://www.facebook.com/somecook', 'link_invalid'],
+      ['an Instagram profile', 'https://www.instagram.com/somecook/', 'link_invalid'],
       ['TikTok', 'https://www.tiktok.com/@a/video/1', 'link_unsupported'],
       ['an unknown site', 'https://example.com/recipe', 'link_unsupported'],
       ['a lookalike host', `https://youtube.com.evil.example/watch?v=${ID}`, 'link_unsupported'],
@@ -394,20 +381,20 @@ describe('import endpoints', () => {
 
     it('checks the caps before the model state', async () => {
       const { cookie, userId } = await signUp();
-      await markOut(BEST);
-      await markOut(BASIC);
+      await markImportModelsOut();
       for (let i = 0; i < 3; i++) await insertImport(userId, otherVideo());
       expect(await errorOf(await startImport(cookie))).toBe('too_many_imports');
     });
 
-    it('starts without asking anything when the best model is out', async () => {
+    it('starts while any import model has requests left', async () => {
       const { cookie } = await signUp();
-      await markOut(BEST);
+      await markOut(IMPORT_MODELS[0]);
+      await markOut(IMPORT_MODELS[1]);
       expect((await startImport(cookie)).status).toBe(202);
       expect(workflow.create).toHaveBeenCalledTimes(1);
     });
 
-    it('starts the 6th import of the day without asking anything', async () => {
+    it('starts an import for a user who has used their 5 best-model uses', async () => {
       const { cookie, userId } = await signUp();
       await useUpBest(userId);
       expect((await startImport(cookie)).status).toBe(202);
@@ -418,42 +405,50 @@ describe('import endpoints', () => {
       expect((await startImport(cookie, LINK, { useBasicModel: true })).status).toBe(202);
     });
 
-    describe('choosing the basic model', () => {
-      it('starts on the basic model even when the best one is out', async () => {
+    describe('the model choice', () => {
+      it('remembers nothing when no model is asked for: the import models are tried in order', async () => {
         const { cookie } = await signUp();
-        await markOut(BEST);
-        const response = await startImport(cookie, LINK, { model: 'basic' });
-        expect(response.status).toBe(202);
-        expect(JSON.parse((await rows())[0].state)).toEqual({ basicChosen: true });
-      });
-
-      it('answers 429 quota when the basic model is out', async () => {
-        const { cookie } = await signUp();
-        await markOut(BASIC);
-        const response = await startImport(cookie, LINK, { model: 'basic' });
-        expect(response.status).toBe(429);
-        expect(await errorOf(response)).toBe('quota');
-      });
-
-      it('accepts best, and refuses any other value', async () => {
-        const { cookie } = await signUp();
-        expect((await startImport(cookie, LINK, { model: 'max' })).status).toBe(400);
-        expect((await startImport(cookie, LINK, { model: 'best' })).status).toBe(202);
+        expect((await startImport(cookie)).status).toBe(202);
         expect(JSON.parse((await rows())[0].state)).toEqual({});
       });
 
-      it('keeps the choice on a retry', async () => {
+      it('remembers a request for the best model', async () => {
+        const { cookie } = await signUp();
+        expect((await startImport(cookie, LINK, { model: 'best' })).status).toBe(202);
+        expect(JSON.parse((await rows())[0].state)).toEqual({ bestChosen: true });
+      });
+
+      it('starts even when the best model asked for is out or the user has used their 5', async () => {
         const { cookie, userId } = await signUp();
-        const row = await failedImport(userId, { state: '{"basicChosen":true}' });
         await markOut(BEST);
+        await useUpBest(userId);
+        expect((await startImport(cookie, LINK, { model: 'best' })).status).toBe(202);
+      });
+
+      it('still starts on the best model asked for when every import model is out', async () => {
+        const { cookie } = await signUp();
+        await markImportModelsOut();
+        expect((await startImport(cookie, LINK, { model: 'best' })).status).toBe(202);
+      });
+
+      it('treats the basic choice of an older page as no choice, and refuses any other value', async () => {
+        const { cookie } = await signUp();
+        expect((await startImport(cookie, LINK, { model: 'max' })).status).toBe(400);
+        expect((await startImport(cookie, LINK, { model: 'basic' })).status).toBe(202);
+        expect(JSON.parse((await rows())[0].state)).toEqual({});
+      });
+
+      it('keeps the choice, and nothing else, when a Retry starts over', async () => {
+        const { cookie, userId } = await signUp();
+        const row = await failedImport(userId, { state: '{"bestChosen":true,"done":["meta","video"],"file":{"name":"files/old"}}', stage: 'extract' });
         expect((await post(cookie, `/api/imports/${row.id}/retry`)).status).toBe(202);
+        expect((await rows()).at(-1)).toMatchObject({ stage: 'meta', state: '{"bestChosen":true}' });
       });
     });
 
-    it('answers 429 quota when both models are out', async () => {
+    it('answers 429 quota when every import model is out', async () => {
       const { cookie } = await signUp();
-      await markOut(BEST);
-      await markOut(BASIC);
+      await markImportModelsOut();
       const response = await startImport(cookie);
       expect(response.status).toBe(429);
       expect(await errorOf(response)).toBe('quota');
@@ -556,9 +551,9 @@ describe('import endpoints', () => {
       await useUpBest(userId, 2);
       const before = Date.now();
       const { models } = await list(cookie);
-      expect(models).toMatchObject({ bestAvailable: true, bestLeftToday: 20, bestLeftForUser: 3, basicModel: BASIC, bestAvailableAt: null });
+      expect(models).toMatchObject({ bestAvailable: true, bestLeftToday: 20, bestLeftForUser: 3, bestAvailableAt: null });
       expect(models.resetsAt).toBeGreaterThanOrEqual(nextQuotaReset(before));
-      expect(Object.keys(models).sort()).toEqual(['basicModel', 'bestAvailable', 'bestAvailableAt', 'bestLeftForUser', 'bestLeftToday', 'resetsAt']);
+      expect(Object.keys(models).sort()).toEqual(['bestAvailable', 'bestAvailableAt', 'bestLeftForUser', 'bestLeftToday', 'resetsAt']);
     });
 
     it('never lists translations as cards', async () => {
@@ -614,15 +609,17 @@ describe('import endpoints', () => {
 
     const newestRow = async () => (await rows()).at(-1);
 
-    it('starts a new row that keeps the state and stage, and dismisses the failed one', async () => {
+    it('starts a new row from the first stage, and dismisses the failed one', async () => {
       const { cookie, userId } = await signUp();
-      const row = await failedImport(userId, { state: '{"done":["meta"],"meta":{}}', stage: 'extract', title: 'Tea', error_detail: 'Gemini 503' });
+      // What the earlier stages left expires (a signed video link, an uploaded file), so none of it is kept.
+      const state = '{"done":["meta","video"],"meta":{"video":{"downloadUrl":"https://old"}},"file":{"name":"files/old"},"version":2}';
+      const row = await failedImport(userId, { state, stage: 'extract', title: 'Tea', error_detail: 'Gemini 503' });
       const response = await retry(cookie, row.id);
       expect(response.status).toBe(202);
       const added = await newestRow();
       expect(added.id).not.toBe(row.id);
-      expect(added).toMatchObject({ status: 'running', attempt: 1, error: null, error_detail: null, used_best: 0, purpose: 'import', title: 'Tea', stage: 'extract', state: '{"done":["meta"],"meta":{}}', source_url: CANONICAL, quota_day: today() });
-      expect((await response.json()).import).toMatchObject({ id: added.id, status: 'running', error: null, stage: 'extract' });
+      expect(added).toMatchObject({ status: 'running', attempt: 1, error: null, error_detail: null, used_best: 0, purpose: 'import', title: 'Tea', stage: 'meta', state: '{}', source_url: CANONICAL, quota_day: today() });
+      expect((await response.json()).import).toMatchObject({ id: added.id, status: 'running', error: null, stage: 'meta' });
       expect((await reload(row)).status).toBe('dismissed');
       expect(workflow.create).toHaveBeenCalledWith({ id: `import-${added.id}-1`, params: { importId: added.id, attempt: 1 } });
     });
@@ -686,11 +683,10 @@ describe('import endpoints', () => {
       expect((await retry(cookie, row.id)).status).toBe(202);
     });
 
-    it('answers 429 quota when both models are out', async () => {
+    it('answers 429 quota when every import model is out', async () => {
       const { cookie, userId } = await signUp();
       const row = await failedImport(userId, { error: 'quota' });
-      await markOut(BEST);
-      await markOut(BASIC);
+      await markImportModelsOut();
       const response = await retry(cookie, row.id);
       expect(response.status).toBe(429);
       expect(await errorOf(response)).toBe('quota');
@@ -708,9 +704,10 @@ describe('import endpoints', () => {
     it('needs no model when the recipe was already extracted', async () => {
       const { cookie, userId } = await signUp();
       const row = await failedImport(userId, { state: '{"model":"m","recipe":{},"done":["meta","extract"]}', stage: 'save' });
-      await markOut(BEST);
-      await markOut(BASIC);
+      await markImportModelsOut();
       expect((await retry(cookie, row.id)).status).toBe(202);
+      // A failed save holds the recipe the model wrote, so it alone keeps its state and stage.
+      expect(await newestRow()).toMatchObject({ stage: 'save', state: '{"model":"m","recipe":{},"done":["meta","extract"]}' });
     });
 
     it('on a later day counts for that day', async () => {
@@ -798,19 +795,19 @@ describe('import endpoints', () => {
       expect((await response.json()).import.id).toBe(row.id);
     });
 
-    it('keeps the basic model when the user picks it, even with the best one out', async () => {
+    it('remembers a request for the best model, and starts even when that one is out', async () => {
       const { cookie, userId } = await signUp();
       const recipe = await insertRecipe(userId);
       await markOut(BEST);
-      expect((await rerun(cookie, recipe.id, { model: 'basic' })).status).toBe(202);
-      expect(JSON.parse((await rows())[0].state)).toEqual({ basicChosen: true });
+      expect((await rerun(cookie, recipe.id, { model: 'best' })).status).toBe(202);
+      expect(JSON.parse((await rows())[0].state)).toEqual({ bestChosen: true });
     });
 
-    it('starts without asking anything when the best model is out', async () => {
+    it('answers 429 quota when every import model is out', async () => {
       const { cookie, userId } = await signUp();
       const recipe = await insertRecipe(userId);
-      await markOut(BEST);
-      expect((await rerun(cookie, recipe.id)).status).toBe(202);
+      await markImportModelsOut();
+      expect(await errorOf(await rerun(cookie, recipe.id))).toBe('quota');
     });
 
     it.each([{ model: 'other' }])('answers 400 for %j', async (body) => {
@@ -862,7 +859,7 @@ describe('import endpoints', () => {
       const manual = (await created.json()).recipe;
       expect(manual.sourceModel).toBeNull();
       const loaded = await (await send(cookie, 'GET', `/api/recipes/${imported.id}`)).json();
-      expect(loaded.recipe.sourceModel).toBe(BASIC);
+      expect(loaded.recipe.sourceModel).toBe(MODEL);
     });
   });
 });

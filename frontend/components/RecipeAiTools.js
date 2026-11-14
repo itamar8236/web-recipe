@@ -11,10 +11,10 @@ import styles from './RecipeAiTools.module.css';
 const hasText = (content) => Boolean(content.name.trim() || [...content.ingredients, ...content.steps].some((line) => line.trim()));
 
 // The AI actions on the edit form, for a logged-in user: translate the language being
-// written into the other one, and, for an imported recipe, scan its video again. Each has
-// its own model choice: a translation is simple text work, so it starts on Basic and
-// leaves the user's 5 daily best-model uses alone; a scan starts on Best, like an import.
-// Nothing asks for approval: when the best model can't be used, the basic one answers.
+// written into the other one, and, for an imported recipe, scan its video again. The
+// backend picks the models. The one choice here is asking a scan to use the best model,
+// for a recipe that came out thin: it is slower and each user gets a few a day, and when
+// it can't be used the scan goes on with the usual models by itself.
 // `content` is the language being written ({ name, ingredients[], steps[] }); the
 // translation is handed to `onTranslated` and saved only with the form. `rescanId` is the
 // recipe's id when it has a video link, otherwise null; `recipeId` is its id, or null for
@@ -23,7 +23,7 @@ const hasText = (content) => Boolean(content.name.trim() || [...content.ingredie
 export default function RecipeAiTools({ from, content, otherHasText, recipeId, rescanId, onTranslated, onBusyChange }) {
   const { t } = useLanguage();
   const router = useRouter();
-  const [models, setModels] = useState({ translate: 'basic', rescan: 'best' });
+  const [useBest, setUseBest] = useState(false);
   const [busy, setBusyState] = useState(null); // null | 'translate' | 'rescan'
   const [confirming, setConfirming] = useState(null); // null | 'translate' | 'rescan'
   const [error, setError] = useState('');
@@ -44,10 +44,8 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
     clearMessages();
     setBusy('translate');
     try {
-      const result = await api.translateRecipe(from, content, models.translate, recipeId);
-      onTranslated(result.content);
-      // Asked for Best but got Basic: say so, since it may read less well.
-      setNote(models.translate === 'best' && result.model === 'basic' ? t.translatedBasic : t.translated);
+      onTranslated(await api.translateRecipe(from, content, recipeId));
+      setNote(t.translated);
     } catch (err) {
       setError(errorMessage(t, err));
     } finally {
@@ -61,31 +59,12 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
     clearMessages();
     setBusy('rescan');
     try {
-      await api.rerunRecipe(rescanId, models.rescan);
+      await api.rerunRecipe(rescanId, useBest);
       router.push('/');
     } catch (err) {
       setError(errorMessage(t, err));
       setBusy(null);
     }
-  }
-
-  function modelChoice(action) {
-    const id = `ai-model-${action}`;
-    return (
-      <div className={styles.model}>
-        <label className="label" htmlFor={id}>{t.modelChoice}</label>
-        <select
-          id={id}
-          className={`field ${styles.modelSelect}`}
-          value={models[action]}
-          disabled={busy !== null}
-          onChange={(event) => setModels({ ...models, [action]: event.target.value })}
-        >
-          <option value="best">{t.modelBest}</option>
-          <option value="basic">{t.modelBasic}</option>
-        </select>
-      </div>
-    );
   }
 
   return (
@@ -101,7 +80,6 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
         >
           {busy === 'translate' ? t.translating : t.translate}
         </button>
-        {modelChoice('translate')}
       </div>
 
       {rescanId !== null && (
@@ -109,7 +87,10 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
           <button type="button" className="button secondary" disabled={busy !== null} onClick={() => setConfirming('rescan')}>
             {busy === 'rescan' ? t.importStarting : t.rescan}
           </button>
-          {modelChoice('rescan')}
+          <label className={styles.choice}>
+            <input type="checkbox" checked={useBest} disabled={busy !== null} onChange={(event) => setUseBest(event.target.checked)} />
+            {t.useBestModel}
+          </label>
         </div>
       )}
 
