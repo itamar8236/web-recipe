@@ -6,7 +6,8 @@ description: How to run, test, and verify web-recipe locally against the local c
 # Running and testing web-recipe locally
 
 Always work against the **local** D1 database (`backend/.wrangler/state`). It's a copy
-of production that the owner refreshes. Production (`recipes-db` on Cloudflare) holds
+of production that the owner refreshes. Each git worktree has its own copy, so a new
+worktree starts empty (step 1 below). Production (`recipes-db` on Cloudflare) holds
 real users' recipes; only the owner reads or changes it.
 
 Assume wrangler is **logged out**: the owner logs in only for a moment to refresh the
