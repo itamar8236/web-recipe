@@ -2,7 +2,7 @@
 // answer, so this is one plain request, not a Workflow. The recipe text isn't stored: it
 // comes from the edit form and goes back to it, and is saved only when the user taps Save.
 // Each translation is an llm_requests row with purpose 'translation', like every other model
-// request, so a best-model one counts toward the user's 5 the same way an import does.
+// request, with the model that answered in its `model` column.
 
 import { readContent } from './data.js';
 import { fail, json, readJson } from './http.js';
@@ -56,7 +56,7 @@ function failureOf(error) {
 }
 
 // The row this translation is recorded in, linked to the recipe being edited (none for a
-// recipe not saved yet). Inserted before the call, so a best-model use is claimed on it.
+// recipe not saved yet).
 function insertRow(env, userId, recipeId, now) {
   return env.DB.prepare(
     `INSERT INTO llm_requests (user_id, purpose, stage, recipe_id, quota_day, created_at, updated_at)
@@ -68,8 +68,8 @@ function insertRow(env, userId, recipeId, now) {
 }
 
 function finishRow(env, job, fields) {
-  return env.DB.prepare(`UPDATE llm_requests SET status = ?, state = ?, error = ?, error_detail = ?, updated_at = ? WHERE id = ?`)
-    .bind(fields.status, JSON.stringify(fields.state ?? {}), fields.error ?? null, fields.detail ?? null, Date.now(), job.id)
+  return env.DB.prepare(`UPDATE llm_requests SET status = ?, model = ?, error = ?, error_detail = ?, updated_at = ? WHERE id = ?`)
+    .bind(fields.status, fields.model ?? null, fields.error ?? null, fields.detail ?? null, Date.now(), job.id)
     .run();
 }
 
@@ -78,18 +78,14 @@ async function recipeBelongsToUser(env, userId, recipeId) {
   return row !== null;
 }
 
-// POST /api/translate { from: 'en'|'he', content: { name, ingredients, steps }, model?, recipeId? }
-// answers { content, model } in the other language. `model` is 'best' or 'basic'
-// (default); the answer's `model` says which one answered, since the basic one steps in
-// when the best one can't be used.
+// POST /api/translate { from: 'en'|'he', content: { name, ingredients, steps }, recipeId? }
+// answers { content } in the other language. There is no model choice: a translation is
+// plain text work for the small models. (A `model` field from an older page is ignored.)
 async function translate(request, env, userId, llm) {
   const body = await readJson(request);
-  const choice = body?.model ?? 'basic';
   const recipeId = body?.recipeId ?? null;
   const validRecipeId = recipeId === null || Number.isInteger(recipeId);
-  if (!['en', 'he'].includes(body?.from) || !['best', 'basic'].includes(choice) || !validRecipeId) {
-    return fail(400, 'invalid_request');
-  }
+  if (!['en', 'he'].includes(body?.from) || !validRecipeId) return fail(400, 'invalid_request');
   const source = readContent(body.content);
   if (source.error) return fail(400, source.error);
   const { name, ingredients, steps } = source.value;
@@ -100,15 +96,18 @@ async function translate(request, env, userId, llm) {
   // The prompt holds the user's own text, so llm.js must not log it.
   const llmRequest = { prompt: buildPrompt(body.from, to, source.value), schema: SCHEMA, logPrompt: false };
   const job = await insertRow(env, userId, recipeId, Date.now());
+  // Kept even when the answer turns out unusable, to know which model wrote it.
+  let model = null;
   try {
-    const { output, model } = await callTranslationModel(job, { env, llm }, llmRequest, choice);
-    const content = readTranslation(output, source.value);
-    await finishRow(env, job, { status: 'done', state: { model } });
-    return json({ content, model: model === env.LLM_BEST_MODEL ? 'best' : 'basic' });
+    const answer = await callTranslationModel({ env, llm }, llmRequest);
+    model = answer.model;
+    const content = readTranslation(answer.output, source.value);
+    await finishRow(env, job, { status: 'done', model });
+    return json({ content });
   } catch (error) {
     const { status, code, detail } = failureOf(error);
     if (detail) console.log(`Translation failed: ${detail}`);
-    await finishRow(env, job, { status: 'failed', error: code, detail });
+    await finishRow(env, job, { status: 'failed', model, error: code, detail });
     return fail(status, code);
   }
 }

@@ -1,5 +1,5 @@
 // The fallback model: a text-only model from another provider (Groq) that answers when
-// Gemini's basic model is busy or out. Off until GROQ_API_KEY is set.
+// every Gemini model in line is busy or out. Off until GROQ_API_KEY is set.
 
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,7 +10,8 @@ import { handleTranslate } from '../src/translate.js';
 import { insertImport, insertUser } from './helpers.js';
 
 const BEST = env.LLM_BEST_MODEL;
-const BASIC = env.LLM_BASIC_MODEL;
+const IMPORT = env.LLM_IMPORT_MODELS.split(',');
+const LIMITS = Object.fromEntries(env.LLM_DAILY_LIMITS.split(',').map((item) => [item.slice(0, item.lastIndexOf(':')), Number(item.slice(item.lastIndexOf(':') + 1))]));
 const FALLBACK = env.LLM_FALLBACK_MODEL;
 const withKey = { ...env, GROQ_API_KEY: 'fake-groq-key' };
 const today = () => quotaDay(Date.now());
@@ -37,93 +38,92 @@ const answering = (...results) => {
 };
 const usage = async (model) =>
   (await env.DB.prepare('SELECT calls FROM llm_usage WHERE day = ? AND model = ?').bind(today(), model).first())?.calls ?? 0;
-const markOut = (model, calls) => env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(today(), model, calls).run();
-const basicJob = async () => {
-  const job = await insertImport(await insertUser(), { quota_day: today(), state: '{"basicChosen":true}' });
-  return { ...job, state: { basicChosen: true } };
+const markOut = (model) => env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(today(), model, LIMITS[model]).run();
+const markImportModelsOut = async () => {
+  for (const model of IMPORT) await markOut(model);
 };
+const newJob = async (state = {}) => ({ ...(await insertImport(await insertUser(), { quota_day: today() })), state });
 const ask = (job, deps, request = {}) => callChosenModel(job, deps, { prompt: 'p', schema: {}, videoUrl: null, ...request });
 
 describe('the fallback model in the model policy', () => {
   it('is set in the config, with its own daily limit', () => {
     expect(FALLBACK).toBe('openai/gpt-oss-120b');
-    expect(Number(env.LLM_FALLBACK_DAILY_LIMIT)).toBeGreaterThan(0);
+    expect(LIMITS[FALLBACK]).toBeGreaterThan(0);
     expect(env.GROQ_API_KEY).toBe('');
   });
 
-  it('is never called without its key: a busy basic model stays busy, as before', async () => {
+  it('is never called without its key: busy models stay busy', async () => {
     const fallbackLlm = answering(ANSWER);
-    await expect(ask(await basicJob(), { env, llm: answering(busy()), fallbackLlm })).rejects.toBeInstanceOf(ModelBusyError);
+    await expect(ask(await newJob(), { env, llm: answering(busy()), fallbackLlm })).rejects.toBeInstanceOf(ModelBusyError);
     expect(fallbackLlm).not.toHaveBeenCalled();
   });
 
-  it('is never called without its key: both Gemini models out is still quota', async () => {
-    await markOut(BASIC, 500);
+  it('is never called without its key: every Gemini model out is still quota', async () => {
+    await markImportModelsOut();
     const fallbackLlm = answering(ANSWER);
-    await expect(ask(await basicJob(), { env, llm: answering(ANSWER), fallbackLlm })).rejects.toMatchObject({ code: 'quota' });
+    await expect(ask(await newJob(), { env, llm: answering(ANSWER), fallbackLlm })).rejects.toMatchObject({ code: 'quota' });
     expect(fallbackLlm).not.toHaveBeenCalled();
   });
 
-  it('answers a text request when the basic model is busy, and is counted on its own', async () => {
+  it('answers a text request when every import model is busy, and is counted on its own', async () => {
     const fallbackLlm = answering(ANSWER);
-    const result = await ask(await basicJob(), { env: withKey, llm: answering(busy()), fallbackLlm });
+    const result = await ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm });
     expect(result).toEqual({ output: ANSWER, model: FALLBACK });
     expect(fallbackLlm).toHaveBeenCalledTimes(1);
     expect(fallbackLlm.mock.calls[0][0]).toMatchObject({ model: FALLBACK, prompt: 'p' });
     expect(await usage(FALLBACK)).toBe(1);
-    expect(await usage(BASIC)).toBe(0);
+    for (const model of IMPORT) expect(await usage(model)).toBe(0);
   });
 
-  it('answers when the basic model is out for the day', async () => {
-    await markOut(BASIC, 500);
+  it('answers when every import model is out for the day', async () => {
+    await markImportModelsOut();
     const llm = answering(ANSWER);
-    const result = await ask(await basicJob(), { env: withKey, llm, fallbackLlm: answering(ANSWER) });
+    const result = await ask(await newJob(), { env: withKey, llm, fallbackLlm: answering(ANSWER) });
     expect(result.model).toBe(FALLBACK);
     expect(llm).not.toHaveBeenCalled();
   });
 
-  it('answers after the best model is out and the basic one is busy, keeping the best-model use', async () => {
-    const userId = await insertUser();
-    const job = { ...(await insertImport(userId, { quota_day: today() })), state: {} };
+  it('answers after the best model the user asked for is out and the rest are busy, keeping the best-model use', async () => {
+    const job = await newJob({ bestChosen: true });
     const llm = answering(new QuotaError({ daily: true, retryDelayMs: 1 }), busy());
     const result = await ask(job, { env: withKey, llm, fallbackLlm: answering(ANSWER) });
     expect(result.model).toBe(FALLBACK);
-    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, BASIC]);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, ...IMPORT]);
     expect((await env.DB.prepare('SELECT used_best FROM llm_requests WHERE id = ?').bind(job.id).first()).used_best).toBe(1);
   });
 
   it('is never given a video: that request waits for Gemini as before', async () => {
     const fallbackLlm = answering(ANSWER);
     const request = { videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' };
-    await expect(ask(await basicJob(), { env: withKey, llm: answering(busy()), fallbackLlm }, request)).rejects.toBeInstanceOf(ModelBusyError);
+    await expect(ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm }, request)).rejects.toBeInstanceOf(ModelBusyError);
     expect(fallbackLlm).not.toHaveBeenCalled();
   });
 
-  it('reports the basic model as busy when the fallback is busy too', async () => {
-    const error = await ask(await basicJob(), { env: withKey, llm: answering(busy()), fallbackLlm: answering(new ModelBusyError('Groq 503')) }).catch((e) => e);
+  it('reports the first busy model when the fallback is busy too', async () => {
+    const error = await ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm: answering(new ModelBusyError('Groq 503')) }).catch((e) => e);
     expect(error).toBeInstanceOf(ModelBusyError);
     expect(error.detail).toBe('Gemini 503: high demand');
     expect(await usage(FALLBACK)).toBe(0);
   });
 
-  it('fails with quota when the basic model is out and the fallback has reached its limit', async () => {
-    await markOut(BASIC, 500);
-    await markOut(FALLBACK, Number(env.LLM_FALLBACK_DAILY_LIMIT));
+  it('fails with quota when every import model is out and the fallback has reached its limit', async () => {
+    await markImportModelsOut();
+    await markOut(FALLBACK);
     const fallbackLlm = answering(ANSWER);
-    await expect(ask(await basicJob(), { env: withKey, llm: answering(ANSWER), fallbackLlm })).rejects.toMatchObject({ code: 'quota' });
+    await expect(ask(await newJob(), { env: withKey, llm: answering(ANSWER), fallbackLlm })).rejects.toMatchObject({ code: 'quota' });
     expect(fallbackLlm).not.toHaveBeenCalled();
   });
 
-  it('is not used while the basic model answers', async () => {
+  it('is not used while an import model answers', async () => {
     const fallbackLlm = answering(ANSWER);
-    expect((await ask(await basicJob(), { env: withKey, llm: answering(ANSWER), fallbackLlm })).model).toBe(BASIC);
+    expect((await ask(await newJob(), { env: withKey, llm: answering(busy(), busy(), ANSWER), fallbackLlm })).model).toBe(IMPORT[2]);
     expect(fallbackLlm).not.toHaveBeenCalled();
   });
 
   it('passes on its own failures, such as an answer that cannot be read', async () => {
     const { ImportError } = await import('../src/import/errors.js');
     const fallbackLlm = answering(new ImportError('bad_result', { retryable: true }));
-    await expect(ask(await basicJob(), { env: withKey, llm: answering(busy()), fallbackLlm })).rejects.toMatchObject({ code: 'bad_result' });
+    await expect(ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm })).rejects.toMatchObject({ code: 'bad_result' });
   });
 });
 
@@ -141,14 +141,14 @@ describe('translation with the fallback model', () => {
       llm,
     );
 
-  it('answers through Groq when the basic model is busy, and says basic answered', async () => {
+  it('answers through Groq when the translation model is busy, and records which model answered', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => groqReply(HEBREW)));
     const response = await translate(withKey, answering(busy()));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ content: HEBREW, model: 'basic' });
+    expect(await response.json()).toEqual({ content: HEBREW });
     expect(String(fetch.mock.calls[0][0])).toBe('https://api.groq.com/openai/v1/chat/completions');
     const row = await env.DB.prepare(`SELECT * FROM llm_requests WHERE purpose = 'translation'`).first();
-    expect(JSON.parse(row.state).model).toBe(FALLBACK);
+    expect(row.model).toBe(FALLBACK);
   });
 
   it('still answers 503 model_busy without the key, sending nothing to Groq', async () => {

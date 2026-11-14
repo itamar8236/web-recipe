@@ -1,5 +1,5 @@
 // The only file that knows Groq's request format. Groq runs the fallback model: a free
-// text-only model that answers when Gemini's basic model is busy or out (models.js decides
+// text-only model that answers when every Gemini model in line is busy or out (models.js decides
 // when). It can't watch a video, so it is only ever given text.
 
 import { ImportError } from './errors.js';

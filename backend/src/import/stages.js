@@ -190,6 +190,9 @@ async function extractRecipe(job, deps) {
   }
 
   const { output, model } = answer;
+  // Which model answered is kept on the row whatever the answer was, for looking into a
+  // bad or missing recipe later.
+  await env.DB.prepare(`UPDATE llm_requests SET model = ? ${isCurrent}`).bind(model, job.id, job.attempt).run();
   if (!['one', 'none', 'multiple'].includes(output.status)) throw badResult();
   const recipe = output.status === 'one' ? readRecipe(output) : null;
   // With a recipe in hand the uploaded video is deleted by the save stage, once this
@@ -212,10 +215,10 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
        WHERE EXISTS (SELECT 1 FROM llm_requests ${isCurrent})`,
     ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, now, now, job.id, job.attempt),
     env.DB.prepare(
-      `UPDATE llm_requests SET status = 'done', state = '{}', updated_at = ?,
+      `UPDATE llm_requests SET status = 'done', state = '{}', model = ?, updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE user_id = ? AND source_url = ? ORDER BY id DESC LIMIT 1)
        ${isCurrent}`,
-    ).bind(now, job.user_id, job.source_url, job.id, job.attempt),
+    ).bind(model, now, job.user_id, job.source_url, job.id, job.attempt),
   ];
 }
 
@@ -235,10 +238,10 @@ function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) 
     env.DB.prepare(
       `UPDATE llm_requests SET
          status = CASE WHEN EXISTS (SELECT 1 FROM recipes WHERE ${sameRecipe}) THEN 'done' ELSE 'dismissed' END,
-         state = '{}', updated_at = ?,
+         state = '{}', model = ?, updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE ${sameRecipe})
        ${isCurrent}`,
-    ).bind(...recipeKey, now, ...recipeKey, job.id, job.attempt),
+    ).bind(...recipeKey, model, now, ...recipeKey, job.id, job.attempt),
   ];
 }
 
@@ -275,21 +278,20 @@ async function saveProgress(env, job, stage, patch) {
     .run();
 }
 
-// Runs one stage for one attempt. Returns { busy: true } when the model was busy, for the
+// Runs one stage for one attempt. Returns { busy: true } when every model was busy, for the
 // Workflow to wait and run the stage again; its error stays on the row in case it gives up.
-// `busyWaits` is how many of those waits came before this run. `llm` and `files` are the
-// model call and its file store, swapped in tests.
-export async function runStage(env, importId, attempt, stage, { llm = callModel, files = videoFiles, busyWaits = 0 } = {}) {
+// `llm`, `fallbackLlm` and `files` are the model calls and the file store, swapped in tests.
+export async function runStage(env, importId, attempt, stage, { llm = callModel, fallbackLlm, files = videoFiles } = {}) {
   const job = await env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(importId).first();
   if (!job || job.status !== 'running' || job.attempt !== attempt) return;
   job.state = JSON.parse(job.state);
   // Older state can't be read, so only the model choice is kept and every stage runs again.
-  if (job.state.done && job.state.version !== STATE_VERSION) job.state = job.state.basicChosen ? { basicChosen: true } : {};
+  if (job.state.done && job.state.version !== STATE_VERSION) job.state = job.state.bestChosen ? { bestChosen: true } : {};
   if (job.state.done?.includes(stage.name)) return;
   // A try that times out writes nothing, so an earlier try's code must not stand in for it.
   if (job.error !== null) await saveError(env, importId, attempt, null);
 
-  const deps = { env, source: sourceFor(job.platform), llm, files, busyWaits };
+  const deps = { env, source: sourceFor(job.platform), llm, fallbackLlm, files };
   let patch;
   try {
     patch = await stage.run(job, deps);

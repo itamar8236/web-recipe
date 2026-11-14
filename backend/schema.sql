@@ -132,8 +132,7 @@ CREATE INDEX IF NOT EXISTS folders_user_id ON folders (user_id);
 -- only ever writes the name of one of its own adapters.
 -- is_favorite is a plain column because only the owner ever sees a recipe, so "my
 -- favorite" and "favorite" are the same thing.
--- source_model is the LLM that produced an imported recipe (NULL for manual recipes); it
--- is how a recipe made by the basic model can be offered a re-run with the best one.
+-- source_model is the LLM that produced an imported recipe (NULL for manual recipes).
 -- machine_translated_lang names the language the LLM filled in, so the UI can label it;
 -- the backend clears it when the user edits that language, since it is then human text.
 CREATE TABLE IF NOT EXISTS recipes (
@@ -184,10 +183,12 @@ CREATE INDEX IF NOT EXISTS recipes_user_folder ON recipes (user_id, folder_id);
 -- error is written before a stage throws, so nothing depends on how Workflows passes
 -- errors along. error_detail says why in words (e.g. Google's message), for debugging
 -- only: it is never sent to the browser.
+-- model is the model whose answer the request ended with (NULL when none answered): for
+-- an import the same name as its recipe's source_model, and kept for failed ones too.
 -- replace_recipe_id is set on a re-scan. It deliberately has no foreign key: ON DELETE SET
 -- NULL would turn a re-scan of a deleted recipe into a new recipe.
 -- used_best says this row took one of the user's daily best-model uses (once a request
--- reached the best model, even if the row then moved to the basic one). quota_day is the
+-- reached the best model, even if another model answered in the end). quota_day is the
 -- Pacific date those uses and the caps count for.
 CREATE TABLE IF NOT EXISTS llm_requests (
   id         INTEGER PRIMARY KEY,
@@ -204,6 +205,7 @@ CREATE TABLE IF NOT EXISTS llm_requests (
   state      TEXT    NOT NULL DEFAULT '{}' CHECK (json_valid(state)),
   error      TEXT,
   error_detail TEXT,
+  model      TEXT,
   recipe_id  INTEGER REFERENCES recipes (id) ON DELETE SET NULL,
   replace_recipe_id INTEGER,
   used_best  INTEGER NOT NULL DEFAULT 0 CHECK (used_best IN (0, 1)),

@@ -94,8 +94,8 @@ const VIDEO_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
 const LONG_DESCRIPTION = 'Full recipe: two eggs, a can of tomatoes, simmer for ten minutes and then serve it hot with bread.';
 const stage = (name) => STAGES.find((s) => s.name === name);
 const today = () => quotaDay(Date.now());
-const BEST = env.LLM_BEST_MODEL;
-const BASIC = env.LLM_BASIC_MODEL;
+// The import models, in the order they are tried.
+const [FIRST, SECOND, LAST] = env.LLM_IMPORT_MODELS.split(',');
 const SOON = () => Date.now() + 100000;
 
 const ONE = {
@@ -124,7 +124,7 @@ const atSave = (userId, recipe = ONE, fields = {}) =>
     state: JSON.stringify({
       meta: meta(),
       recipe: { language: recipe.language, en: recipe.en, he: recipe.he },
-      model: BEST,
+      model: FIRST,
       done: ['meta', 'video', 'extract'],
       version: 2,
     }),
@@ -134,7 +134,7 @@ const reload = (row) => env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?'
 const count = async (table) => (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n;
 // A model Google said is out for the day: its count is at its limit.
 const markOut = (model, calls) => env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?)').bind(today(), model, calls).run();
-const markBestOut = () => markOut(BEST, 20);
+const markFirstOut = () => markOut(FIRST, 20);
 
 const fakeLlm = (...answers) => {
   const queue = [...answers];
@@ -210,9 +210,9 @@ describe('stage: extract', () => {
     const after = await reload(row);
     const state = JSON.parse(after.state);
     expect(state.recipe).toEqual({ language: 'he', en: ONE.en, he: ONE.he });
-    expect(state.model).toBe(BEST);
+    expect(state.model).toBe(FIRST);
     expect(state.done).toEqual(['meta', 'video', 'extract']);
-    expect(after).toMatchObject({ stage: 'save', status: 'running', error: null, used_best: 1 });
+    expect(after).toMatchObject({ stage: 'save', status: 'running', error: null, used_best: 0 });
   });
 
   it('tells the model to treat the content as data and covers every prompt rule', async () => {
@@ -275,7 +275,7 @@ describe('stage: extract', () => {
     await runExtract(row, llm);
     expect(llm.mock.calls[0][0].videoUrl ?? null).toBeNull();
     expect(llm.mock.calls[0][0].prompt).toContain('There is no video for you to watch');
-    expect(JSON.parse((await reload(row)).state).model).toBe(BEST);
+    expect(JSON.parse((await reload(row)).state).model).toBe(FIRST);
   });
 
   it.each([
@@ -329,13 +329,13 @@ describe('stage: extract', () => {
     expect(llm.mock.calls[1][0].prompt).toContain(LONG_DESCRIPTION);
     const after = await reload(row);
     expect(JSON.parse(after.state).recipe.en.name).toBe('Shakshuka');
-    expect(after.used_best).toBe(1);
+    expect(after.used_best).toBe(0);
   });
 
   it('counts both requests when the video is refused', async () => {
     const row = await atExtract(await insertUser());
     await runExtract(row, fakeLlm(new VideoRefusedError(), ONE));
-    const usage = await env.DB.prepare('SELECT calls FROM llm_usage WHERE day = ? AND model = ?').bind(today(), BEST).first();
+    const usage = await env.DB.prepare('SELECT calls FROM llm_usage WHERE day = ? AND model = ?').bind(today(), FIRST).first();
     expect(usage.calls).toBe(2);
   });
 
@@ -368,7 +368,7 @@ describe('stage: extract', () => {
     expect(JSON.parse((await reload(row)).state).recipe).toBeUndefined();
   });
 
-  it('leaves a busy model to the Workflow’s wait, without failing the step', async () => {
+  it('leaves it to the Workflow’s wait, without failing the step, when every model is busy', async () => {
     const row = await atExtract(await insertUser());
     const llm = fakeLlm(new ModelBusyError('Gemini 503: high demand'));
     expect(await runExtract(row, llm)).toEqual({ busy: true });
@@ -376,40 +376,63 @@ describe('stage: extract', () => {
     const after = await reload(row);
     expect(after).toMatchObject({ status: 'running', stage: 'extract', error: 'llm_error', error_detail: 'Gemini 503: high demand' });
     expect(JSON.parse(after.state).done).toEqual(['meta', 'video']);
-    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST]);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([FIRST, SECOND, LAST]);
   });
 
-  it('moves to the basic model in the same stage, asking nothing, when the best model runs out', async () => {
+  it('moves on from a busy model to the next one in the same stage', async () => {
+    const row = await atExtract(await insertUser());
+    const llm = fakeLlm(new ModelBusyError('Gemini 503: high demand'), ONE);
+    await runExtract(row, llm);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([FIRST, SECOND]);
+    expect(await reload(row)).toMatchObject({ stage: 'save', error: null, model: SECOND });
+  });
+
+  it('tries the best model first when the user asked for it, taking one of their 5', async () => {
+    const row = await atExtract(await insertUser(), {}, { state: stateAtExtract({}, { bestChosen: true }) });
+    const llm = fakeLlm(ONE);
+    await runExtract(row, llm);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([env.LLM_BEST_MODEL]);
+    expect(await reload(row)).toMatchObject({ used_best: 1, model: env.LLM_BEST_MODEL });
+  });
+
+  it('keeps which model answered on the row, even when it found no recipe', async () => {
+    const row = await atExtract(await insertUser());
+    await expectFailure(runExtract(row, fakeLlm(NONE)), row, 'no_recipe');
+    expect((await reload(row)).model).toBe(FIRST);
+  });
+
+  it('moves to the next model in the same stage, asking nothing, when one runs out', async () => {
     const row = await atExtract(await insertUser());
     const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }), ONE);
     await runExtract(row, llm);
-    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, BASIC]);
-    expect(JSON.parse((await reload(row)).state).model).toBe(BASIC);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([FIRST, SECOND]);
+    expect(JSON.parse((await reload(row)).state).model).toBe(SECOND);
   });
 
-  it('fails with quota, without a Workflow retry, when both models are out', async () => {
+  it('fails with quota, without a Workflow retry, when every model is out', async () => {
     const userId = await insertUser();
-    await markBestOut();
-    await markOut(BASIC, 500);
+    await markFirstOut();
+    await markOut(SECOND, 20);
+    await markOut(LAST, 500);
     const row = await atExtract(userId);
     await expectFailure(runExtract(row, fakeLlm(ONE)), row, 'quota');
   });
 
-  it('stores the basic model when that is what answered', async () => {
+  it('stores the model that answered', async () => {
     const userId = await insertUser();
-    await markBestOut();
+    await markFirstOut();
     const row = await atExtract(userId);
     await runExtract(row, fakeLlm(ONE));
-    expect(JSON.parse((await reload(row)).state).model).toBe(BASIC);
+    expect(JSON.parse((await reload(row)).state).model).toBe(SECOND);
   });
 
-  it('a re-scan moves to the basic model like a new import', async () => {
+  it('a re-scan moves to the next model like a new import', async () => {
     const userId = await insertUser();
     const row = await atExtract(userId, {}, { replace_recipe_id: 99 });
     const llm = fakeLlm(new QuotaError({ daily: true, retryDelayMs: 1 }), ONE);
     await runExtract(row, llm);
-    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([BEST, BASIC]);
-    expect(JSON.parse((await reload(row)).state).model).toBe(BASIC);
+    expect(llm.mock.calls.map(([args]) => args.model)).toEqual([FIRST, SECOND]);
+    expect(JSON.parse((await reload(row)).state).model).toBe(SECOND);
   });
 });
 
@@ -510,7 +533,7 @@ describe('stage: save', () => {
       is_favorite: 0,
       platform: 'youtube',
       source_url: VIDEO_URL,
-      source_model: BEST,
+      source_model: FIRST,
       name_en: 'Shakshuka',
       name_he: 'שקשוקה',
       machine_translated_lang: 'en',
@@ -567,7 +590,7 @@ describe('stage: save', () => {
         user_id: userId,
         platform: 'youtube',
         source_url: VIDEO_URL,
-        source_model: BASIC,
+        source_model: SECOND,
         name_en: 'Old name',
         name_he: 'שם ישן',
         ingredients_en: '["old"]',
@@ -601,7 +624,7 @@ describe('stage: save', () => {
         folder_id: folderId,
         is_favorite: 1,
         created_at: 5,
-        source_model: BEST,
+        source_model: FIRST,
         name_en: 'Shakshuka',
         name_he: 'שקשוקה',
         machine_translated_lang: 'en',
@@ -727,9 +750,9 @@ describe('the Workflow, end to end', () => {
     await runWorkflow(row);
 
     const after = await reload(row);
-    expect(after).toMatchObject({ status: 'done', title: 'Shakshuka video', error: null, used_best: 1 });
+    expect(after).toMatchObject({ status: 'done', title: 'Shakshuka video', error: null, used_best: 0 });
     const recipe = await env.DB.prepare('SELECT * FROM recipes WHERE id = ?').bind(after.recipe_id).first();
-    expect(recipe).toMatchObject({ name_en: 'Shakshuka', source_url: VIDEO_URL, source_model: BEST, folder_id: null });
+    expect(recipe).toMatchObject({ name_en: 'Shakshuka', source_url: VIDEO_URL, source_model: FIRST, folder_id: null });
     expect(calls('youtube/v3')).toHaveLength(1);
     expect(calls('generativelanguage')).toHaveLength(1);
   });
@@ -770,26 +793,26 @@ describe('the Workflow, end to end', () => {
   };
   const totalCounted = async () => (await env.DB.prepare('SELECT COALESCE(SUM(calls), 0) AS n FROM llm_usage').first()).n;
 
-  it('tries a busy best model again after a short wait, and keeps it when it is free', async () => {
+  it('moves on from a busy model at once, with no wait, and saves the next one’s recipe', async () => {
     fakeGoogle({ gemini: busyFor(1) });
     const row = await newImport();
     await runWorkflow(row);
-    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 1 });
-    expect(sentModels()).toEqual([BEST, BEST]);
-    expect(await savedModel(row)).toBe(BEST);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 0, model: SECOND });
+    expect(sentModels()).toEqual([FIRST, SECOND]);
+    expect(await savedModel(row)).toBe(SECOND);
     expect(await totalCounted()).toBe(1);
   });
 
-  it('moves to the basic model when the best one is still busy on its retry, and the try still counts', async () => {
-    fakeGoogle({ gemini: busyFor(2) });
+  it('waits and starts again from the first model when every model was busy', async () => {
+    fakeGoogle({ gemini: busyFor(3) });
     const row = await newImport();
     await runWorkflow(row);
-    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 1 });
-    expect(sentModels()).toEqual([BEST, BEST, BASIC]);
-    expect(await savedModel(row)).toBe(BASIC);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
+    expect(sentModels()).toEqual([FIRST, SECOND, LAST, FIRST]);
+    expect(await savedModel(row)).toBe(FIRST);
   });
 
-  it('waits longer each time while the basic model is busy too, then fails with llm_error, giving back the shared count', async () => {
+  it('waits longer each time while every model stays busy, then fails with llm_error, with nothing counted', async () => {
     const busy = { error: { code: 503, message: 'This model is currently experiencing high demand.' } };
     fakeGoogle({ gemini: () => jsonResponse(busy, 503) });
     const row = await newImport();
@@ -798,48 +821,32 @@ describe('the Workflow, end to end', () => {
       status: 'failed',
       error: 'llm_error',
       error_detail: 'Gemini 503: This model is currently experiencing high demand.',
-      // The user tried the best model, so the try counts toward their 5.
-      used_best: 1,
+      used_best: 0,
+      model: null,
     });
-    expect(sentModels()).toEqual([BEST, BEST, BASIC, BASIC, BASIC]);
+    // Four runs of the stage (the first, then one after each of the three waits).
+    expect(sentModels()).toEqual([FIRST, SECOND, LAST, FIRST, SECOND, LAST, FIRST, SECOND, LAST, FIRST, SECOND, LAST]);
     expect(await totalCounted()).toBe(0);
   });
 
-  it('saves the recipe when the basic model is no longer busy after a wait', async () => {
-    fakeGoogle({ gemini: busyFor(3) });
-    const row = await newImport();
-    await runWorkflow(row);
-    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
-    expect(sentModels()).toEqual([BEST, BEST, BASIC, BASIC]);
-    expect(await savedModel(row)).toBe(BASIC);
-  });
-
-  it('keeps quick retries for other errors on the best model', async () => {
+  it('keeps quick retries on the same model for other errors', async () => {
     let tries = 0;
     fakeGoogle({ gemini: () => (++tries <= 2 ? jsonResponse({ error: {} }, 500) : jsonResponse(geminiReply(ONE))) });
     const row = await newImport();
     await runWorkflow(row);
-    expect(sentModels()).toEqual([BEST, BEST, BEST]);
-    expect(await savedModel(row)).toBe(BEST);
+    expect(sentModels()).toEqual([FIRST, FIRST, FIRST]);
+    expect(await savedModel(row)).toBe(FIRST);
   });
 
-  it('keeps every retry on the basic model when the user chose it', async () => {
-    // Built when asked for: the Workflow can't read a body made in the test's own request.
-    const replies = [() => jsonResponse({ error: {} }, 500), () => jsonResponse({ error: {} }, 503), () => jsonResponse(geminiReply(ONE))];
-    fakeGoogle({ gemini: () => replies.shift()() });
-    const row = await insertImport(await insertUser(), { quota_day: today(), state: JSON.stringify({ basicChosen: true }) });
+  it('asks the best model first when the user chose it, and goes on by itself when it is busy', async () => {
+    fakeGoogle({ gemini: busyFor(1) });
+    const row = await insertImport(await insertUser(), { quota_day: today(), state: JSON.stringify({ bestChosen: true }) });
     await runWorkflow(row);
 
-    expect(sentModels()).toEqual([BASIC, BASIC, BASIC]);
-    expect(await reload(row)).toMatchObject({ status: 'done', used_best: 0 });
-    expect(await savedModel(row)).toBe(BASIC);
-  });
-
-  it('keeps the basic choice through a Retry, a new attempt', async () => {
-    fakeGoogle();
-    const row = await atExtract(await insertUser(), {}, { attempt: 2, state: stateAtExtract({}, { basicChosen: true }) });
-    await runWorkflow(row, 2);
-    expect(sentModels()).toEqual([BASIC]);
+    expect(sentModels()).toEqual([env.LLM_BEST_MODEL, FIRST]);
+    // The best model was tried, so the try counts toward the user's 5.
+    expect(await reload(row)).toMatchObject({ status: 'done', used_best: 1, model: FIRST });
+    expect(await savedModel(row)).toBe(FIRST);
   });
 
   it('retries invalid output, then fails with bad_result', async () => {
@@ -858,7 +865,7 @@ describe('the Workflow, end to end', () => {
     const row = await newImport();
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'failed', error: 'quota' });
-    expect(sentModels()).toEqual([BEST, BASIC]);
+    expect(sentModels()).toEqual([FIRST, SECOND, LAST]);
   });
 
   it('a retry skips finished stages and makes no new calls for them', async () => {

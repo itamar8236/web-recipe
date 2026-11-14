@@ -26,8 +26,8 @@ const IG_POST = `https://www.instagram.com/p/${IG_CODE}/`;
 const IG_SHARE = 'https://www.instagram.com/share/reel/BAxyz12345/';
 const FB_WATCH = `https://www.facebook.com/watch/?v=${FB_ID}`;
 const FILE = { name: 'files/abc123', uri: 'https://generativelanguage.googleapis.com/v1beta/files/abc123', mimeType: 'video/mp4' };
-const BEST = env.LLM_BEST_MODEL;
-const BASIC = env.LLM_BASIC_MODEL;
+// The import models, in the order they are tried.
+const [FIRST, SECOND] = env.LLM_IMPORT_MODELS.split(',');
 const today = () => quotaDay(Date.now());
 const stage = (name) => STAGES.find((s) => s.name === name);
 
@@ -91,7 +91,7 @@ const expectFailure = async (promise, row, code, { retryable = false } = {}) => 
   expect((await reload(row)).error).toBe(code);
 };
 const insertRecipe = async (userId, fields = {}) => {
-  const row = { user_id: userId, platform: 'instagram', source_url: IG_POST, source_model: BASIC, name_en: 'Salad', name_he: 'סלט', ...fields };
+  const row = { user_id: userId, platform: 'instagram', source_url: IG_POST, source_model: SECOND, name_en: 'Salad', name_he: 'סלט', ...fields };
   const columns = Object.keys(row);
   return env.DB.prepare(`INSERT INTO recipes (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')}) RETURNING *`)
     .bind(...Object.values(row))
@@ -309,12 +309,12 @@ describe('stage: extract, with an uploaded video', () => {
     expect(files.waitUntilReady).toHaveBeenCalledWith({ env, file: FILE });
     expect(llm).toHaveBeenCalledTimes(1);
     const [request] = llm.mock.calls[0];
-    expect(request).toMatchObject({ videoUrl: FILE.uri, videoType: 'video/mp4', model: BEST });
+    expect(request).toMatchObject({ videoUrl: FILE.uri, videoType: 'video/mp4', model: FIRST });
     expect(request.prompt).toContain(IG_CAPTION);
     expect(request.prompt).not.toContain('There is no video');
     expect(files.remove).not.toHaveBeenCalled();
     expect(await reload(row)).toMatchObject({ stage: 'save', error: null });
-    expect(await stateOf(row)).toMatchObject({ model: BEST, file: FILE, recipe: { language: 'he', en: ONE.en, he: ONE.he } });
+    expect(await stateOf(row)).toMatchObject({ model: FIRST, file: FILE, recipe: { language: 'he', en: ONE.en, he: ONE.he } });
 
     await run(row, 'save', { files });
     expect(files.remove).toHaveBeenCalledTimes(1);
@@ -376,14 +376,14 @@ describe('stage: extract, with an uploaded video', () => {
     expect(files.remove).not.toHaveBeenCalled();
   });
 
-  it('moves to the basic model with the same file when the best one is out', async () => {
+  it('moves to the next model with the same file when the first one is out', async () => {
     const userId = await insertUser();
-    await env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, 20)').bind(today(), BEST).run();
+    await env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, 20)').bind(today(), FIRST).run();
     const row = await atExtract(userId);
     const llm = fakeLlm(ONE);
     await run(row, 'extract', { llm, files: fakeFiles() });
-    expect(llm.mock.calls[0][0]).toMatchObject({ model: BASIC, videoUrl: FILE.uri });
-    expect((await stateOf(row)).model).toBe(BASIC);
+    expect(llm.mock.calls[0][0]).toMatchObject({ model: SECOND, videoUrl: FILE.uri });
+    expect((await stateOf(row)).model).toBe(SECOND);
   });
 
   it('does not let a caption close its own data block', async () => {
@@ -461,22 +461,22 @@ describe('stage: extract, without a video', () => {
 describe('runStage: state from before this version', () => {
   it('starts again from the first stage, keeping only the model choice', async () => {
     stubFetch(async () => new Response(instagramReelPage()));
-    const old = { meta: { description: 'old shape', duration: 'PT2M', privacyStatus: 'public' }, done: ['meta'], basicChosen: true };
+    const old = { meta: { description: 'old shape', duration: 'PT2M', privacyStatus: 'public' }, done: ['meta'], bestChosen: true };
     const row = await instagramImport(await insertUser(), { stage: 'extract', state: JSON.stringify(old) });
     await run(row, 'meta');
 
     expect(fetch).toHaveBeenCalledTimes(1);
     const state = await stateOf(row);
-    expect(state).toMatchObject({ basicChosen: true, done: ['meta'], version: 2 });
+    expect(state).toMatchObject({ bestChosen: true, done: ['meta'], version: 2 });
     expect(state.meta.text).toBe(IG_CAPTION);
     expect((await reload(row)).stage).toBe('video');
   });
 
   it('leaves a new import’s first state alone', async () => {
     stubFetch(async () => new Response(instagramReelPage()));
-    const row = await instagramImport(await insertUser(), { state: JSON.stringify({ basicChosen: true }) });
+    const row = await instagramImport(await insertUser(), { state: JSON.stringify({ bestChosen: true }) });
     await run(row, 'meta');
-    expect(await stateOf(row)).toMatchObject({ basicChosen: true, done: ['meta'] });
+    expect(await stateOf(row)).toMatchObject({ bestChosen: true, done: ['meta'] });
   });
 });
 
@@ -655,9 +655,9 @@ describe('the Workflow, end to end, for Facebook and Instagram', () => {
     await runWorkflow(row);
 
     const after = await reload(row);
-    expect(after).toMatchObject({ status: 'done', title: 'Eggplant salad', error: null, used_best: 1 });
+    expect(after).toMatchObject({ status: 'done', title: 'Eggplant salad', error: null, used_best: 0, model: FIRST });
     const recipe = await env.DB.prepare('SELECT * FROM recipes WHERE id = ?').bind(after.recipe_id).first();
-    expect(recipe).toMatchObject({ platform: 'instagram', source_url: IG_POST, source_model: BEST, name_en: 'Eggplant salad', name_he: 'סלט חצילים', machine_translated_lang: 'en' });
+    expect(recipe).toMatchObject({ platform: 'instagram', source_url: IG_POST, source_model: FIRST, name_en: 'Eggplant salad', name_he: 'סלט חצילים', machine_translated_lang: 'en' });
 
     expect(calls('instagram.com')).toHaveLength(1);
     expect(calls('.fbcdn.net/')).toHaveLength(1);
@@ -723,7 +723,7 @@ describe('the Workflow, end to end, for Facebook and Instagram', () => {
     expect(calls('/upload/v1beta/files')).toHaveLength(2);
     expect(calls('/v1beta/interactions')).toHaveLength(3);
     expect(calls(FILE.name, 'DELETE')).toHaveLength(1);
-    const usage = await env.DB.prepare('SELECT calls FROM llm_usage WHERE day = ? AND model = ?').bind(today(), BEST).first();
+    const usage = await env.DB.prepare('SELECT calls FROM llm_usage WHERE day = ? AND model = ?').bind(today(), FIRST).first();
     expect(usage.calls).toBe(3);
   });
 
@@ -840,7 +840,7 @@ describe('the endpoints, for Facebook and Instagram', () => {
     });
     const response = await handleTranslate(request, env, '/api/translate', userId, vi.fn(async () => hebrew));
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ content: hebrew, model: 'basic' });
+    expect(await response.json()).toEqual({ content: hebrew });
     const row = await env.DB.prepare(`SELECT * FROM llm_requests WHERE purpose = 'translation'`).first();
     expect(row).toMatchObject({ recipe_id: recipe.id, status: 'done' });
   });

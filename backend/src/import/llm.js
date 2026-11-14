@@ -38,8 +38,8 @@ export class VideoRefusedError extends Error {
 }
 
 // Google said the model is overloaded (503). That lasts minutes or more, longer than the
-// quick Workflow retries, so the Workflow waits and tries again (workflow.js), and a best
-// model that stays busy is swapped for the basic one (models.js).
+// quick Workflow retries, so the request moves on to the next model (models.js), and when
+// every model is busy the Workflow waits and tries again (workflow.js).
 export class ModelBusyError extends Error {
   constructor(detail) {
     super('model_busy');

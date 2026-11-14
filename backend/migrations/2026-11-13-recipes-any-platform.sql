@@ -1,12 +1,14 @@
--- Lets a recipe come from Instagram (or any later site): removes the list CHECK on
--- recipes.platform, which allowed only 'manual', 'youtube' and 'facebook'.
+-- Two changes for the Facebook and Instagram import, in one file:
+--   1. Lets a recipe come from Instagram (or any later site): removes the list CHECK on
+--      recipes.platform, which allowed only 'manual', 'youtube' and 'facebook'.
+--   2. Adds llm_requests.model: the model whose answer a request ended with.
 --
--- Run once, by the owner, from backend/, BEFORE the code that imports from Instagram is
--- deployed (the older code works with the rebuilt table too):
+-- Run once, by the owner, from backend/, BEFORE the code that needs them is deployed (the
+-- older code works with the rebuilt table and the extra column too):
 --   npx wrangler d1 execute recipes-db --remote --file=migrations/2026-11-13-recipes-any-platform.sql
 -- Locally, once, after a `npm run db:pull` made from a production that hasn't had it yet:
 --   npx wrangler d1 execute recipes-db --local --file=migrations/2026-11-13-recipes-any-platform.sql
--- Running it a second time is harmless: it rebuilds the table again with the same result.
+-- Run it only once: a second run stops at the new column, which then already exists.
 --
 -- SQLite can't change a CHECK, so the table is rebuilt. Dropping the old table deletes its
 -- rows first, and that fires llm_requests.recipe_id's ON DELETE SET NULL, which would
@@ -64,3 +66,6 @@ UPDATE llm_requests
  WHERE id IN (SELECT id FROM llm_requests_recipe_links);
 
 DROP TABLE llm_requests_recipe_links;
+
+-- Which model answered each request. NULL for the rows from before this column.
+ALTER TABLE llm_requests ADD COLUMN model TEXT;

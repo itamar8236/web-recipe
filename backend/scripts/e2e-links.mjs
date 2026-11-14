@@ -6,7 +6,7 @@
 // Start the app first (`npm run dev`, from backend/), then give it the links themselves,
 // in quotes, and/or files of links:
 //   node scripts/e2e-links.mjs "https://www.instagram.com/reel/..." "https://youtu.be/..."
-//   node scripts/e2e-links.mjs links.txt [--model basic|best] [--only <text>] [--show]
+//   node scripts/e2e-links.mjs links.txt [--model default|best] [--only <text>] [--show]
 //                              [--base http://localhost:8787] [--out results.json]
 //
 // A links file has one link per line; other lines are ignored. Imports run on a test
@@ -23,7 +23,7 @@ const GIVE_UP_MS = 25 * 60 * 1000;
 const PAUSE_BETWEEN_LINKS_MS = 5000;
 
 function readArgs(argv) {
-  const args = { inputs: [], model: 'basic', only: null, show: false, base: 'http://localhost:8787', out: null };
+  const args = { inputs: [], model: 'default', only: null, show: false, base: 'http://localhost:8787', out: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--show') args.show = true;
     else if (argv[i].startsWith('--')) args[argv[i].slice(2)] = argv[++i];
@@ -33,8 +33,8 @@ function readArgs(argv) {
 }
 
 const args = readArgs(process.argv.slice(2));
-if (!args.inputs.length || !['basic', 'best'].includes(args.model)) {
-  console.error('Usage: node scripts/e2e-links.mjs <link or links file>... [--model basic|best] [--only <text>] [--show] [--base <url>] [--out <file>]');
+if (!args.inputs.length || !['default', 'best'].includes(args.model)) {
+  console.error('Usage: node scripts/e2e-links.mjs <link or links file>... [--model default|best] [--only <text>] [--show] [--base <url>] [--out <file>]');
   process.exit(1);
 }
 if (!['localhost', '127.0.0.1'].includes(new URL(args.base).hostname)) {
@@ -80,7 +80,7 @@ function linkForm(link) {
 
 async function runOne(link) {
   const started = Date.now();
-  const start = await api('/api/imports', 'POST', { url: link, ...(args.model === 'basic' && { model: 'basic' }) });
+  const start = await api('/api/imports', 'POST', { url: link, ...(args.model === 'best' && { model: 'best' }) });
   if (start.status !== 202 && start.status !== 200) return { link, result: `refused: ${start.data.error}`, time: seconds(Date.now() - started) };
 
   const { id } = start.data.import;

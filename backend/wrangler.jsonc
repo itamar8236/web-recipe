@@ -26,16 +26,18 @@
   "workflows": [
     { "name": "recipe-import", "binding": "IMPORT_WORKFLOW", "class_name": "ImportWorkflow" }
   ],
-  // Model names and limits are settings, so changing them needs no code change.
+  // Model names, their order and their limits are settings, so changing them needs no
+  // code change. An import tries LLM_IMPORT_MODELS in order and a translation
+  // LLM_TRANSLATE_MODELS, then the fallback model (Groq, text only, unused until
+  // GROQ_API_KEY exists). LLM_BEST_MODEL is the one a user can ask for. LLM_DAILY_LIMITS
+  // holds every model's requests a day; a model missing from it is never called.
   // GEMINI_API_KEY, YOUTUBE_API_KEY and GROQ_API_KEY are Worker secrets, never set here.
-  // The fallback model (Groq, text only) stays unused until GROQ_API_KEY exists.
   "vars": {
-    "LLM_BEST_MODEL": "gemini-3.8-flash",
-    "LLM_BASIC_MODEL": "gemini-3.5-flash-lite",
-    "LLM_BEST_DAILY_LIMIT": 20,
-    "LLM_BASIC_DAILY_LIMIT": 500,
+    "LLM_IMPORT_MODELS": "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite",
+    "LLM_TRANSLATE_MODELS": "gemini-3.5-flash-lite",
+    "LLM_BEST_MODEL": "gemini-4-hydrogen",
     "LLM_FALLBACK_MODEL": "openai/gpt-oss-120b",
-    "LLM_FALLBACK_DAILY_LIMIT": 200,
+    "LLM_DAILY_LIMITS": "gemini-3.8-flash:20,gemini-3.6-flash:20,gemini-3.5-flash-lite:500,gemini-4-hydrogen:20,openai/gpt-oss-120b:200",
     "IMPORT_MAX_VIDEO_MINUTES": 3,
     "IMPORT_MAX_VIDEO_MB": 100,
     "IMPORT_MAX_RUNNING": 3,
@@ -50,12 +52,11 @@
       { "name": "recipe-import", "binding": "IMPORT_WORKFLOW", "class_name": "ImportWorkflow" }
     ],
     "vars": {
-      "LLM_BEST_MODEL": "gemini-3.8-flash",
-      "LLM_BASIC_MODEL": "gemini-3.5-flash-lite",
-      "LLM_BEST_DAILY_LIMIT": 20,
-      "LLM_BASIC_DAILY_LIMIT": 500,
+      "LLM_IMPORT_MODELS": "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite",
+      "LLM_TRANSLATE_MODELS": "gemini-3.5-flash-lite",
+      "LLM_BEST_MODEL": "gemini-4-hydrogen",
       "LLM_FALLBACK_MODEL": "openai/gpt-oss-120b",
-      "LLM_FALLBACK_DAILY_LIMIT": 200,
+      "LLM_DAILY_LIMITS": "gemini-3.8-flash:20,gemini-3.6-flash:20,gemini-3.5-flash-lite:500,gemini-4-hydrogen:20,openai/gpt-oss-120b:200",
       "IMPORT_MAX_VIDEO_MINUTES": 3,
       "IMPORT_MAX_VIDEO_MB": 100,
       "IMPORT_MAX_RUNNING": 3,
