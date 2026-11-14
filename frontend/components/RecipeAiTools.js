@@ -16,7 +16,8 @@ const hasText = (content) => Boolean(content.name.trim() || [...content.ingredie
 // for a recipe that came out thin: it is slower and each user gets a few a day, and when
 // it can't be used the scan goes on with the usual models by itself.
 // `content` is the language being written ({ name, ingredients[], steps[] }); the
-// translation is handed to `onTranslated` and saved only with the form. `rescanId` is the
+// translation is handed to `onTranslated`, which saves the recipe (and shows its own
+// error if that fails), so the button stays busy until it returns. `rescanId` is the
 // recipe's id when it has a video link, otherwise null; `recipeId` is its id, or null for
 // a recipe not saved yet. `onBusyChange(true/false)` lets the form hold Save while a
 // request runs.
@@ -27,25 +28,18 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
   const [busy, setBusyState] = useState(null); // null | 'translate' | 'rescan'
   const [confirming, setConfirming] = useState(null); // null | 'translate' | 'rescan'
   const [error, setError] = useState('');
-  const [note, setNote] = useState('');
 
   function setBusy(value) {
     setBusyState(value);
     onBusyChange(value !== null);
   }
 
-  function clearMessages() {
-    setError('');
-    setNote('');
-  }
-
   async function translate() {
     setConfirming(null);
-    clearMessages();
+    setError('');
     setBusy('translate');
     try {
-      onTranslated(await api.translateRecipe(from, content, recipeId));
-      setNote(t.translated);
+      await onTranslated(await api.translateRecipe(from, content, recipeId));
     } catch (err) {
       setError(errorMessage(t, err));
     } finally {
@@ -56,7 +50,7 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
   // Like a new import: it runs in the background and its card shows on Home.
   async function rescan() {
     setConfirming(null);
-    clearMessages();
+    setError('');
     setBusy('rescan');
     try {
       await api.rerunRecipe(rescanId, useBest);
@@ -94,7 +88,6 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
         </div>
       )}
 
-      {note && <p className="hint" role="status">{note}</p>}
       {error && <p className="error" role="alert">{error}</p>}
 
       {confirming && (

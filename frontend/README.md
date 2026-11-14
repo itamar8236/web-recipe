@@ -37,6 +37,8 @@ frontend/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
 │   ├── api.test.js        # Vitest tests for api.js and i18n helpers
 │   ├── i18n.js            # UI strings in en/he + pickLanguage()
+│   ├── recipeForm.js      # Edit form text <-> api lines, withTranslation()
+│   ├── recipeForm.test.js # Vitest tests for recipeForm.js
 │   ├── search.js          # matchesSearch(): recipe name/ingredient search
 │   └── search.test.js     # Vitest tests for search.js
 ├── styles/globals.css     # Design tokens (CSS variables), buttons, form fields
@@ -127,10 +129,12 @@ The rest are planned.
    - **AI tools** (`components/RecipeAiTools`, a box above Save, logged-in users only). The
      backend picks the models; the one choice is a checkbox beside the scan button.
    - **"Translate to Hebrew" / "תרגום לאנגלית"** translates the language being written into
-     the other one and fills it in (shown after saving and switching language); a note says
-     to tap Save to keep it. It asks first if the other language
-     already has text. Works on
-     manual recipes and on new ones before their first save. Save is held while it runs.
+     the other one, then saves the recipe at once with everything in the form (unsaved
+     edits included) and opens the recipe view. If the translation fails nothing is saved
+     and its error shows in the AI box; if the save fails the form stays open, filled in,
+     with the usual save error. It asks first ("... and save the recipe?") if the other
+     language already has text. Works on manual recipes and on new ones before their first
+     save (that creates the recipe). Save is held while it runs.
    - **"Scan the video again"** (only for a recipe with a link) asks first, because it
      replaces the recipe's text including edits, then starts it like a new import and
      returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
