@@ -104,11 +104,7 @@ The rest are planned.
      folder). The manual form's Cancel returns to Home.
    - **×**, **Escape** and **tapping outside** close the dialog and stay on Home.
    - An invalid or unsupported link keeps the dialog open with the error under the field.
-   - A small "Model" choice, Best (default) or Basic, picks the model for this import.
-   - It shows "Best-model uses left today: N" and, while Best is picked but the best model
-     can't be used (the 5 are used, or it's out for the day), a note that imports use the
-     basic model until <time>. Nothing asks for approval: the backend moves to the basic
-     model by itself.
+   - There is no model choice: the backend picks the models.
 4. **Import cards** (`components/ImportCards`, at the top of the content section, in every
    folder view, not filtered by search):
    - Running: gray with a gentle pulse, the title or link, and "Getting the video
@@ -128,19 +124,18 @@ The rest are planned.
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other
    language with a "not written yet" note.
-   - **AI tools** (`components/RecipeAiTools`, a box above Save, logged-in users only): each
-     button has its own small "Model" choice beside it (below it on phones): Basic by
-     default for Translate, since a best-model translation uses one of the 5 daily
-     best-model uses, and Best by default for the scan, like an import.
+   - **AI tools** (`components/RecipeAiTools`, a box above Save, logged-in users only). The
+     backend picks the models; the one choice is a checkbox beside the scan button.
    - **"Translate to Hebrew" / "תרגום לאנגלית"** translates the language being written into
      the other one and fills it in (shown after saving and switching language); a note says
-     to tap Save to keep it; if Best was picked but the basic model answered (no best-model
-     uses left, or it was busy), the note says so. It asks first if the other language
+     to tap Save to keep it. It asks first if the other language
      already has text. Works on
      manual recipes and on new ones before their first save. Save is held while it runs.
    - **"Scan the video again"** (only for a recipe with a link) asks first, because it
      replaces the recipe's text including edits, then starts it like a new import and
-     returns to Home, where its card shows. Nothing asks for approval.
+     returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
+     to 5 a day)", is off by default; when that model can't be used the scan goes on with
+     the usual models by itself, and nothing asks for approval.
 7. **Users** (admin only): list of users, a form to add one (username and
    password), and per user an "Act as" button, a "Set password" button and a
    delete button (the last two with confirmation; deleting a user also deletes all their

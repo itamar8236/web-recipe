@@ -29,8 +29,8 @@ resolved. One short line each, linking to the README section with the details.
   Accepted.
 - PR previews can't exercise the import Workflow: they use the one already deployed to
   production (`backend/README.md` → Import from a YouTube link). Accepted.
-- The free-tier model quota is shared by all users, about 20 best-model imports a day in
-  total (`backend/README.md` → Import from a YouTube link). Accepted.
+- The free-tier model quota is shared by all users: 20 requests a day on each stronger
+  model, 500 on the small one (`backend/README.md` → Import from a YouTube link). Accepted.
 - A few rare import edge cases are left as they are (`backend/README.md` → Import from a
   YouTube link → Known small gaps).
 - Facebook and Instagram are read as an anonymous visitor, so only public posts work, and
@@ -52,18 +52,18 @@ resolved. One short line each, linking to the README section with the details.
   short videos are sent to the LLM (a longer one still works when its text holds the
   recipe); if a video can't be fetched, the text alone is used. Other platforms (TikTok,
   ...) may come later; don't build for them until asked.
-- An import uses the **best model**, up to 5 a day per user. Every try that calls the best
-  model counts toward the 5 (each import, Retry, re-scan and best-model translation), even
-  one that ends up on the basic model. After the 5, or when the best model is out for the
-  day, the **basic model is used by itself**, with no question, until the quota resets.
-  If the best model is still **busy** after one short retry, the import switches to the
-  basic model by itself too. When the basic model is busy or out as well, a request with
-  no video (a translation, a caption-only import) is answered by a **fallback** text model
-  from another free provider, if its key is set.
-- The **edit form** holds the AI tools, each with its own Best/Basic choice: **translate**
-  the language being written into the other one (Basic by default; any recipe, manual ones
-  too; nothing is saved until Save), and, for an imported recipe, **scan its video again**
-  (Best by default), which runs like a new import and replaces the recipe's text.
+- **Users don't choose a model.** An import tries a fixed list of free models in order
+  and moves on at once from one that is busy or out for the day; a request with no video
+  (a translation, a caption-only import) ends on a **fallback** text model from another
+  free provider, if its key is set. A translation goes to the small model first. Which
+  model wrote a recipe is stored with it.
+- The one choice is the **best model**: slower and more detailed, up to 5 a day per user,
+  offered only on "Scan the video again". Every try that calls it counts toward the 5.
+  When it can't be used, the scan goes on with the usual models by itself, with no question.
+- The **edit form** holds the AI tools: **translate** the language being written into the
+  other one (any recipe, manual ones too; nothing is saved until Save), and, for an
+  imported recipe, **scan its video again**, which runs like a new import and replaces
+  the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**
@@ -106,7 +106,7 @@ resolved. One short line each, linking to the README section with the details.
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Node-style JS on the Workers runtime (`nodejs_compat`); no web framework |
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
 | Background jobs | Cloudflare Workflows                         | Imports only; free on this plan                    |
-| LLM       | Google's free-tier LLMs; Groq's free tier as a text-only fallback | A best, a basic and a fallback model, set by config; keys in Worker secrets. Videos are handed to Gemini through its free file store |
+| LLM       | Google's free-tier LLMs; Groq's free tier as a text-only fallback | An ordered list of import models, a translation model, a fallback and an opt-in best model, all set by config; keys in Worker secrets. Videos are handed to Gemini through its free file store |
 | Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); admin manages users; stays logged in |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-plugin`           |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |

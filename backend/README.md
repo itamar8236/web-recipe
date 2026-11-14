@@ -106,22 +106,22 @@ All need a session, work only on the data of the user the session acts for, and 
 - `GET` returns `running`, `failed` and `done` import rows, newest first, never `dismissed`
   or translations, and never reads `state`. It also marks `running` rows with no update for 30 minutes as failed
   with `timed_out`.
-- `models` is `{ bestAvailable, bestLeftToday, bestLeftForUser, basicModel,
-  bestAvailableAt, resetsAt }`, times in epoch ms. `bestAvailable` is false when the shared
+- `models` is `{ bestAvailable, bestLeftToday, bestLeftForUser, bestAvailableAt, resetsAt }`,
+  times in epoch ms, about the best model only. `bestAvailable` is false when its shared
   count is used up or this user has used their 5; both are daily, so `bestAvailableAt` is
-  then the reset, and `null` while it is available.
-- `model` is `'best'` (default) or `'basic'`. With best, the basic model is used by itself
-  when the best one can't be (nobody is asked). Basic never tries the best model and uses
-  none of the user's 5; a Retry keeps the choice. A re-scan (`rerun`) takes the same `model`
-  and follows every rule of a new import, except `already_imported`. An older page's
-  `useBasicModel` field is ignored.
+  then the reset, and `null` while it is available. `resetsAt` is when every daily limit resets.
+- `model` is normally left out: the backend picks the models (see Models). `'best'` asks
+  for the best model first; the import still goes on by itself when that one can't be
+  used. A Retry keeps the choice. A re-scan (`rerun`) takes the same `model` and follows
+  every rule of a new import, except `already_imported`. `'basic'` and `useBasicModel`,
+  which an older page may send, mean the normal case.
 - POST checks in this order: body, link, a running duplicate, `already_imported`
-  (`recipes.source_url`), caps, model state (only both models out stops it), then insert
+  (`recipes.source_url`), caps, model state (only every import model being out stops it), then insert
   and start.
 - Caps, counted from today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running) and
   `IMPORT_DAILY_LIMIT` (10 a day) count import rows, so every Retry and re-scan too, but not
-  translations. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`,
-  translations included.
+  translations. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`, and
+  is the only per-user limit on a model.
 - A Retry is a **new row**: it copies the failed row's link, title and model choice, starts
   over from the first stage in its own Workflow, and the failed row becomes `dismissed`.
   Only a failed save keeps its `state` and stage, since it already holds the recipe. It answers `not_retryable` if the same video is already running or saved
@@ -132,13 +132,12 @@ All need a session, work only on the data of the user the session acts for, and 
 
 | Endpoint | Purpose | Success | Errors |
 |---|---|---|---|
-| `POST /api/translate` `{from, content, model?, recipeId?}` | Translate one language's text into the other | 200 `{content, model}` | 400 `invalid_request`, `too_long`, `nothing_to_translate`; 404 (another user's recipe); 429 `quota` (no model can run); 502 `bad_result`, `llm_error`; 503 `model_busy` (the basic model is busy) |
+| `POST /api/translate` `{from, content, recipeId?}` | Translate one language's text into the other | 200 `{content}` | 400 `invalid_request`, `too_long`, `nothing_to_translate`; 404 (another user's recipe); 429 `quota` (no model can run); 502 `bad_result`, `llm_error`; 503 `model_busy` (every model it could use is busy) |
 
 Needs a session like the rest. `from` is `'en'` or `'he'`, `content` is
-`{ name, ingredients, steps }` (same checks and limits as a recipe), `model` is `'best'` or
-`'basic'` (default), `recipeId` is the recipe being edited (omit for one not saved yet).
-The answer's `model` (`'best'` or `'basic'`) says which one answered. See
-[Translation](#translation).
+`{ name, ingredients, steps }` (same checks and limits as a recipe), `recipeId` is the
+recipe being edited (omit for one not saved yet). There is no model choice; a `model`
+field from an older page is ignored. See [Translation](#translation).
 
 The sections below describe what the backend must do once built, except "Import from a
 YouTube link", which exists.
@@ -160,8 +159,9 @@ YouTube link", which exists.
 - **Model requests** live in the `llm_requests` table: **one row per request** a user
   makes, with a `purpose`: `import` (a new import, each Retry, each re-scan) or `translation` (linked to the recipe by `recipe_id`). So an
   unfinished import never appears as a recipe, and the rows are the record of who used the
-  models: a user's daily best-model uses are their rows with `used_best = 1`. A row stays
-  after it finishes, because the caps count it. `llm_usage` holds the app's own count of
+  models: `model` is the model whose answer the request ended with (also for a failed
+  one, when a model did answer), and a user's daily best-model uses are their rows with
+  `used_best = 1`. A row stays after it finishes, because the caps count it. `llm_usage` holds the app's own count of
   requests per Pacific day and model, shared by all users; it counts every request to
   Google, including a Workflow's own quick retries, which happen inside one row.
 
@@ -301,46 +301,52 @@ can be sent returns the recipe in both languages, with the post's own language w
 first. Everything from the site is sent as data, and everything the model returns is
 untrusted and is validated before it's stored.
 
-**Models.** `LLM_BEST_MODEL` and `LLM_BASIC_MODEL` are config, so changing one needs no code
-change. Nobody is ever asked to approve the basic model. The best model is tried first
-while the user has some of their 5 left and the shared count isn't used up; otherwise the
-basic model is used by itself until the reset. The user can also pick the basic model for
-one import. If the best model is still busy (503) after one short retry, that import moves
-to the basic model (see Failures). Scanning an existing recipe's video again (a re-scan,
-`replace_recipe_id`) follows exactly the same rules.
+**Models.** Users choose nothing by default; `models.js` tries models in a fixed order and
+moves on **at once** from one that is busy (503), hit a short rate limit, or is out for the
+day. All of it is config (`wrangler.jsonc`), so changing a model, the order or a limit
+needs no code change:
 
-**Fallback model.** `LLM_FALLBACK_MODEL` (`openai/gpt-oss-120b` on Groq's free tier) answers
-when the basic model is busy (503) or out for the day, for requests with **no video**: a
-translation, or an import that has only text to send. It can't watch a video, so a request
-with one still waits for Gemini as described under Failures. It is off until
-`GROQ_API_KEY` is set, and then has its own daily count (`LLM_FALLBACK_DAILY_LIMIT`, 200;
-Groq's free limit when checked was 1,000 requests and 200,000 tokens a day, 8,000 tokens a
-minute). A recipe it wrote has its name in `source_model`; the translate API still answers
-`model: 'basic'`. Users still see only Best and Basic.
+| Setting | Value | Used for |
+|---|---|---|
+| `LLM_IMPORT_MODELS` | `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite` | Imports, Retries and re-scans, in this order |
+| `LLM_TRANSLATE_MODELS` | `gemini-3.5-flash-lite` | Translations: text work for the small model, which leaves the stronger models' few requests for videos |
+| `LLM_FALLBACK_MODEL` | `openai/gpt-oss-120b` (Groq) | After either list, for a request with **no video** |
+| `LLM_BEST_MODEL` | `gemini-4-hydrogen` | Only when the user asks for it |
+| `LLM_DAILY_LIMITS` | 20, 20, 500, 20 and 200 a day | Every model's requests a day. A model missing from it is never called |
 
-**The user's 5.** A row takes one of the 5 (`used_best = 1`, in one statement, so two rows
-can't take the last one) when it is about to call the best model, and keeps it once a
-request reached Google, even if the model was busy or answered with a quota error and the
-row ended up on the basic model: trying the best model is what the 5 count. A row calls the
-model more than once (Workflow retries, busy waits, a second ask without the video) but
-takes the use only once. It is given back only when nothing was sent (the shared count was
-already used up).
+- **The best model** is the one choice a user has ("Use the best model" on the edit form's
+  scan; `model: 'best'` in the API). It is slower and more detailed. It is tried first,
+  once; if it is busy, out for the day, or the user has used their 5, the import goes on
+  with the import models by itself, and nobody is told or asked.
+- **The fallback model** can't watch a video, so a request with one never reaches it. It
+  is off until `GROQ_API_KEY` is set. Groq's free limit when checked was 1,000 requests and
+  200,000 tokens a day, 8,000 tokens a minute.
+- **Which model answered** is stored on the recipe (`source_model`) and on the request
+  (`llm_requests.model`).
+- When tested on the same six links (2026-11-14), `gemini-3.6-flash` and
+  `gemini-4-hydrogen` both gave full recipes; hydrogen's were the most detailed and three
+  to four times slower, and `gemini-3.8-flash` was busy most of the time. The limits (20 a
+  day each) are what AI Studio showed the owner.
 
-Every retry keeps the model the import is on: a basic choice (`state.basicChosen`) holds
-through Workflow retries, busy waits and a Retry, and never touches the best model.
+**The user's 5.** Only the best model has a per-user limit (`IMPORT_BEST_DAILY_PER_USER`).
+A row takes one of the 5 (`used_best = 1`, in one statement, so two rows can't take the
+last one) when it is about to call the best model, and keeps it once a request reached
+Google, even if the model was busy or answered with a quota error and another model wrote
+the recipe: trying the best model is what the 5 count. A row calls the model more than once
+(Workflow retries, busy waits, a second ask without the video) but takes the use only once.
+It is given back only when nothing was sent (the shared count was already used up). The
+choice (`state.bestChosen`) holds through Workflow retries, busy waits and a Retry.
 
 **Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
 way to ask how many requests are left, so `llm_usage` counts them: every real call first
-reserves one, in one atomic statement, up to `LLM_BEST_DAILY_LIMIT` (20) and
-`LLM_BASIC_DAILY_LIMIT` (500). A failed call still counts, because Google may have counted
-it, except a 503: Google says a 503 is "unrelated to your quota", so its request is given
-back to this shared count (not to the user's 5, see above). Some users report Google
-counts them anyway; if so, Google's per-day 429 below sets the count right. A 429
-naming a per-day quota sets the model's count to the limit, which alone keeps it unused
-until the reset; the request moves to the basic model at once. Any other 429 (a per-minute
-limit) waits (Google's delay, at most 60 s, otherwise 20 s) and retries once, then that
-request moves to the basic model; nothing is remembered, so the next request simply tries.
-Quota errors never use Workflow retries.
+reserves one, in one atomic statement, up to the model's limit in `LLM_DAILY_LIMITS`. A
+failed call still counts, because Google may have counted it, except a 503 or a short rate
+limit: Google says a 503 is "unrelated to your quota", so its request is given back to this
+shared count (not to the user's 5, see above). Some users report Google counts them anyway;
+if so, Google's per-day 429 below sets the count right. A 429 naming a per-day quota sets
+the model's count to the limit, which alone keeps it unused until the reset. Any other 429
+(a per-minute limit) is treated like a busy model; nothing is remembered, so the next
+request simply tries. In every case the request moves to the next model at once.
 
 **Failures.** `error` is written to the row before a stage throws, with the reason in words
 in `error_detail` (never sent to the browser).
@@ -356,36 +362,31 @@ in `error_detail` (never sent to the browser).
 | Too long, description not enough | `video_too_long` | no | no |
 | No recipe | `no_recipe` | no | no |
 | Several recipes | `multiple_recipes` | no | no |
-| Gemini busy (503) | `llm_error` | yes, see below | yes |
+| Every model it could use is busy (503) | `llm_error` | yes, see below | yes |
 | Other 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
 | Invalid output | `bad_result` | yes, 3 tries per stage | yes |
-| Both out | `quota` | no | yes |
+| Every model it could use is out for the day | `quota` | no | yes |
 | Stuck for 30 minutes | `timed_out` | no | yes |
 
 Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
 overlaps a call that is still running (video calls have taken over 5 minutes).
 
-A busy model (503, "high demand") can stay busy for minutes or hours, so it skips those
-quick retries and follows Google's advice instead: back off and retry, short at first and
-longer after. The stage ends without failing, and the Workflow sleeps (`step.sleep`) **30
-seconds, then 2 minutes, then 8 minutes** before each new run, so 4 runs in all; still busy
-after that, it fails with `llm_error`. The card shows the import as still running
-meanwhile. The Workflow passes the number of waits so far to the stage (`busyWaits`), which
-picks the model:
-
-- **Best model:** its first retry, after 30 seconds, stays on the best model. If it's still
-  busy, the import moves to the basic model in that same run and stays on it for later
-  runs; the row keeps its best-model use. The recipe is saved as a basic-model one; the
-  user can scan it again from the edit form. A Retry is a new row and a new Workflow, so it
-  tries the best model first again (and takes another use).
-- **Basic model** (chosen, or after the switch above): every run stays on it.
+A busy model (503, "high demand") costs nothing: the stage moves on to the next model in
+the same run. Only when **every** model it could use was busy does the stage end as busy.
+That can last minutes or hours, so it skips the quick retries and follows Google's advice
+instead: back off and retry, short at first and longer after. The stage ends without
+failing, and the Workflow sleeps (`step.sleep`) **30 seconds, then 2 minutes, then 8
+minutes** before each new run, so 4 runs in all, each starting again from the first model
+(and from the best model, when the user asked for it); still busy after that, it fails with
+`llm_error`. The card shows the import as still running meanwhile. Every busy answer's
+request is given back to the shared count.
 
 No wait has jitter: there are too few users for their retries to pile up, and a Workflow
 must sleep the same on every replay. Google's Batch API is not used: its results can take
 hours, and imports should land in minutes.
 
 A Retry inserts a new row and starts a new Workflow from the first stage, keeping only the
-model choice (`state.basicChosen`). It doesn't reuse what the earlier stages left, because
+model choice (`state.bestChosen`). It doesn't reuse what the earlier stages left, because
 that expires: Meta's video links are signed for a limited time and Google deletes an
 uploaded video after 48 hours, and getting them again costs no model request. The one
 exception is a failed save, whose `state` holds the recipe the model already wrote: it is
@@ -399,8 +400,9 @@ twice. (New rows always have `attempt` 1; older rows retried in place may have m
 **Provider.** Everything about Gemini's request format is in `llm.js` and everything about
 Groq's in `groq.js`; `models.js` alone decides which model runs and counts the calls.
 
-**Limits to keep in mind.** Quota is per Google project and shared by all users, about 20
-best-model imports a day in total, and Google says the limits aren't guaranteed. PR previews
+**Limits to keep in mind.** Quota is per Google project and shared by all users: 20
+requests a day on each of the three stronger models and 500 on the small one, and Google
+says the limits aren't guaranteed. PR previews
 can't exercise any of this: a preview's binding uses the Workflow already deployed to
 production, and gives `workflow.not_found` before the first deploy.
 
@@ -415,8 +417,10 @@ production, and gives `workflow.not_found` before the first deploy.
   finish its LLM call, but saves nothing.
 - An uploaded video stays in Gemini's file store until Google deletes it (48 hours) when
   its import fails before a usable answer. A Retry uploads the video again.
-- When both Gemini models are out for the day a new import is refused with `quota` before
+- When every import model is out for the day a new import is refused with `quota` before
   it starts, even if the fallback model could have read its text.
+- A scan that asked for the best model doesn't say when another model answered instead;
+  the recipe's `source_model` shows it.
 
 **Logging.** `llm.js` logs each Gemini request (the model, the video link and the full
 prompt) and each failure (the status and Google's error text), never the key. Import prompts
@@ -427,7 +431,7 @@ them live. A failed import also keeps the reason in `llm_requests.error_detail`.
 
 **Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
 request. Real imports run locally on the dev keys in `.dev.vars`, which use a test quota;
-agents test with the Basic model (`local-dev` skill).
+agents don't ask for the best model unless the owner says so (`local-dev` skill).
 
 ## Translation
 
@@ -439,17 +443,14 @@ the user taps Save. It works for any recipe, manual ones too, but needs an accou
   seconds. No video and no link are sent.
 - Each translation is an `llm_requests` row with `purpose = 'translation'`, inserted before the
   call (status `running`, then `done` or `failed` with its `error`), with `recipe_id` set to
-  the recipe being edited (`NULL` for one not saved yet) and the answering model in `state`.
+  the recipe being edited (`NULL` for one not saved yet) and the answering model in `model`.
   The recipe text itself is never stored there. Translations never show as cards and don't
   count toward the import caps.
-- The user picks the model; Basic is the default (the API's and the UI's). A translation
-  takes one request from the shared daily count (`llm_usage`). On the best model the row
-  takes one of the user's **5 daily best-model uses**, exactly like an import's (see "The
-  user's 5").
-- Nobody is asked and nothing waits, since the user is waiting: if the best model was
-  picked but the user has used their 5, the shared count is used up, it's busy, or it hit
-  a quota error, the basic model answers at once, and the answer's `model` says so (the UI
-  then notes it). Only a busy basic model (`model_busy`) or both models out (`quota`) fail.
+- There is no model choice and no per-user limit. A translation takes one request from
+  the shared daily count (`llm_usage`) of the model that answers: the translation models
+  in order (`LLM_TRANSLATE_MODELS`), then the fallback model.
+- Nothing waits, since the user is waiting: a busy or used-up model is skipped at once.
+  Only every model being busy (`model_busy`) or out (`quota`) fails.
 - The answer is untrusted: it must pass the same checks as a recipe's text, and must keep
   each part (name, ingredients, steps) the original had, or it's `bad_result`.
 
