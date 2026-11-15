@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { callModel, ModelBusyError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
+import { callModel, ModelBusyError, ModelUnusableError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 
 const VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 const SCHEMA = { type: 'object' };
@@ -171,13 +171,26 @@ describe('callModel: failures', () => {
   });
 
   it('reports a non-quota 4xx on a call with a video as the video being refused', async () => {
-    respond({ error: { code: 400 } }, 400);
+    respond({ error: { code: 400, message: 'Request contains an invalid argument.' } }, 400);
     await expect(call({ videoUrl: VIDEO })).rejects.toBeInstanceOf(VideoRefusedError);
   });
 
-  it('does not retry a non-quota 4xx on a text-only call', async () => {
-    respond({ error: { code: 400 } }, 400);
-    await expect(call()).rejects.toMatchObject({ code: 'llm_error', retryable: false });
+  it.each([400, 401, 403, 404])('reports a %i on a text-only call as the model being unusable, with Google’s reason', async (status) => {
+    respond({ error: { code: status, message: 'Something is wrong.' } }, status);
+    const error = await call().catch((e) => e);
+    expect(error).toBeInstanceOf(ModelUnusableError);
+    expect(error.detail).toBe(`Gemini ${status}: Something is wrong.`);
+  });
+
+  it.each([
+    ['a model that is gone', 404, 'models/some-model is not found for API version v1beta.'],
+    ['a key Google does not take', 400, 'API key not valid. Please pass a valid API key.'],
+    ['a key that is not allowed', 403, 'Method doesn’t allow unregistered callers (callers without established identity). Please use API Key or other form of API consumer identity to call this API.'],
+    ['an unauthenticated call', 401, 'Request had invalid authentication credentials.'],
+    ['the API turned off for the project', 403, 'Generative Language API has not been used in project 123 before or it is disabled. SERVICE_DISABLED'],
+  ])('reports %s on a call with a video as the model being unusable, not the video', async (_, status, message) => {
+    respond({ error: { code: status, message } }, status);
+    await expect(call({ videoUrl: VIDEO })).rejects.toBeInstanceOf(ModelUnusableError);
   });
 });
 

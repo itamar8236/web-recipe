@@ -19,7 +19,8 @@ local copy, so agents can't reach production even by accident.
 - Never run `npx wrangler login` or handle Cloudflare credentials. If wrangler happens to
   be logged in, don't use it for anything remote.
 - Never add `"remote": true` to `backend/wrangler.jsonc`.
-- Never run `wrangler deploy` / `npm run deploy`. Deploys happen only on merge to `main`.
+- Never run `wrangler deploy` / `npm run deploy`. Run the app only with `npm run dev`;
+  production is deployed only when the owner merges a PR into `main`.
 - Production schema or data changes are the owner's job. If one is needed, write it in
   the PR with when to run it relative to merging (e.g. "run `npx wrangler d1 execute recipes-db --remote --file=schema.sql`").
 - `backend/.wrangler/prod-dump.sql` contains real user data: never commit it (`.wrangler/`

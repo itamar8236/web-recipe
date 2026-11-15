@@ -10,7 +10,7 @@
 
 import { ImportError } from './errors.js';
 import { callFallbackModel } from './groq.js';
-import { ModelBusyError, QuotaError } from './llm.js';
+import { ModelBusyError, ModelUnusableError, QuotaError } from './llm.js';
 
 const list = (text) =>
   String(text ?? '')
@@ -168,7 +168,8 @@ async function claimBestUse(env, job, day) {
 // Reserves and sends one request to one model. Returns { output }, or { out: true, sent }
 // when the model is out for the day; `sent` says whether a request went out before that
 // was known. Throws ModelBusyError when the model can't answer right now (a 503, or a
-// short rate limit), so the caller moves on to the next model. Nothing waits here.
+// short rate limit) and ModelUnusableError when it can't run at all (gone, or its key
+// refused), so the caller moves on to the next model. Nothing waits here.
 async function callUnlessOut({ env, llm, model, request }) {
   const limit = dailyLimit(env, model);
   const day = quotaDay(Date.now());
@@ -176,9 +177,10 @@ async function callUnlessOut({ env, llm, model, request }) {
   try {
     return { output: await llm({ env, model, ...request }) };
   } catch (error) {
-    // Google says a 503 is unrelated to quota, so its request is given back to the shared
-    // count. If Google counted it after all, its per-day 429 sets the count right.
-    if (error instanceof ModelBusyError) await releaseCall(env, model, day);
+    // Google says a 503 is unrelated to quota, and a rejected request is never served, so
+    // the request is given back to the shared count. If Google counted it after all, its
+    // per-day 429 sets the count right.
+    if (error instanceof ModelBusyError || error instanceof ModelUnusableError) await releaseCall(env, model, day);
     if (!(error instanceof QuotaError)) throw error;
     if (error.daily) {
       await markModelOutForTheDay(env, model, limit, Date.now());
@@ -199,7 +201,7 @@ async function giveBackBestUse(env, job) {
 }
 
 // Calls the best model for this row, taking one of the user's daily uses first. The use
-// stays taken once a request reached Google, even if the model was busy and another model
+// stays taken once a request reached Google, even if the model was busy or couldn't run and another model
 // ends up answering: trying the best model is what the 5 count. Only when nothing was sent
 // (the shared limit was already reached) is it given back.
 async function callBest(job, deps, request) {
@@ -227,32 +229,46 @@ async function callFallback({ env, fallbackLlm = callFallbackModel }, request) {
     return fallback.out ? null : { output: fallback.output, model };
   } catch (error) {
     if (error instanceof ModelBusyError) return null;
-    throw error;
+    if (!(error instanceof ModelUnusableError)) throw error;
+    console.log(`Fallback model ${model} can't run: ${error.detail}`);
+    return null;
   }
 }
 
-// Tries `models` in order, moving on at once from one that is busy or out for the day,
-// then the fallback model. Returns { output, model }. When nothing answers, a busy model
-// is reported as busy (it may answer in a minute) and otherwise it is quota.
+// Tries `models` in order, moving on at once from one that is busy, out for the day, or
+// can't run, then the fallback model. Returns { output, model }. When nothing answers, a
+// busy model is reported as busy (it may answer in a minute); then quota when a model was
+// out (it is back tomorrow); and only when no model could run, a non-retryable llm_error
+// with Google's reason, since a retry won't fix it.
 async function callInOrder(deps, models, request) {
   const { env, llm } = deps;
   let busy = null;
+  let unusable = null;
+  let anyOut = false;
   for (const model of models) {
     try {
       const result = await callUnlessOut({ env, llm, model, request });
       if (!result.out) return { output: result.output, model };
+      anyOut = true;
     } catch (error) {
+      if (error instanceof ModelUnusableError) {
+        console.log(`Model ${model} can't run, trying the next one: ${error.detail}`);
+        unusable ??= error;
+        continue;
+      }
       if (!(error instanceof ModelBusyError)) throw error;
       busy ??= error;
     }
   }
   const fallback = await callFallback(deps, request);
   if (fallback) return fallback;
-  throw busy ?? new ImportError('quota');
+  if (busy) throw busy;
+  if (unusable && !anyOut) throw new ImportError('llm_error', { detail: unusable.detail });
+  throw new ImportError('quota');
 }
 
 // Sends an import's `request` ({ prompt, schema, videoUrl, videoType }). When the user
-// asked for the best model it is tried first, once; if it is busy, out, or the user has
+// asked for the best model it is tried first, once; if it is busy, out, can't run, or the user has
 // used their 5, the import goes on by itself. Then the import models are tried in order
 // (LLM_IMPORT_MODELS), then the fallback model. Returns { output, model }. Throws
 // ImportError quota when every model is out, and ModelBusyError when one was only busy,
@@ -263,7 +279,8 @@ export async function callChosenModel(job, deps, request) {
       const best = await callBest(job, deps, request);
       if (!best.out) return { output: best.output, model: deps.env.LLM_BEST_MODEL };
     } catch (error) {
-      if (!(error instanceof ModelBusyError)) throw error;
+      if (error instanceof ModelUnusableError) console.log(`Best model can't run, going on with the import models: ${error.detail}`);
+      else if (!(error instanceof ModelBusyError)) throw error;
     }
   }
   return callInOrder(deps, importModels(deps.env), request);

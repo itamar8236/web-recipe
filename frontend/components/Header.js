@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from './Auth';
 import { useLanguage } from './Language';
 import AccountDialog from './AccountDialog';
-import { LANGUAGES, languageLabels } from '@/lib/i18n';
+import { errorMessage, LANGUAGES, languageLabels } from '@/lib/i18n';
 import styles from './Header.module.css';
 
 export default function Header() {
@@ -16,6 +16,16 @@ export default function Header() {
   // English/Hebrew tabs for the recipe text.
   const locked = usePathname().startsWith('/recipe/edit');
   const [accountOpen, setAccountOpen] = useState(false);
+  const [logOutError, setLogOutError] = useState(null);
+
+  async function handleLogOut() {
+    setLogOutError(null);
+    try {
+      await logOut();
+    } catch (error) {
+      setLogOutError(error);
+    }
+  }
 
   return (
     <header className={styles.header}>
@@ -67,11 +77,16 @@ export default function Header() {
           <button
             type="button"
             className={styles.userButton}
-            onClick={status === 'user' ? logOut : leaveGuest}
+            onClick={status === 'user' ? handleLogOut : leaveGuest}
           >
             {status === 'user' ? t.logOut : t.logIn}
           </button>
         </div>
+      )}
+      {logOutError && status === 'user' && (
+        <p className={`error ${styles.barError}`} role="alert">
+          {t.errLogOut} {errorMessage(t, logOutError)}
+        </p>
       )}
       {accountOpen && status === 'user' && <AccountDialog onClose={() => setAccountOpen(false)} />}
     </header>

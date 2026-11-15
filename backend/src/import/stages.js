@@ -11,9 +11,10 @@ import { sourceFor } from './sources/index.js';
 
 const MIN_TEXT_LENGTH = 80;
 
-// What a finished stage leaves in llm_requests.state is read by the stages after it, and by
-// a Retry's new row, which copies it. When a change makes older state unreadable this goes
-// up, and a row holding the older shape starts again from its first stage.
+// What a finished stage leaves in llm_requests.state is read by the stages after it, and,
+// after a failed save, by a Retry's new row, which copies it (any other Retry starts over).
+// When a change makes older state unreadable this goes up, and a row holding the older
+// shape starts again from its first stage.
 const STATE_VERSION = 2;
 
 // Every write is guarded by this, so a repeated step, a late older attempt or a dismissal

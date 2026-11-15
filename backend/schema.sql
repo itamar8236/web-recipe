@@ -3,8 +3,10 @@
 -- How to apply:
 --   Production (once, by the owner, from backend/):
 --     npx wrangler d1 execute recipes-db --remote --file=schema.sql
---   Local dev: `npm run dev` (scripts/db-pull.mjs) applies it on top of a fresh copy of
---   production every time, and `npm run db:schema:local` applies it on its own.
+--   Local dev: `npm run db:schema:local` applies it to the local database
+--   (.wrangler/state), which `npm run dev` then uses. That database may or may not be a
+--   copy of production: the owner's `npm run db:pull` (scripts/db-pull.mjs) replaces it
+--   with one and applies this file on top.
 --
 -- The file must stay safe to run any number of times: every statement is
 -- IF NOT EXISTS, so running it on an up-to-date database changes nothing and running it
@@ -32,8 +34,8 @@
 --   npx wrangler d1 execute recipes-db --remote --file=<file with the INSERT below>
 --   INSERT INTO users (username, is_admin, password_hash) VALUES ('<admin-username>', 1, '<password-hash>');
 
--- People who may log in. There is no sign-up: the admin adds rows here with a password,
--- and a login matches the username plus the password.
+-- People who may log in. Anyone can sign up (POST /api/auth/register) while fewer than 50
+-- rows exist, and a login matches the username plus the password.
 -- password_hash keeps the PBKDF2 iterations and salt inside the string, so iterations can
 -- be raised later and old hashes still verify.
 CREATE TABLE IF NOT EXISTS users (
@@ -119,8 +121,9 @@ END;
 -- is_favorite is a plain column because only the owner ever sees a recipe, so "my
 -- favorite" and "favorite" are the same thing.
 -- source_model is the LLM that produced an imported recipe (NULL for manual recipes).
--- machine_translated_lang names the language the LLM filled in, so the UI can label it;
--- the backend clears it when the user edits that language, since it is then human text.
+-- machine_translated_lang names the language an import's model filled in as a translation
+-- of the post's own language. Only the backend reads it (the API doesn't return it); it is
+-- cleared when the user edits that language, since it is then human text.
 CREATE TABLE IF NOT EXISTS recipes (
   id             INTEGER PRIMARY KEY,
   user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -186,7 +189,9 @@ CREATE INDEX IF NOT EXISTS recipe_tags_tag_id ON recipe_tags (tag_id);
 -- stage is the stage running now or next, so the card can say what is happening.
 -- attempt guards each stage's writes, so a late write from an older Workflow changes
 -- nothing. A Retry is a new row, so new rows keep attempt 1.
--- state holds what finished stages produced, so a Retry's row copies it and skips them.
+-- state holds what finished stages produced, so a repeated Workflow step skips them. A
+-- Retry's row starts over from the first stage, keeping only the model choice, except
+-- after a failed save: it copies that state, which already holds the recipe.
 -- error is written before a stage throws, so nothing depends on how Workflows passes
 -- errors along. error_detail says why in words (e.g. Google's message), for debugging
 -- only: it is never sent to the browser.

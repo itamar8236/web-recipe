@@ -13,13 +13,14 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
    `frontend/README.md` (screens, UX, bilingual rules).
 4. **Backend** (if needed):
    - All tables live in `backend/schema.sql` (only `IF NOT EXISTS`, safe to re-run).
-     New tables go there; changing an existing table also needs a one-off `ALTER`
-     that the owner runs on production: write it in the PR.
+     New tables go there; changing an existing table also needs a one-off `ALTER` (or
+     table rebuild) in a new file in `backend/migrations/`, which the owner runs on
+     production (`backend/README.md` → Database). The PR says when to run it.
    - Use bound SQL parameters only; keep LLM provider code in one place.
-   - New routes require a session (admin routes also the admin check).
+   - New routes require a session.
    - Validate input, return `{ error }` with the right status code.
    - Add simple Vitest tests (`@cloudflare/vitest-plugin`, local D1) for every
-     new or changed endpoint: the happy path, bad input, and not logged in / not admin.
+     new or changed endpoint: the happy path, bad input, and not logged in.
      Keep them small: a few clear cases, no elaborate fixtures.
    - Record new endpoints and schema in `backend/README.md`.
 5. **Frontend** (if needed): follow the `frontend-ui` skill. Call the API only through
