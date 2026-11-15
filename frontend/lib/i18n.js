@@ -364,7 +364,6 @@ export function errorMessage(t, error, nameRequired = t.nameRequired) {
     nothing_to_translate: t.errNothingToTranslate,
     import_needs_login: t.errImportNeedsLogin,
     browse_needs_login: t.errBrowseNeedsLogin,
-    already_saved: t.errAlreadyImported,
   };
   return byCode[error?.code] ?? t.errGeneric;
 }

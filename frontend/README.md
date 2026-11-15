@@ -157,7 +157,7 @@ frontend/
      recipe** opens the ingredients and steps inside the card, and **+ Save a copy** saves
      the user's own copy at once (no question: it is easy to delete). The button then
      becomes "✓ Saved to your recipes" with an Open link to the copy.
-   - A recipe the user already has doesn't show at all.
+   - A recipe the user already saved still shows, on a later visit with the Save button again.
    - On the **recipe view**, a logged-in user sees a box under the tags saying Public or
      Private in words, with a "Make private" / "Make public" button that saves at once. A
      private recipe's card on Home has a "🔒 Private" label.

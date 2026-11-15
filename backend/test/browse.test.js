@@ -157,33 +157,13 @@ describe('saving a copy', () => {
     expect(recipe).toMatchObject({ link, sourceModel: 'some-model' });
   });
 
-  it('saves a recipe once, and takes it out of Browse', async () => {
+  it('keeps the recipe in Browse, and saving it again makes another copy', async () => {
     const original = await newRecipe(dana, 'Toast');
     expect((await copy(noa, original.id)).status).toBe(201);
-
-    const again = await copy(noa, original.id);
-    expect(again.status).toBe(409);
-    expect((await again.json()).error).toBe('already_saved');
-    expect(await myRecipes(noa)).toHaveLength(1);
-    expect(await browseNames(noa)).toEqual([]);
-
-    // Deleting the copy brings it back.
-    await as(noa).del(`/api/recipes/${(await myRecipes(noa))[0].id}`);
     expect(await browseNames(noa)).toEqual(['Toast']);
-  });
 
-  it('shows a third user the original, not also every copy of it', async () => {
-    const original = await newRecipe(dana, 'Toast');
-    await copy(noa, original.id);
-    const tal = cookiesFrom(await register('tal'));
-
-    expect((await browse(tal)).recipes.map((recipe) => recipe.owner)).toEqual(['dana']);
-    // Dana doesn't get her own recipe back as noa's copy.
-    expect(await browseNames(dana)).toEqual([]);
-
-    // Once the original is private, the copy is the one to find.
-    await as(dana).put(`/api/recipes/${original.id}/public`, { public: false });
-    expect((await browse(tal)).recipes.map((recipe) => recipe.owner)).toEqual(['noa']);
+    expect((await copy(noa, original.id)).status).toBe(201);
+    expect(await myRecipes(noa)).toHaveLength(2);
   });
 
   it('refuses your own recipe, a missing one, and a visitor', async () => {

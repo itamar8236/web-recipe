@@ -126,11 +126,8 @@ END;
 -- is_favorite is a plain column because a favorite is the owner's own mark: other users
 -- who browse a public recipe never see or change it.
 -- is_public says other users may see the recipe in Browse and copy it. Only the owner can
--- ever change the recipe itself.
--- copied_from is the id of the recipe this one was copied from in Browse (NULL otherwise).
--- It says "you already saved this one", and keeps a copy out of Browse while its original
--- is there. It deliberately has no foreign key: the copy is the user's own recipe and
--- stays as it is when the original is deleted.
+-- ever change the recipe itself. A copy saved from Browse is a plain recipe of its new
+-- owner: nothing links it to the one it was copied from.
 -- source_model is the LLM that produced an imported recipe (NULL for manual recipes).
 -- machine_translated_lang names the language an import's model filled in as a translation
 -- of the post's own language. Only the backend reads it (the API doesn't return it); it is
@@ -140,7 +137,6 @@ CREATE TABLE IF NOT EXISTS recipes (
   user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   is_favorite    INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1)),
   is_public      INTEGER NOT NULL DEFAULT 1 CHECK (is_public IN (0, 1)),
-  copied_from    INTEGER,
   platform       TEXT    NOT NULL DEFAULT 'manual',
   source_url     TEXT,
   source_model   TEXT,

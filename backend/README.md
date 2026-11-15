@@ -94,24 +94,22 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
 | Endpoint | Purpose | Success | Errors |
 |---|---|---|---|
 | `GET /api/browse?seed=<n>[&after=<next>]` | One page (10) of other users' public recipes | 200 `{recipes, next}` | 400 `invalid_request` (`seed` not a whole number from 1 to 1000002, or a bad `after`) |
-| `POST /api/browse/:id/copy` `{}` | Save your own copy of that recipe | 201 `{recipe}` (the new one, as in the recipes API) | 404 `not_found` (missing, private, or your own), 409 `already_saved` |
+| `POST /api/browse/:id/copy` `{}` | Save your own copy of that recipe | 201 `{recipe}` (the new one, as in the recipes API) | 404 `not_found` (missing, private, or your own) |
 
 - A browsed recipe is `{ id, owner, tags, link, en, he }`: `owner` is the username of who
   saved it and `tags` its tag **names** (ids mean nothing to another user). The owner's
   favorite mark is never sent.
-- **What shows**: public recipes of other users that the user doesn't have yet. "Has" means
-  they copied it (`recipes.copied_from`) or have a recipe from the same link. A copy stays
-  out while the recipe it was copied from is public (or is the user's own), so a recipe
-  doesn't show once per person who saved it. Two users who each imported the same link
-  themselves do both show.
+- **What shows**: every public recipe of every other user. A copy keeps no link to its
+  original (the owner's choice), so a recipe the user already saved shows again, another
+  user's public copy shows beside the original, and saving one twice makes two copies.
 - **Random order**: the browser picks `seed` once per visit (and on "Shuffle"). The order
   is by `(id + seed)³ mod 1000003`, so one seed always gives the same order and another
   seed a different one, with no stored state. `next` is where the page ended in that order
   (`null` on the last page) and comes back as `after`; continuing from the last recipe
-  rather than from a count means a recipe saved or deleted meanwhile never makes a page
+  rather than from a count means a recipe deleted or made private meanwhile never makes a page
   skip or repeat one.
-- **Copy** is one batch: the new recipe has the same text, link, platform and model, no
-  favorite, `copied_from` set, and is public or private by the user's `defaultPublic`. With
+- **Copy**: the new recipe has the same text, link, platform and model, no favorite, and
+  is public or private by the user's `defaultPublic`. With
   `copyTags` on, each of the original's tags is found by name among the user's own tags or
   created. The original is never changed, and later changes to either don't reach the other.
 

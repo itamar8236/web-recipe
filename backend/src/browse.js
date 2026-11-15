@@ -14,16 +14,10 @@ const PAGE_SIZE = 10;
 const PRIME = 1000003;
 const ORDER_KEY = `((((r.id + ?2) * (r.id + ?2)) % ${PRIME}) * (r.id + ?2)) % ${PRIME}`;
 
-// "The user already has it": they copied it, or they have a recipe from the same link.
-const SAVED = `EXISTS (SELECT 1 FROM recipes AS mine WHERE mine.user_id = ?1
-  AND (mine.copied_from = r.id OR (r.source_url IS NOT NULL AND mine.source_url = r.source_url)))`;
-
-// What Browse may show the user (?1): other users' public recipes they don't have yet. A
-// copy stays out while the recipe it was copied from is in Browse (or is the user's own),
-// so one recipe doesn't show once per person who saved it.
-const VISIBLE = `r.user_id <> ?1 AND r.is_public = 1 AND NOT ${SAVED}
-  AND NOT EXISTS (SELECT 1 FROM recipes AS original
-    WHERE original.id = r.copied_from AND (original.is_public = 1 OR original.user_id = ?1))`;
+// What Browse may show the user (?1): every public recipe of another user. A copy is a
+// plain recipe with no link to its original, so a recipe the user already saved shows
+// again, and so does another user's public copy of it (the owner's choice: simple).
+const VISIBLE = 'r.user_id <> ?1 AND r.is_public = 1';
 
 const TAG_NAMES = `(SELECT json_group_array(tags.name) FROM recipe_tags
   JOIN tags ON tags.id = recipe_tags.tag_id WHERE recipe_tags.recipe_id = r.id)`;
@@ -43,8 +37,8 @@ function readInt(text, min, max) {
 }
 
 // One page. `after` is the `next` of the page before ("<key>.<id>"): pages continue from
-// the last recipe shown rather than from a count, so a recipe saved or deleted meanwhile
-// doesn't make the next page skip or repeat one.
+// the last recipe shown rather than from a count, so a recipe deleted or made private
+// meanwhile doesn't make the next page skip or repeat one.
 async function listBrowse(request, env, userId) {
   const params = new URL(request.url).searchParams;
   const seed = readInt(params.get('seed'), 1, PRIME - 1);
@@ -82,52 +76,49 @@ async function listBrowse(request, env, userId) {
 // Saves the user's own copy of another user's public recipe: the same text and link,
 // public or private as the user's default says, with no favorite. Its tags come too when
 // the user's "copy tags" default is on, as the user's own tags (found by name, or made).
-// Everything is one batch, and each statement checks again that the recipe may be copied
-// and isn't saved yet, so a double tap makes one copy.
+// Saving the same recipe again makes another copy.
 async function copyRecipe(env, userId, id) {
+  const copy = await env.DB.prepare(
+    `INSERT INTO recipes (user_id, is_public, platform, source_url, source_model,
+       name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
+       machine_translated_lang, created_at, updated_at)
+     SELECT ?1, (SELECT default_public FROM users WHERE id = ?1), r.platform, r.source_url, r.source_model,
+       r.name_en, r.ingredients_en, r.steps_en, r.name_he, r.ingredients_he, r.steps_he,
+       r.machine_translated_lang, ?3, ?3
+     FROM recipes AS r
+     WHERE r.id = ?2 AND ${VISIBLE}
+     RETURNING id`,
+  )
+    .bind(userId, id, Date.now())
+    .first();
+  if (!copy) return fail(404, 'not_found');
+
+  // The tags are a second step. If it fails the copy is already saved, without tags, and
+  // the user can add them on its page.
   const source = await env.DB.prepare(
-    `SELECT ${SAVED} AS saved, ${TAG_NAMES} AS tag_names,
-            (SELECT copy_tags FROM users WHERE id = ?1) AS copy_tags
-       FROM recipes AS r WHERE r.id = ?2 AND r.user_id <> ?1 AND r.is_public = 1`,
+    `SELECT ${TAG_NAMES} AS tag_names, (SELECT copy_tags FROM users WHERE id = ?1) AS copy_tags
+       FROM recipes AS r WHERE r.id = ?2`,
   )
     .bind(userId, id)
     .first();
-  if (!source) return fail(404, 'not_found');
-  if (source.saved) return fail(409, 'already_saved');
-
-  const tagNames = source.copy_tags === 1 ? JSON.parse(source.tag_names) : [];
-  const copyId = '(SELECT id FROM recipes WHERE user_id = ?1 AND copied_from = ?2 ORDER BY id DESC LIMIT 1)';
-  const now = Date.now();
+  const tagNames = source?.copy_tags === 1 ? JSON.parse(source.tag_names) : [];
   const results = await env.DB.batch([
-    env.DB.prepare(
-      `INSERT INTO recipes (user_id, is_public, copied_from, platform, source_url, source_model,
-         name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
-         machine_translated_lang, created_at, updated_at)
-       SELECT ?1, (SELECT default_public FROM users WHERE id = ?1), r.id, r.platform, r.source_url, r.source_model,
-         r.name_en, r.ingredients_en, r.steps_en, r.name_he, r.ingredients_he, r.steps_he,
-         r.machine_translated_lang, ?3, ?3
-       FROM recipes AS r
-       WHERE r.id = ?2 AND r.user_id <> ?1 AND r.is_public = 1 AND NOT ${SAVED}`,
-    ).bind(userId, id, now),
     ...tagNames.map((name) =>
-      env.DB.prepare(
-        `INSERT INTO tags (user_id, name) SELECT ?1, ?3 WHERE ${copyId} IS NOT NULL ON CONFLICT DO NOTHING`,
-      ).bind(userId, id, name),
+      env.DB.prepare('INSERT INTO tags (user_id, name) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(userId, name),
     ),
     ...tagNames.map((name) =>
       env.DB.prepare(
         `INSERT OR IGNORE INTO recipe_tags (recipe_id, tag_id)
-         SELECT ${copyId}, tags.id FROM tags
-         WHERE tags.user_id = ?1 AND tags.name = ?3 AND ${copyId} IS NOT NULL`,
-      ).bind(userId, id, name),
+         SELECT recipes.id, tags.id FROM recipes, tags
+         WHERE recipes.id = ?1 AND recipes.user_id = ?2 AND tags.user_id = ?2 AND tags.name = ?3`,
+      ).bind(copy.id, userId, name),
     ),
     deleteUnusedTags(env, userId),
-    env.DB.prepare(`SELECT ${RECIPE_COLUMNS} FROM recipes WHERE id = ${copyId}`).bind(userId, id),
+    env.DB.prepare(`SELECT ${RECIPE_COLUMNS} FROM recipes WHERE id = ? AND user_id = ?`).bind(copy.id, userId),
   ]);
-  const [copy] = results.at(-1).results;
-  // Made private or deleted in the instant between the two requests.
-  if (!copy) return fail(404, 'not_found');
-  return json({ recipe: toRecipe(copy) }, 201);
+  const [saved] = results.at(-1).results;
+  if (!saved) return fail(404, 'not_found'); // deleted while this ran
+  return json({ recipe: toRecipe(saved) }, 201);
 }
 
 // Routes /api/browse and /api/browse/:id/copy. Returns null when the path isn't one of them.
