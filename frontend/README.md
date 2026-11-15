@@ -25,10 +25,11 @@ frontend/
 │   ├── manifest.js        # Web app manifest (makes the site installable on Android)
 │   ├── icon.png           # Favicon
 │   ├── page.js            # Home: tags + recipes with the selected tag
+│   ├── browse/page.js     # Browse: other users' public recipes (/browse)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), TagBar, RecipeTags, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -144,11 +145,29 @@ frontend/
      returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
      to 5 a day)", is off by default; when that model can't be used the scan goes on with
      the usual models by itself, and nothing asks for approval.
-7. **My account** (`components/AccountDialog`, a popup): opened by tapping the name in
+7. **Browse** (`/browse`, logged-in users only): reached with the two big tabs at the top
+   of Home and Browse (`components/ModeTabs`: "My recipes" / "From others"; a guest never
+   sees them, and `/browse` tells a guest to log in).
+   - Other users' public recipes in a random order, 10 at a time. The next page loads by
+     itself when the end of the list comes within 600px of the screen
+     (`IntersectionObserver`); the "Show more" button at the end does the same by hand.
+     "Shuffle" starts over in a new order. The end says "You have seen them all."
+   - Each card (`components/BrowseCard`) shows the name, "Saved by <username>", the tags,
+     the ingredient count and the source link, with two buttons side by side: **Show
+     recipe** opens the ingredients and steps inside the card, and **+ Save a copy** saves
+     the user's own copy at once (no question: it is easy to delete). The button then
+     becomes "✓ Saved to your recipes" with an Open link to the copy.
+   - A recipe the user already has doesn't show at all.
+   - On the **recipe view**, a logged-in user sees a box under the tags saying Public or
+     Private in words, with a "Make private" / "Make public" button that saves at once. A
+     private recipe's card on Home has a "🔒 Private" label.
+8. **My account** (`components/AccountDialog`, a popup): opened by tapping the name in
    the header. Username (filled in) and New password (empty = keep it), then Save, which
    asks "Save the changes to your account?" first. No old password and no typing the new
    one twice (the owner's choice). The user stays logged in everywhere after a
-   change. Saving with nothing changed shows a hint instead.
+   change. Saving with nothing changed shows a hint instead. Under them, "My defaults" has
+   two checkboxes saved with the same Save: "New recipes are public" and "Copy the tags
+   too when I save someone else's recipe".
 
 ## UX rules
 
@@ -180,7 +199,7 @@ frontend/
 
 `lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`, `updateAccount`,
 `logout`), tags (`getTags`, `renameTag`),
-recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `deleteRecipe`) and imports
+recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `setRecipePublic`, `deleteRecipe`), browse (`getBrowse`, `copyRecipe`, `newBrowseSeed`) and imports
 (`getImports`, `startImport`, `retryImport`, `dismissImport`, `rerunRecipe`) and
 `translateRecipe`. For a guest the tag and recipe functions use memory instead. They
 trim names and lines and drop blank lines like the backend, and make only some of its
@@ -188,7 +207,8 @@ checks, with the same codes: `name_required` (a tag, or a recipe with no name in
 language), `tag_exists`, and `not_found` for renaming a missing tag or setting a
 missing recipe's tags or favorite. There are no length limits (`too_long`); deleting a
 missing item does nothing, and `getRecipe` returns `null`.
-The import and translate functions throw `import_needs_login` without calling the backend.
+The import and translate functions throw `import_needs_login` without calling the backend,
+and the browse functions `browse_needs_login`.
 
 - Requests go to the same origin (`/api/...`), so the session cookie is sent without any
   extra setup. There is no API base URL or CORS: test anything that needs the backend on

@@ -427,3 +427,63 @@ describe('logged in: imports', () => {
     expect(loggedOut).toHaveBeenCalled();
   });
 });
+
+describe('browse and public recipes', () => {
+  const mockFetch = (status, body) =>
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: status < 400, status, json: async () => body })));
+  const lastCall = () => {
+    const [path, options] = fetch.mock.calls.at(-1);
+    return { path, method: options.method, body: options.body && JSON.parse(options.body) };
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('a guest cannot browse or copy, and nothing is sent', async () => {
+    mockFetch(200, {});
+    await expect(api.getBrowse(5)).rejects.toMatchObject({ code: 'browse_needs_login' });
+    await expect(api.copyRecipe(1)).rejects.toMatchObject({ code: 'browse_needs_login' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('a guest recipe keeps the public flag it is given', async () => {
+    const recipe = await newRecipe('Toast');
+    expect(recipe.public).toBe(true);
+    expect((await api.setRecipePublic(recipe.id, false)).public).toBe(false);
+    await expect(api.setRecipePublic(999, false)).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('loads a page of the feed, then the next one from its mark', async () => {
+    api.setGuestMode(false);
+    const page = { recipes: [{ id: 3, owner: 'dana', tags: [] }], next: '17.3' };
+    mockFetch(200, page);
+    expect(await api.getBrowse(42)).toEqual(page);
+    expect(lastCall()).toMatchObject({ path: '/api/browse?seed=42', method: 'GET' });
+    await api.getBrowse(42, page.next);
+    expect(lastCall().path).toBe('/api/browse?seed=42&after=17.3');
+  });
+
+  it('picks a seed the backend accepts', () => {
+    for (let i = 0; i < 50; i++) {
+      const seed = api.newBrowseSeed();
+      expect(Number.isInteger(seed) && seed >= 1 && seed <= 1000002).toBe(true);
+    }
+  });
+
+  it('saves a copy and sets a recipe private', async () => {
+    api.setGuestMode(false);
+    mockFetch(201, { recipe: { id: 9 } });
+    expect((await api.copyRecipe(3)).id).toBe(9);
+    expect(lastCall()).toEqual({ path: '/api/browse/3/copy', method: 'POST', body: {} });
+
+    mockFetch(200, { recipe: { id: 9, public: false } });
+    expect((await api.setRecipePublic(9, false)).public).toBe(false);
+    expect(lastCall()).toEqual({ path: '/api/recipes/9/public', method: 'PUT', body: { public: false } });
+  });
+
+  it('sends the account defaults that changed', async () => {
+    api.setGuestMode(false);
+    mockFetch(200, { user: { id: 1, username: 'dana', defaultPublic: false, copyTags: true } });
+    expect((await api.updateAccount({ defaultPublic: false })).defaultPublic).toBe(false);
+    expect(lastCall()).toEqual({ path: '/api/auth/me', method: 'PUT', body: { defaultPublic: false } });
+  });
+});

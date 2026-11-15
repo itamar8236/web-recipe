@@ -7,8 +7,9 @@ import ConfirmDialog from './ConfirmDialog';
 import { errorMessage } from '@/lib/i18n';
 import styles from './AccountDialog.module.css';
 
-// "My account": change the username and/or the password, confirmed with an "are you sure?"
-// box. The old password isn't asked for (the owner's choice: the session already proves
+// "My account": change the username, the password and the user's two defaults (new recipes
+// public or private; copy the tags with someone else's recipe), confirmed with an "are you
+// sure?" box. The old password isn't asked for (the owner's choice: the session already proves
 // who this is).
 export default function AccountDialog({ onClose }) {
   const { t } = useLanguage();
@@ -16,6 +17,8 @@ export default function AccountDialog({ onClose }) {
   const ref = useRef(null);
   const [username, setUsername] = useState(user.username);
   const [password, setPassword] = useState('');
+  const [defaultPublic, setDefaultPublic] = useState(user.defaultPublic);
+  const [copyTags, setCopyTags] = useState(user.copyTags);
   const [error, setError] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -29,6 +32,8 @@ export default function AccountDialog({ onClose }) {
     const result = {};
     if (username.trim() !== user.username) result.username = username.trim();
     if (password) result.password = password;
+    if (defaultPublic !== user.defaultPublic) result.defaultPublic = defaultPublic;
+    if (copyTags !== user.copyTags) result.copyTags = copyTags;
     return result;
   }
 
@@ -95,6 +100,21 @@ export default function AccountDialog({ onClose }) {
           />
           <p className="hint">{t.newPasswordHint}</p>
         </div>
+
+        <fieldset className={styles.defaults}>
+          <legend className="label">{t.defaultsTitle}</legend>
+          <label className={styles.check}>
+            <input type="checkbox" checked={defaultPublic} onChange={(e) => setDefaultPublic(e.target.checked)} />
+            <span>
+              {t.defaultPublicLabel}
+              <span className={`hint ${styles.checkHint}`}>{t.defaultPublicHint}</span>
+            </span>
+          </label>
+          <label className={styles.check}>
+            <input type="checkbox" checked={copyTags} onChange={(e) => setCopyTags(e.target.checked)} />
+            <span>{t.copyTagsLabel}</span>
+          </label>
+        </fieldset>
 
         {error && (
           <p className="error" role="alert">
