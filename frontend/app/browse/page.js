@@ -146,9 +146,8 @@ export default function BrowsePage() {
   }
 
   return (
-    <>
-      <ModeTabs current="browse" />
+    <ModeTabs current="browse">
       <BrowseFeed />
-    </>
+    </ModeTabs>
   );
 }

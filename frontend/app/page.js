@@ -104,8 +104,7 @@ export default function HomePage() {
   }
 
   return (
-    <>
-    {canImport && <ModeTabs current="mine" />}
+    <ModeTabs current="mine" show={canImport}>
     <div className={styles.layout}>
       <aside className={styles.side}>
         <SearchBox value={query} onChange={setQuery} />
@@ -192,6 +191,6 @@ export default function HomePage() {
         />
       )}
     </div>
-    </>
+    </ModeTabs>
   );
 }

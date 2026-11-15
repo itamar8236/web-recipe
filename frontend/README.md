@@ -148,6 +148,13 @@ frontend/
 7. **Browse** (`/browse`, logged-in users only): reached with the two big tabs at the top
    of Home and Browse (`components/ModeTabs`: "My recipes" / "From others"; a guest never
    sees them, and `/browse` tells a guest to log in).
+   - **On phones** (under 760px) the tabs are a secondary control. Both pages open scrolled
+     just past them, so the content (on Home, the Search button) is at the top and
+     scrolling up shows the tabs. A sideways swipe anywhere on the page switches between
+     the two: in English a swipe to the left opens "From others" and to the right goes
+     back; Hebrew is mirrored. A drag that starts on the tag pills (they scroll sideways)
+     or in a text field, or that is mostly vertical, doesn't switch. On desktop the tabs
+     are simply at the top and there is no swipe.
    - Other users' public recipes in a random order, 10 at a time. The next page loads by
      itself when the end of the list comes within 600px of the screen
      (`IntersectionObserver`); the "Show more" button at the end does the same by hand.

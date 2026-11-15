@@ -39,3 +39,11 @@
     margin-bottom: 22px;
   }
 }
+
+/* Phones: tall enough that the page can always scroll past the tabs (see ModeTabs.js),
+   even with one recipe. 150px is about the header plus the page's own padding. */
+@media (max-width: 759px) {
+  .body {
+    min-height: calc(100dvh - 150px);
+  }
+}
