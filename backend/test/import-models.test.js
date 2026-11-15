@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
 import { ImportError } from '../src/import/errors.js';
-import { ModelBusyError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
+import { ModelBusyError, ModelUnusableError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 import {
   callChosenModel,
   callTranslationModel,
@@ -25,6 +25,7 @@ const REQUEST = { prompt: 'p', schema: {}, videoUrl: null };
 const bare429 = () => new QuotaError({ daily: false, retryDelayMs: 1 });
 const daily429 = () => new QuotaError({ daily: true, retryDelayMs: 1 });
 const busy = () => new ModelBusyError('Gemini 503: high demand');
+const unusable = () => new ModelUnusableError('Gemini 404: models/x is not found');
 
 const setUsage = (model, calls, day = today()) =>
   env.DB.prepare('INSERT INTO llm_usage (day, model, calls) VALUES (?, ?, ?) ON CONFLICT (day, model) DO UPDATE SET calls = excluded.calls').bind(day, model, calls).run();
@@ -202,6 +203,33 @@ describe('an import: the models are tried in order, and nobody is asked', () => 
     expect(await run(await newJob(await insertUser(), { replace_recipe_id: 12345 }), llm)).toMatchObject({ model: SECOND });
   });
 
+  it('moves on from a model that can’t run (gone, or its key refused), giving its request back', async () => {
+    const llm = answering(unusable(), ANSWER);
+    expect(await run(await newJob(await insertUser()), llm)).toEqual({ output: ANSWER, model: SECOND });
+    expect(modelsUsed(llm)).toEqual([FIRST, SECOND]);
+    expect(await usage(FIRST)).toBe(0);
+  });
+
+  it('fails with a non-retryable llm_error and Google’s reason when no model can run', async () => {
+    const llm = answering(unusable());
+    await expect(run(await newJob(await insertUser()), llm)).rejects.toMatchObject({
+      code: 'llm_error',
+      retryable: false,
+      detail: 'Gemini 404: models/x is not found',
+    });
+    expect(modelsUsed(llm)).toEqual(IMPORT);
+  });
+
+  it('reports busy when one model can’t run and the rest are busy', async () => {
+    await expect(run(await newJob(await insertUser()), answering(unusable(), busy()))).rejects.toBeInstanceOf(ModelBusyError);
+  });
+
+  it('reports quota when one model can’t run and the rest are out for the day', async () => {
+    await markOut(SECOND);
+    await markOut(LAST);
+    await expect(run(await newJob(await insertUser()), answering(unusable()))).rejects.toMatchObject({ code: 'quota' });
+  });
+
   it('passes a refused video on to the stage, without trying another model', async () => {
     const llm = answering(new VideoRefusedError());
     await expect(run(await newJob(await insertUser()), llm)).rejects.toBeInstanceOf(VideoRefusedError);
@@ -292,6 +320,14 @@ describe('when the user asked for the best model', () => {
     expect((await reload(job)).used_best).toBe(1);
   });
 
+  it('goes on with the import models when it can’t run, and the try still counts', async () => {
+    const job = await bestJob(await insertUser());
+    const llm = answering(unusable(), ANSWER);
+    expect(await run(job, llm)).toEqual({ output: ANSWER, model: FIRST });
+    expect(modelsUsed(llm)).toEqual([BEST, FIRST]);
+    expect((await reload(job)).used_best).toBe(1);
+  });
+
   it('reports busy when it and every import model are busy', async () => {
     const llm = answering(busy());
     await expect(run(await bestJob(await insertUser()), llm)).rejects.toBeInstanceOf(ModelBusyError);
@@ -335,6 +371,11 @@ describe('a translation', () => {
 
   it('tries its models in order when there are several', async () => {
     const llm = answering(busy(), ANSWER);
+    expect(await translateWith(llm, { ...env, LLM_TRANSLATE_MODELS: `${LAST},${SECOND}` })).toMatchObject({ model: SECOND });
+  });
+
+  it('moves on from a model that can’t run', async () => {
+    const llm = answering(unusable(), ANSWER);
     expect(await translateWith(llm, { ...env, LLM_TRANSLATE_MODELS: `${LAST},${SECOND}` })).toMatchObject({ model: SECOND });
   });
 

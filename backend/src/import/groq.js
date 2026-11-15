@@ -3,7 +3,7 @@
 // when). It can't watch a video, so it is only ever given text.
 
 import { ImportError } from './errors.js';
-import { ModelBusyError, QuotaError } from './llm.js';
+import { ModelBusyError, ModelUnusableError, QuotaError } from './llm.js';
 
 const ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const REQUEST_TIMEOUT_MS = 2 * 60 * 1000;
@@ -26,7 +26,7 @@ function parseOutput(text) {
 }
 
 // Sends one text request and returns the answer as parsed JSON. Same contract as
-// llm.js's callModel: throws QuotaError, ModelBusyError or ImportError.
+// llm.js's callModel: throws QuotaError, ModelBusyError, ModelUnusableError or ImportError.
 export async function callFallbackModel({ env, model, prompt, schema, logPrompt = true }) {
   if (!env.GROQ_API_KEY) throw new ImportError('llm_error', { detail: 'GROQ_API_KEY is not set' });
   console.log(`LLM call: model=${model} (fallback) video=none\n${logPrompt ? prompt : '(prompt not logged: user text)'}`);
@@ -55,7 +55,9 @@ export async function callFallbackModel({ env, model, prompt, schema, logPrompt 
     if (response.status === 503) throw new ModelBusyError(detail);
     // A 400 here is usually the model failing to write JSON that fits the schema.
     if (response.status === 400 && text.includes('json_validate_failed')) throw new ImportError('bad_result', { retryable: true, detail });
-    throw new ImportError('llm_error', { retryable: response.status >= 500, detail });
+    if (response.status >= 500) throw new ImportError('llm_error', { retryable: true, detail });
+    // Any other rejection is about the model or the key: the request holds only text.
+    throw new ModelUnusableError(detail);
   }
   const body = await response.json().catch(() => null);
   return parseOutput(body?.choices?.[0]?.message?.content);

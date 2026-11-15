@@ -37,6 +37,17 @@ export class VideoRefusedError extends Error {
   }
 }
 
+// The model can't run any request now: Google says it doesn't exist (retired or renamed)
+// or won't take the key. Waiting won't help, so the request moves on to the next model
+// (models.js), the same as for a busy one.
+export class ModelUnusableError extends Error {
+  constructor(detail) {
+    super('model_unusable');
+    this.name = 'ModelUnusableError';
+    this.detail = detail;
+  }
+}
+
 // Google said the model is overloaded (503). That lasts minutes or more, longer than the
 // quick Workflow retries, so the request moves on to the next model (models.js), and when
 // every model is busy the Workflow waits and tries again (workflow.js).
@@ -110,17 +121,25 @@ function googleReason(status, text) {
   return `Gemini ${status}: ${message}`.slice(0, 500);
 }
 
-function failureFrom(status, text, videoUrl) {
+// Whether a rejected request with a video is about the model or the key, not the video:
+// Google's message then names the model, the key, or the API being off for the project.
+function aboutModelOrKey(status, text, model) {
+  return status === 401 || text.includes(model) || /api[ _-]?key|SERVICE_DISABLED/i.test(text);
+}
+
+function failureFrom(status, text, { model, videoUrl }) {
   if (status === 429) return quotaErrorFrom(text);
   const detail = googleReason(status, text);
   if (status === 503) return new ModelBusyError(detail);
   // A rejected request won't get better by itself, so only a server error is tried again.
   if (status >= 500) return new ImportError('llm_error', { retryable: true, detail });
-  return videoUrl ? new VideoRefusedError() : new ImportError('llm_error', { detail });
+  // Without a video the request is only our prompt and schema, so a 4xx is about the model.
+  if (videoUrl && !aboutModelOrKey(status, text, model)) return new VideoRefusedError();
+  return new ModelUnusableError(detail);
 }
 
 // Sends one request and returns the model's answer as parsed JSON. Throws QuotaError,
-// ModelBusyError, VideoRefusedError, or ImportError (llm_error for other temporary
+// ModelBusyError, ModelUnusableError, VideoRefusedError, or ImportError (llm_error for other temporary
 // problems, bad_result for an answer that can't be read). `videoUrl` is a YouTube link or
 // an uploaded file's uri (then with `videoType`). `logPrompt: false` keeps a prompt that
 // holds the user's own text (a translation) out of the logs.
@@ -154,7 +173,7 @@ export async function callModel({ env, model, prompt, schema, videoUrl, videoTyp
     // Google's error text says why; it never contains the key.
     const text = await response.text().catch(() => '');
     console.log(`LLM call failed: model=${model} status=${response.status}\n${text.slice(0, 2000)}`);
-    throw failureFrom(response.status, text, videoUrl);
+    throw failureFrom(response.status, text, { model, videoUrl });
   }
 
   const interaction = await response.json().catch(() => null);

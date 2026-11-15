@@ -4,7 +4,7 @@
 import { env } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { callFallbackModel } from '../src/import/groq.js';
-import { ModelBusyError, QuotaError } from '../src/import/llm.js';
+import { ModelBusyError, ModelUnusableError, QuotaError } from '../src/import/llm.js';
 import { callChosenModel, quotaDay } from '../src/import/models.js';
 import { handleTranslate } from '../src/translate.js';
 import { insertImport, insertUser } from './helpers.js';
@@ -103,6 +103,12 @@ describe('the fallback model in the model policy', () => {
     const error = await ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm: answering(new ModelBusyError('Groq 503')) }).catch((e) => e);
     expect(error).toBeInstanceOf(ModelBusyError);
     expect(error.detail).toBe('Gemini 503: high demand');
+    expect(await usage(FALLBACK)).toBe(0);
+  });
+
+  it('reports busy, not the fallback’s failure, when the fallback can’t run', async () => {
+    const fallbackLlm = answering(new ModelUnusableError('Groq 404: model not found'));
+    await expect(ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm })).rejects.toBeInstanceOf(ModelBusyError);
     expect(await usage(FALLBACK)).toBe(0);
   });
 
@@ -211,7 +217,8 @@ describe('callFallbackModel: Groq’s request format', () => {
 
   it.each([
     ['JSON the model could not fit to the schema', { error: { code: 'json_validate_failed' } }, 400, { code: 'bad_result', retryable: true }],
-    ['another rejected request', { error: { message: 'model not found' } }, 404, { code: 'llm_error', retryable: false }],
+    ['a model that is gone', { error: { message: 'model not found' } }, 404, { name: 'ModelUnusableError', detail: 'Groq 404: {"error":{"message":"model not found"}}' }],
+    ['a key Groq does not take', { error: { message: 'Invalid API Key' } }, 401, { name: 'ModelUnusableError' }],
     ['a server error', { error: {} }, 500, { code: 'llm_error', retryable: true }],
   ])('fails on %s', async (_, body, status, expected) => {
     reply(body, status);
