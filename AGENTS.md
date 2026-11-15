@@ -28,11 +28,11 @@ resolved. One short line each, linking to the README section with the details.
 - Builds made on Windows log harmless prefetch 404s (`frontend/README.md` → Layout).
   Accepted.
 - PR previews can't exercise the import Workflow: they use the one already deployed to
-  production (`backend/README.md` → Import from a YouTube link). Accepted.
+  production (`backend/README.md` → Import from a link). Accepted.
 - The free-tier model quota is shared by all users: 20 requests a day on each stronger
-  model, 500 on the small one (`backend/README.md` → Import from a YouTube link). Accepted.
+  model, 500 on the small one (`backend/README.md` → Import from a link). Accepted.
 - A few rare import edge cases are left as they are (`backend/README.md` → Import from a
-  YouTube link → Known small gaps).
+  link → Known small gaps).
 - Facebook and Instagram are read as an anonymous visitor, so only public posts work, and
   Meta may block or change this at any time (`backend/README.md` → Facebook and Instagram).
   Not yet checked from Cloudflare's network. Facebook photo and text posts aren't supported.
@@ -53,7 +53,8 @@ resolved. One short line each, linking to the README section with the details.
   recipe); if a video can't be fetched, the text alone is used. Other platforms (TikTok,
   ...) may come later; don't build for them until asked.
 - **Users don't choose a model.** An import tries a fixed list of free models in order
-  and moves on at once from one that is busy or out for the day; a request with no video
+  and moves on at once from one that is busy, out for the day, or can't run (retired, or
+  its key refused); a request with no video
   (a translation, a caption-only import) ends on a **fallback** text model from another
   free provider, if its key is set. A translation goes to the small model first. Which
   model wrote a recipe is stored with it.
@@ -69,12 +70,10 @@ resolved. One short line each, linking to the README section with the details.
   English and Hebrew** (Hebrew renders right-to-left).
 - **Up to 50 users**, each with their **own private folders, recipes, and favorites**
   (nothing is shared between users). Anyone can **sign up** with a username and password
-  (until 50 users exist). One **admin** (the owner, created by hand on production) can
-  **act as any user** to see and manage their data, and deletes users (which deletes all
-  of their data). Login is **username plus a password**, and the session is remembered:
-  after logging in once, a user never sees the login page again on that device unless they
-  log out or the admin deletes them. Changing their own username or password keeps them
-  logged in on every device.
+  (until 50 users exist). Login is **username plus a password**, and the session is
+  remembered: after logging in once, a user never sees the login page again on that device
+  unless they log out. Changing their own username or password keeps them logged in on
+  every device.
 - **Guest mode**: the login screen has "Continue as guest". The app is fully usable, but
   nothing is read from or written to the database; the guest starts empty and loses
   everything on reload. Importing from a link and the AI tools need an account.
@@ -112,7 +111,7 @@ resolved. One short line each, linking to the README section with the details.
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
 | Background jobs | Cloudflare Workflows                         | Imports only; free on this plan                    |
 | LLM       | Google's free-tier LLMs; Groq's free tier as a text-only fallback | An ordered list of import models, a translation model, a fallback and an opt-in best model, all set by config; keys in Worker secrets. Videos are handed to Gemini through its free file store |
-| Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); admin manages users; stays logged in |
+| Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); stays logged in |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-plugin`           |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |
 
@@ -170,7 +169,7 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 | Lint           | (planned)                                    | `npm run lint`    |
 | Build          | n/a                                          | `npm run build` → `out/` |
 | DB             | `npm run db:schema:local` (apply `schema.sql` locally). Owner only, wrangler is otherwise logged out: `npx wrangler login`, `npm run db:pull` (prod → local), `npx wrangler logout`; production schema is applied by the owner | n/a |
-| Deploy         | automatic on merge to `main` (or `npm run deploy`) | (deployed with backend) |
+| Deploy         | only by merging a PR into `main` (Workers Builds); never run `npm run deploy` | (deployed with backend) |
 
 ## Never do these
 
@@ -183,8 +182,9 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 - Fetch a pasted link as it is, or follow a redirect automatically. The Worker fetches
   only URLs it builds from a parsed id, on the site's own hosts, checking every hop
   (`backend/README.md` → Links). No proxies, scraping services, logins or CAPTCHA solvers.
-- Add an API endpoint that skips the login check (only sign-up, login and logout are public), or an
-  admin action that skips the admin check.
+- Add an API endpoint that skips the login check (only sign-up, login and logout are public).
+- Run `npm run deploy` or `wrangler deploy`. Run the app only locally (`npm run dev`);
+  production changes only when the owner merges a PR into `main`.
 - Add a paid service or anything outside the free tiers above.
 
 ## Conventions
@@ -227,8 +227,10 @@ Before every push:
   - `frontend-ui`: UI work in `frontend/`
   - `local-dev`: run and test the app against a local copy of the DB, never production
 - **Worktrees**: each session works in its own git worktree (`git-workflow` skill →
-  Start a task). A new worktree has no `node_modules`, no `.dev.vars` / `.env` and an
-  empty local DB; the skill says how to set it up and how to remove it after the merge.
+  Start a task). A new worktree holds only tracked files: no `node_modules` and an empty
+  local DB. Claude Code and Codex copy the git-ignored files listed in `.worktreeinclude`
+  (`backend/.dev.vars`) into the worktrees they create; one made with `git worktree add`
+  gets none. The skill says how to set it up and how to remove it after the merge.
 - **Claude Code settings**: `.claude/settings.json` (committed) blocks force-pushes,
   pushes to `main`, and reading secret files. Personal overrides go in
   `.claude/settings.local.json` (git-ignored).

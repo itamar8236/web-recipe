@@ -11,7 +11,7 @@ export class ApiError extends Error {
   }
 }
 
-// Called when a data request finds the user logged out (e.g. the admin deleted them),
+// Called when a data request finds the user logged out (the session is gone),
 // so the app can show the login screen.
 let onLoggedOut = () => {};
 export function setLoggedOutHandler(handler) {

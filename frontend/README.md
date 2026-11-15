@@ -18,8 +18,6 @@ UI; it is filled by video import.
 
 ## Layout
 
-Marked (planned) = not built yet.
-
 ```
 frontend/
 ├── app/
@@ -27,7 +25,6 @@ frontend/
 │   ├── manifest.js        # Web app manifest (makes the site installable on Android)
 │   ├── icon.png           # Favicon
 │   ├── page.js            # Home: folders + recipes in the selected folder
-│   ├── admin/page.js      # (planned) Admin: list, add, delete users (/admin)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
@@ -62,31 +59,32 @@ frontend/
 ## Login flow
 
 - `Shell` wraps the app in `AuthProvider` (`components/Auth.js`), which asks the backend
-  once on load who is logged in (`GET /api/auth/me`). Status is `loading`, `anonymous`,
-  `guest` or `user`.
-  - `user` or `guest` -> the app. `anonymous` -> `LoginScreen` shown in place of the page
-    (no `/login` route), so after logging in the user is on the page they opened. If the
-    backend can't be reached, the screen still offers "Continue as guest".
+  once on load who is logged in (`GET /api/auth/me`). Status is `loading`, `error`,
+  `anonymous`, `guest` or `user`.
+  - `user` or `guest` -> the app. `anonymous` (the backend answered 401) -> `LoginScreen`
+    shown in place of the page (no `/login` route), so after logging in the user is on the
+    page they opened.
+  - `error` (any other failure: offline, a server error, or `next dev` with no backend) ->
+    "Could not check whether you are logged in." with the reason, a "Try again" button that
+    asks again, and "Continue as guest". It never shows the login screen, since the user
+    may well be logged in.
 - `LoginScreen`: username and password, a Log in button, a switch to Sign up (same fields),
   and "Continue as guest". A wrong username or password shows one
   generic message (never which one was wrong). The login is remembered by cookie, so users
   see this screen only the first time on a device or after logging out.
 - A thin bar under the header shows "Hello, <username>" (with a person icon; tapping it
   opens "My account") and Log out; a guest sees "Guest"
-  and a Log in button (back to the login screen).
+  and a Log in button (back to the login screen). If Log out fails (e.g. offline), the user
+  stays logged in and a line under the bar says "You are still logged in." with the reason.
 - Every change of who is using the app (log in, sign up, log out, guest) tells `lib/api.js`
   whether this is a guest (`setGuestMode`) and empties the guest's in-memory data, so one
   person's data never shows for the next.
-- A folders/recipes request that answers 401 (e.g. the admin deleted the user) brings back
-  the login screen.
+- A folders/recipes request that answers 401 (the session is gone) brings back the login
+  screen.
 - Auth cookies need the same origin as the API, so test login on the Worker (:8787, after
   `npm run build`); on `next dev` (:3000) there is no backend, so only guest mode works.
-- Planned: `is_admin` shows the "Users" link and `acting_as` the "Acting as" banner.
 
 ## Screens
-
-Built now: Login, Home (with the import dialog and cards), Recipe view, Edit, My account.
-The rest are planned.
 
 1. **Login / Sign up**: described above.
 2. **Home**: folders with recipe counts. On phones only, they are one row of pills that
@@ -140,14 +138,7 @@ The rest are planned.
      returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
      to 5 a day)", is off by default; when that model can't be used the scan goes on with
      the usual models by itself, and nothing asks for approval.
-7. **Users** (admin only): list of users, a form to add one (username and
-   password), and per user an "Act as" button, a "Set password" button and a
-   delete button (the last two with confirmation; deleting a user also deletes all their
-   folders and recipes, and the dialog says so). Shows "N / 50 users".
-   "Act as" opens Home showing that user's folders and recipes; every screen then works
-   on their data, and a banner on every page says "Acting as <name>" with a "Stop"
-   button that returns the admin to their own data.
-8. **My account** (`components/AccountDialog`, a popup): opened by tapping the name in
+7. **My account** (`components/AccountDialog`, a popup): opened by tapping the name in
    the header. Username (filled in) and New password (empty = keep it), then Save, which
    asks "Save the changes to your account?" first. No old password and no typing the new
    one twice (the owner's choice). The user stays logged in everywhere after a
@@ -185,9 +176,13 @@ The rest are planned.
 `logout`), folders (`getFolders`, `createFolder`, `renameFolder`, `deleteFolder`),
 recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setFavorite`, `deleteRecipe`) and imports
 (`getImports`, `startImport`, `retryImport`, `dismissImport`, `rerunRecipe`) and
-`translateRecipe`. For a guest the folder and recipe functions use memory instead, with the
-same checks and error codes as the backend, and the import and translate functions throw
-`import_needs_login` without calling the backend.
+`translateRecipe`. For a guest the folder and recipe functions use memory instead. They
+trim names and lines and drop blank lines like the backend, and make only some of its
+checks, with the same codes: `name_required` (folder, or a recipe with no name in either
+language), `folder_not_empty`, and `not_found` for renaming a missing folder or setting a
+missing recipe's favorite. There are no length limits (`too_long`) and no
+`folder_not_found`; deleting a missing item does nothing, and `getRecipe` returns `null`.
+The import and translate functions throw `import_needs_login` without calling the backend.
 
 - Requests go to the same origin (`/api/...`), so the session cookie is sent without any
   extra setup. There is no API base URL or CORS: test anything that needs the backend on
