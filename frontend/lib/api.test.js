@@ -7,53 +7,52 @@ const content = (name, ingredients = [], steps = []) => ({ name, ingredients, st
 // The in-memory store is the guest mode; logged-in users go to the backend (see below).
 beforeEach(() => api.setGuestMode(true));
 
-const newRecipe = (name, folderId = null) =>
-  api.saveRecipe(null, { folderId, en: content(name), he: content('') });
+const newRecipe = (name) => api.saveRecipe(null, { en: content(name), he: content('') });
 
 describe('guest: starting data', () => {
-  it('starts with no folders and no recipes', async () => {
-    expect(await api.getFolders()).toEqual([]);
+  it('starts with no tags and no recipes', async () => {
+    expect(await api.getTags()).toEqual([]);
     expect(await api.getRecipes()).toEqual([]);
   });
 
   it('forgets everything when someone else starts using the app', async () => {
-    await api.createFolder('Mine');
+    const recipe = await newRecipe('Mine');
+    await api.setRecipeTags(recipe.id, ['Mine']);
     api.setGuestMode(true);
-    expect(await api.getFolders()).toEqual([]);
+    expect(await api.getTags()).toEqual([]);
+    expect(await api.getRecipes()).toEqual([]);
   });
 });
 
 describe('guest: recipes', () => {
-  it('saves a new recipe and trims blank lines', async () => {
-    const folder = await api.createFolder('Breakfast');
+  it('saves a new recipe with no tags and trims blank lines', async () => {
     const saved = await api.saveRecipe(null, {
-      folderId: folder.id,
       en: content(' Pancakes ', ['flour', '  ', ' milk '], ['mix', '']),
       he: content(''),
     });
     const loaded = await api.getRecipe(saved.id);
     expect(loaded.en).toEqual(content('Pancakes', ['flour', 'milk'], ['mix']));
-    expect(loaded.folderId).toBe(folder.id);
+    expect(loaded.tagIds).toEqual([]);
   });
 
   it('accepts a recipe written only in Hebrew', async () => {
-    const saved = await api.saveRecipe(null, { folderId: null, en: content(''), he: content('פנקייק') });
+    const saved = await api.saveRecipe(null, { en: content(''), he: content('פנקייק') });
     expect(saved.he.name).toBe('פנקייק');
   });
 
   it('rejects a recipe with no name in either language', async () => {
-    await expect(api.saveRecipe(null, { folderId: null, en: content(''), he: content('  ') })).rejects.toMatchObject({
+    await expect(api.saveRecipe(null, { en: content(''), he: content('  ') })).rejects.toMatchObject({
       code: 'name_required',
     });
   });
 
-  it('updates an existing recipe', async () => {
-    const folder = await api.createFolder('Dinner');
+  it('updates an existing recipe and keeps its tags', async () => {
     const recipe = await newRecipe('Shakshuka');
-    await api.saveRecipe(recipe.id, { folderId: folder.id, en: content('Green Shakshuka'), he: content('') });
+    const { tags } = await api.setRecipeTags(recipe.id, ['Dinner']);
+    await api.saveRecipe(recipe.id, { en: content('Green Shakshuka'), he: content('') });
     const loaded = await api.getRecipe(recipe.id);
     expect(loaded.en.name).toBe('Green Shakshuka');
-    expect(loaded.folderId).toBe(folder.id);
+    expect(loaded.tagIds).toEqual([tags[0].id]);
   });
 
   it('manual recipes have no source link', async () => {
@@ -64,14 +63,14 @@ describe('guest: recipes', () => {
   it('sets favorite, and edits keep it', async () => {
     const { id } = await newRecipe('Lemon Chicken');
     expect((await api.setFavorite(id, true)).favorite).toBe(true);
-    await api.saveRecipe(id, { folderId: null, en: content('Lemon Chicken v2'), he: content('') });
+    await api.saveRecipe(id, { en: content('Lemon Chicken v2'), he: content('') });
     expect((await api.getRecipe(id)).favorite).toBe(true);
     await api.setFavorite(id, false);
     expect((await api.getRecipe(id)).favorite).toBe(false);
   });
 
   it('new recipes are not favorites', async () => {
-    const saved = await api.saveRecipe(null, { folderId: null, en: content('Toast'), he: content('') });
+    const saved = await api.saveRecipe(null, { en: content('Toast'), he: content('') });
     expect(saved.favorite).toBe(false);
   });
 
@@ -82,32 +81,48 @@ describe('guest: recipes', () => {
   });
 });
 
-describe('guest: folders', () => {
-  it('creates and renames a folder', async () => {
-    const folder = await api.createFolder(' Soups ');
-    await api.renameFolder(folder.id, 'Hot soups');
-    const folders = await api.getFolders();
-    expect(folders.find((f) => f.id === folder.id).name).toBe('Hot soups');
+describe('guest: tags', () => {
+  it('gives a recipe several tags, creating the new ones', async () => {
+    const recipe = await newRecipe('Soup');
+    const { recipe: tagged, tags } = await api.setRecipeTags(recipe.id, [' Soups ', 'Quick']);
+    expect(tags.map((tag) => tag.name)).toEqual(['Soups', 'Quick']);
+    expect(tagged.tagIds).toEqual(tags.map((tag) => tag.id));
+    expect(await api.getTags()).toEqual(tags);
   });
 
-  it('rejects an empty folder name', async () => {
-    await expect(api.createFolder('   ')).rejects.toMatchObject({ code: 'name_required' });
+  it('reuses an existing tag whatever the case', async () => {
+    const first = await newRecipe('Soup');
+    const second = await newRecipe('Stew');
+    const { tags } = await api.setRecipeTags(first.id, ['Dinner']);
+    const { recipe, tags: after } = await api.setRecipeTags(second.id, ['dinner', 'DINNER']);
+    expect(after).toEqual(tags);
+    expect(recipe.tagIds).toEqual([tags[0].id]);
   });
 
-  it('refuses to delete a folder that still has recipes', async () => {
-    const folder = await api.createFolder('Breakfast');
-    const recipe = await newRecipe('Shakshuka', folder.id);
-    await expect(api.deleteFolder(folder.id)).rejects.toMatchObject({ code: 'folder_not_empty' });
-    expect((await api.getFolders()).some((f) => f.id === folder.id)).toBe(true);
-    expect((await api.getRecipe(recipe.id)).folderId).toBe(folder.id);
+  it('drops a tag when its last recipe drops it or is deleted', async () => {
+    const first = await newRecipe('Soup');
+    const second = await newRecipe('Stew');
+    await api.setRecipeTags(first.id, ['Dinner', 'Quick']);
+    await api.setRecipeTags(second.id, ['Dinner']);
+
+    const { tags } = await api.setRecipeTags(first.id, []);
+    expect(tags.map((tag) => tag.name)).toEqual(['Dinner']);
+    await api.deleteRecipe(second.id);
+    expect(await api.getTags()).toEqual([]);
   });
 
-  it('deletes an empty folder', async () => {
-    const folder = await api.createFolder('Breakfast');
-    const recipe = await newRecipe('Shakshuka', folder.id);
-    await api.deleteRecipe(recipe.id);
-    await api.deleteFolder(folder.id);
-    expect((await api.getFolders()).some((f) => f.id === folder.id)).toBe(false);
+  it('renames a tag, but not to an empty name or the name of another one', async () => {
+    const recipe = await newRecipe('Soup');
+    const { tags } = await api.setRecipeTags(recipe.id, ['Soups', 'Quick']);
+    await api.renameTag(tags[0].id, ' Hot soups ');
+    expect((await api.getTags())[0].name).toBe('Hot soups');
+    await expect(api.renameTag(tags[0].id, '   ')).rejects.toMatchObject({ code: 'name_required' });
+    await expect(api.renameTag(tags[1].id, 'hot soups')).rejects.toMatchObject({ code: 'tag_exists' });
+  });
+
+  it('rejects an empty tag name', async () => {
+    const recipe = await newRecipe('Soup');
+    await expect(api.setRecipeTags(recipe.id, ['  '])).rejects.toMatchObject({ code: 'name_required' });
   });
 });
 
@@ -169,10 +184,10 @@ describe('logged in: data goes to the backend', () => {
     api.setLoggedOutHandler(() => {});
   });
 
-  it('loads folders and recipes', async () => {
-    mockFetch(200, { folders: [{ id: 1, name: 'Soups' }] });
-    expect(await api.getFolders()).toEqual([{ id: 1, name: 'Soups' }]);
-    expect(lastCall()).toMatchObject({ path: '/api/folders', method: 'GET' });
+  it('loads tags and recipes', async () => {
+    mockFetch(200, { tags: [{ id: 1, name: 'Soups' }] });
+    expect(await api.getTags()).toEqual([{ id: 1, name: 'Soups' }]);
+    expect(lastCall()).toMatchObject({ path: '/api/tags', method: 'GET' });
 
     mockFetch(200, { recipes: [] });
     expect(await api.getRecipes()).toEqual([]);
@@ -180,7 +195,7 @@ describe('logged in: data goes to the backend', () => {
   });
 
   it('creates a recipe with POST and edits it with PUT', async () => {
-    const data = { folderId: 3, en: content('Tea'), he: content('') };
+    const data = { en: content('Tea'), he: content('') };
     mockFetch(201, { recipe: { id: 7 } });
     expect((await api.saveRecipe(null, data)).id).toBe(7);
     expect(lastCall()).toEqual({ path: '/api/recipes', method: 'POST', body: data });
@@ -190,18 +205,19 @@ describe('logged in: data goes to the backend', () => {
     expect(lastCall()).toMatchObject({ path: '/api/recipes/7', method: 'PUT' });
   });
 
-  it('saves folders and favorites', async () => {
-    mockFetch(200, { folder: { id: 2, name: 'New' } });
-    await api.renameFolder(2, 'New');
-    expect(lastCall()).toEqual({ path: '/api/folders/2', method: 'PUT', body: { name: 'New' } });
+  it('saves tags and favorites', async () => {
+    mockFetch(200, { tag: { id: 2, name: 'New' } });
+    await api.renameTag(2, 'New');
+    expect(lastCall()).toEqual({ path: '/api/tags/2', method: 'PUT', body: { name: 'New' } });
+
+    mockFetch(200, { recipe: { id: 7, tagIds: [2] }, tags: [{ id: 2, name: 'New' }] });
+    const answer = await api.setRecipeTags(7, ['New']);
+    expect(answer.tags).toEqual([{ id: 2, name: 'New' }]);
+    expect(lastCall()).toEqual({ path: '/api/recipes/7/tags', method: 'PUT', body: { tags: ['New'] } });
 
     mockFetch(200, { recipe: { id: 7, favorite: true } });
     await api.setFavorite(7, true);
     expect(lastCall()).toEqual({ path: '/api/recipes/7/favorite', method: 'PUT', body: { favorite: true } });
-
-    mockFetch(200, { ok: true });
-    await api.deleteFolder(2);
-    expect(lastCall()).toMatchObject({ path: '/api/folders/2', method: 'DELETE' });
   });
 
   it('updates the account with PUT /api/auth/me', async () => {
@@ -216,8 +232,8 @@ describe('logged in: data goes to the backend', () => {
   });
 
   it('passes on backend errors with their code', async () => {
-    mockFetch(409, { error: 'folder_not_empty' });
-    await expect(api.deleteFolder(2)).rejects.toMatchObject({ code: 'folder_not_empty' });
+    mockFetch(409, { error: 'tag_exists' });
+    await expect(api.renameTag(2, 'Soups')).rejects.toMatchObject({ code: 'tag_exists' });
   });
 
   it('reports a lost session so the app can show the login screen', async () => {

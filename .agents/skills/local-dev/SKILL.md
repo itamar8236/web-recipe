@@ -38,7 +38,7 @@ local copy, so agents can't reach production even by accident.
 ## 1. Check the local copy
 From `backend/`:
 ```
-npx wrangler d1 execute recipes-db --local --command="SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM folders) AS folders, (SELECT COUNT(*) FROM recipes) AS recipes"
+npx wrangler d1 execute recipes-db --local --command="SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM tags) AS tags, (SELECT COUNT(*) FROM recipes) AS recipes"
 ```
 If it fails with `no such table`, or every count is 0, the local copy is empty. Stop and
 tell the owner, giving them these commands to run themselves from `backend/`:
@@ -59,6 +59,10 @@ database (then run `npm run db:schema:local` and add test data through the app).
    http://localhost:8787 using the local database.
 3. Optional hot reload for UI-only work: in `frontend/`, `npm run dev` (http://localhost:3000).
    It has no backend, so only guest mode works there; test login on :8787.
+4. **Always stop every server you started when you're done testing**, before reporting
+   or ending your turn, also when the testing failed. The owner tests on the same ports
+   (:8787 and :3000), so a server left running blocks them or shows them your worktree's
+   code. Check that nothing is still listening on those ports.
 
 ## Local data
 The local DB is yours to test with: add, edit, or delete anything. Only the owner's

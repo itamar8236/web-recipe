@@ -852,7 +852,6 @@ describe('import endpoints', () => {
       const { cookie, userId } = await signUp();
       const imported = await insertRecipe(userId);
       const created = await post(cookie, '/api/recipes', {
-        folderId: null,
         en: { name: 'Manual', ingredients: [], steps: [] },
         he: { name: '', ingredients: [], steps: [] },
       });

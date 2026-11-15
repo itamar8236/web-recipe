@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import FolderBar from '@/components/FolderBar';
+import TagBar from '@/components/TagBar';
 import ImportCards, { useImports } from '@/components/ImportCards';
 import ImportDialog from '@/components/ImportDialog';
 import RecipeCard from '@/components/RecipeCard';
@@ -16,7 +16,7 @@ import styles from './page.module.css';
 
 export default function HomePage() {
   const { t } = useLanguage();
-  const [folders, setFolders] = useState(null); // null while loading
+  const [tags, setTags] = useState(null); // null while loading
   const [recipes, setRecipes] = useState([]);
   const [loadError, setLoadError] = useState(null);
   const [actionError, setActionError] = useState(null);
@@ -36,9 +36,9 @@ export default function HomePage() {
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      const [loadedFolders, loadedRecipes] = await Promise.all([api.getFolders(), api.getRecipes()]);
+      const [loadedTags, loadedRecipes] = await Promise.all([api.getTags(), api.getRecipes()]);
       setRecipes(loadedRecipes);
-      setFolders(loadedFolders);
+      setTags(loadedTags);
     } catch (error) {
       setLoadError(error);
     }
@@ -58,22 +58,22 @@ export default function HomePage() {
       </div>
     );
   }
-  if (!folders) return <p>{t.loading}</p>;
+  if (!tags) return <p>{t.loading}</p>;
 
   const visible = recipes.filter((r) => {
     if (favoritesOnly && !r.favorite) return false;
     if (!matchesSearch(r, query)) return false;
     if (selected === 'all') return true;
-    return r.folderId === (selected === 'none' ? null : selected);
+    return selected === 'none' ? r.tagIds.length === 0 : r.tagIds.includes(selected);
   });
   // A message about a failed tap is stale once the user does something else.
   const select = (value) => {
     setActionError(null);
     setSelected(value);
   };
-  const folderName = (id) => folders.find((f) => f.id === id)?.name;
-  const viewTitle = selected === 'all' ? t.allRecipes : selected === 'none' ? t.noFolder : folderName(selected);
-  const newRecipeHref = typeof selected === 'number' ? `/recipe/edit?folder=${selected}` : '/recipe/edit';
+  const tagName = (id) => tags.find((tag) => tag.id === id)?.name;
+  const viewTitle = selected === 'all' ? t.allRecipes : selected === 'none' ? t.noTags : tagName(selected);
+  const newRecipeHref = '/recipe/edit';
   const [emptyTitle, emptyHint] = query.trim()
     ? [t.emptySearch, t.emptySearchHint]
     : favoritesOnly
@@ -106,25 +106,15 @@ export default function HomePage() {
     <div className={styles.layout}>
       <aside className={styles.side}>
         <SearchBox value={query} onChange={setQuery} />
-        <FolderBar
-          folders={folders}
+        <TagBar
+          tags={tags}
           recipes={recipes}
           selected={selected}
           onSelect={select}
-          onCreate={async (name) => {
-            const folder = await api.createFolder(name);
-            setFolders((list) => [...list, folder]);
-            select(folder.id);
-          }}
           onRename={async (id, name) => {
-            const folder = await api.renameFolder(id, name);
-            setFolders((list) => list.map((f) => (f.id === id ? folder : f)));
+            const renamed = await api.renameTag(id, name);
+            setTags((list) => list.map((tag) => (tag.id === id ? renamed : tag)));
             setActionError(null);
-          }}
-          onDelete={async (id) => {
-            await api.deleteFolder(id);
-            setFolders((list) => list.filter((f) => f.id !== id));
-            select('all');
           }}
         />
       </aside>
@@ -175,7 +165,7 @@ export default function HomePage() {
               <li key={recipe.id}>
                 <RecipeCard
                   recipe={recipe}
-                  folderName={selected === 'all' ? folderName(recipe.folderId) : null}
+                  tagNames={recipe.tagIds.map(tagName).filter(Boolean)}
                   saving={savingFavorite.has(recipe.id)}
                   onToggleFavorite={() => toggleFavorite(recipe)}
                 />

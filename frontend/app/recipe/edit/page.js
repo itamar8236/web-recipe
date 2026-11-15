@@ -17,8 +17,6 @@ function RecipeForm() {
   const params = useSearchParams();
   const id = params.get('id') ? Number(params.get('id')) : null;
 
-  const [folders, setFolders] = useState([]);
-  const [folderId, setFolderId] = useState(params.get('folder') ? Number(params.get('folder')) : null);
   const [form, setForm] = useState({ en: blankText, he: blankText });
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'missing' | 'error'
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
@@ -30,24 +28,19 @@ function RecipeForm() {
   const loggedIn = useAuth().status === 'user';
   // A translation saves when it arrives, so it needs what the user has typed by then,
   // not what the form held when they tapped Translate.
-  const latest = useRef({ form, folderId });
+  const latest = useRef(form);
   useEffect(() => {
-    latest.current = { form, folderId };
-  }, [form, folderId]);
+    latest.current = form;
+  }, [form]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [loadedFolders, recipe] = await Promise.all([
-          api.getFolders(),
-          id === null ? null : api.getRecipe(id),
-        ]);
+        const recipe = id === null ? null : await api.getRecipe(id);
         if (cancelled) return;
-        setFolders(loadedFolders);
         if (id !== null && !recipe) return setStatus('missing');
         if (recipe) {
-          setFolderId(recipe.folderId);
           setLink(recipe.link);
           setForm({ en: toText(recipe.en), he: toText(recipe.he) });
         }
@@ -103,12 +96,11 @@ function RecipeForm() {
   }
 
   // Saves and opens the recipe view; on failure stays here with the form as it is.
-  async function save(values, folder) {
+  async function save(values) {
     setSaving(true);
     setError('');
     try {
       const saved = await api.saveRecipe(id, {
-        folderId: folder,
         en: toContent(values.en),
         he: toContent(values.he),
       });
@@ -121,14 +113,14 @@ function RecipeForm() {
 
   function submit(event) {
     event.preventDefault();
-    save(form, folderId);
+    save(form);
   }
 
   // A finished translation is saved at once, with the user's unsaved edits.
   async function saveTranslation(into, content) {
-    const next = withTranslation(latest.current.form, into, content);
+    const next = withTranslation(latest.current, into, content);
     setForm(next);
-    await save(next, latest.current.folderId);
+    await save(next);
   }
 
   // The form edits only the app's current language; the other language is kept as is,
@@ -160,16 +152,6 @@ function RecipeForm() {
           {t.instructions} <span className="hint">({t.instructionsHint})</span>
         </label>
         <textarea id="steps" className="field" value={current.steps} onChange={(e) => update('steps', e.target.value)} />
-      </div>
-
-      <div>
-        <label className="label" htmlFor="folder">{t.folder}</label>
-        <select id="folder" className="field" value={folderId ?? ''} onChange={(e) => setFolderId(e.target.value ? Number(e.target.value) : null)}>
-          <option value="">{t.noFolder}</option>
-          {folders.map((folder) => (
-            <option key={folder.id} value={folder.id}>{folder.name}</option>
-          ))}
-        </select>
       </div>
 
       {loggedIn && (

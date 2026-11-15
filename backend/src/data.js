@@ -1,9 +1,10 @@
-// Folders and recipes. Every query is filtered by `userId`, the user the session works
+// Tags and recipes. Every query is filtered by `userId`, the user the session works
 // on (see getSessionUser), so nobody can read or change another user's data.
 
 import { fail, json, readJson } from './http.js';
 
-const MAX_FOLDER_NAME = 100;
+const MAX_TAG_NAME = 100;
+const MAX_TAGS = 20; // per recipe
 const MAX_RECIPE_NAME = 200;
 const MAX_LINES = 200; // ingredients or steps per language
 const MAX_LINE = 2000;
@@ -19,7 +20,7 @@ function toRecipe(row) {
   });
   return {
     id: row.id,
-    folderId: row.folder_id,
+    tagIds: JSON.parse(row.tag_ids).sort((a, b) => a - b),
     favorite: row.is_favorite === 1,
     link: row.source_url ?? '',
     sourceModel: row.source_model,
@@ -28,16 +29,33 @@ function toRecipe(row) {
   };
 }
 
-const RECIPE_COLUMNS = `id, folder_id, is_favorite, source_url, source_model,
-  name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he`;
+// tag_ids is a subquery, so the same list works in a SELECT and in RETURNING.
+const RECIPE_COLUMNS = `id, is_favorite, source_url, source_model,
+  name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
+  (SELECT json_group_array(tag_id) FROM recipe_tags WHERE recipe_id = recipes.id) AS tag_ids`;
 
-// Returns { value } for a valid folder name, or { error } with the code to send.
-function readFolderName(body) {
-  if (typeof body?.name !== 'string') return { error: 'invalid_request' };
-  const name = body.name.trim();
+// Returns { value } for a valid tag name, or { error } with the code to send.
+function readTagName(value) {
+  if (typeof value !== 'string') return { error: 'invalid_request' };
+  const name = value.trim();
   if (!name) return { error: 'name_required' };
-  if (name.length > MAX_FOLDER_NAME) return { error: 'too_long' };
+  if (name.length > MAX_TAG_NAME) return { error: 'too_long' };
   return { value: name };
+}
+
+// Reads { tags: [name] }: trimmed names, with a name repeated in another case kept once
+// (the same rule as the tags table, which compares ASCII letters without case).
+function readTagNames(body) {
+  if (!Array.isArray(body?.tags)) return { error: 'invalid_request' };
+  const names = new Map();
+  for (const tag of body.tags) {
+    const name = readTagName(tag);
+    if (name.error) return name;
+    const key = name.value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+    if (!names.has(key)) names.set(key, name.value);
+  }
+  if (names.size > MAX_TAGS) return { error: 'too_long' };
+  return { value: [...names.values()] };
 }
 
 // Trims every line and drops blank ones, as the user meant "one per line".
@@ -61,26 +79,18 @@ export function readContent(value) {
   return { value: { name, ingredients, steps } };
 }
 
-// Reads { folderId, en, he } and checks the folder belongs to the user.
-async function readRecipe(request, env, userId) {
+// Reads { en, he }. Tags are not part of it: they have their own endpoint.
+async function readRecipe(request) {
   const body = await readJson(request);
   if (!body) return { error: 'invalid_request' };
 
-  const recipe = { folderId: body.folderId ?? null };
+  const recipe = {};
   for (const lang of LANGS) {
     const content = readContent(body[lang]);
     if (content.error) return content;
     recipe[lang] = content.value;
   }
   if (!recipe.en.name && !recipe.he.name) return { error: 'name_required' };
-
-  if (recipe.folderId !== null) {
-    if (!Number.isInteger(recipe.folderId)) return { error: 'invalid_request' };
-    const folder = await env.DB.prepare('SELECT id FROM folders WHERE id = ? AND user_id = ?')
-      .bind(recipe.folderId, userId)
-      .first();
-    if (!folder) return { error: 'folder_not_found' };
-  }
   return { value: recipe };
 }
 
@@ -92,50 +102,69 @@ export const contentValues = (recipe) =>
     JSON.stringify(recipe[lang].steps),
   ]);
 
-// ---- Folders ----
+// ---- Tags ----
 
-async function listFolders(env, userId) {
-  const { results } = await env.DB.prepare('SELECT id, name FROM folders WHERE user_id = ? ORDER BY id')
-    .bind(userId)
-    .all();
-  return json({ folders: results });
+const selectTags = (env, userId) =>
+  env.DB.prepare('SELECT id, name FROM tags WHERE user_id = ? ORDER BY id').bind(userId);
+
+// A tag exists only while a recipe has it, so this runs with every change that can leave
+// one unused.
+const deleteUnusedTags = (env, userId) =>
+  env.DB.prepare(
+    'DELETE FROM tags WHERE user_id = ? AND NOT EXISTS (SELECT 1 FROM recipe_tags WHERE tag_id = tags.id)',
+  ).bind(userId);
+
+async function listTags(env, userId) {
+  const { results } = await selectTags(env, userId).all();
+  return json({ tags: results });
 }
 
-async function createFolder(request, env, userId) {
-  const name = readFolderName(await readJson(request));
+// Renaming to another tag's name is refused rather than merging the two by surprise.
+async function renameTag(request, env, userId, id) {
+  const name = readTagName((await readJson(request))?.name);
   if (name.error) return fail(400, name.error);
-  const folder = await env.DB.prepare('INSERT INTO folders (user_id, name) VALUES (?, ?) RETURNING id, name')
-    .bind(userId, name.value)
-    .first();
-  return json({ folder }, 201);
-}
-
-async function renameFolder(request, env, userId, id) {
-  const name = readFolderName(await readJson(request));
-  if (name.error) return fail(400, name.error);
-  const folder = await env.DB.prepare(
-    'UPDATE folders SET name = ? WHERE id = ? AND user_id = ? RETURNING id, name',
+  const tag = await env.DB.prepare(
+    `UPDATE tags SET name = ?1 WHERE id = ?2 AND user_id = ?3
+       AND NOT EXISTS (SELECT 1 FROM tags AS other WHERE other.user_id = ?3 AND other.name = ?1 AND other.id <> ?2)
+     RETURNING id, name`,
   )
     .bind(name.value, id, userId)
     .first();
-  return folder ? json({ folder }) : fail(404, 'not_found');
+  if (tag) return json({ tag });
+  const exists = await env.DB.prepare('SELECT id FROM tags WHERE id = ? AND user_id = ?').bind(id, userId).first();
+  return exists ? fail(409, 'tag_exists') : fail(404, 'not_found');
 }
 
-// Only an empty folder can be deleted, so recipes are never lost or moved by accident.
-// The NOT EXISTS keeps that true even if a recipe is added at the same moment.
-async function deleteFolder(env, userId, id) {
-  const deleted = await env.DB.prepare(
-    `DELETE FROM folders WHERE id = ? AND user_id = ?
-       AND NOT EXISTS (SELECT 1 FROM recipes WHERE folder_id = folders.id)
-     RETURNING id`,
-  )
-    .bind(id, userId)
-    .first();
-  if (deleted) return json({ ok: true });
-  const exists = await env.DB.prepare('SELECT id FROM folders WHERE id = ? AND user_id = ?')
-    .bind(id, userId)
-    .first();
-  return exists ? fail(409, 'folder_not_empty') : fail(404, 'not_found');
+// Sets the recipe's tags to exactly the given names, in one batch: a name the user
+// already has (in any case) is that tag, a new name becomes a new tag, and a tag left on
+// no recipe is deleted. Answers with the recipe and the user's tags after the change.
+async function setRecipeTags(request, env, userId, id) {
+  const names = readTagNames(await readJson(request));
+  if (names.error) return fail(400, names.error);
+  const owned = await env.DB.prepare('SELECT id FROM recipes WHERE id = ? AND user_id = ?').bind(id, userId).first();
+  if (!owned) return fail(404, 'not_found');
+
+  const results = await env.DB.batch([
+    ...names.value.map((name) =>
+      env.DB.prepare('INSERT INTO tags (user_id, name) VALUES (?, ?) ON CONFLICT DO NOTHING').bind(userId, name),
+    ),
+    env.DB.prepare(
+      'DELETE FROM recipe_tags WHERE recipe_id IN (SELECT id FROM recipes WHERE id = ? AND user_id = ?)',
+    ).bind(id, userId),
+    ...names.value.map((name) =>
+      env.DB.prepare(
+        `INSERT INTO recipe_tags (recipe_id, tag_id)
+         SELECT recipes.id, tags.id FROM recipes, tags
+         WHERE recipes.id = ?1 AND recipes.user_id = ?2 AND tags.user_id = ?2 AND tags.name = ?3`,
+      ).bind(id, userId, name),
+    ),
+    deleteUnusedTags(env, userId),
+    env.DB.prepare(`SELECT ${RECIPE_COLUMNS} FROM recipes WHERE id = ? AND user_id = ?`).bind(id, userId),
+    selectTags(env, userId),
+  ]);
+  const [recipe] = results.at(-2).results;
+  if (!recipe) return fail(404, 'not_found'); // deleted while this ran
+  return json({ recipe: toRecipe(recipe), tags: results.at(-1).results });
 }
 
 // ---- Recipes ----
@@ -157,39 +186,39 @@ async function getRecipe(env, userId, id) {
 }
 
 async function createRecipe(request, env, userId) {
-  const recipe = await readRecipe(request, env, userId);
+  const recipe = await readRecipe(request);
   if (recipe.error) return fail(400, recipe.error);
   const now = Date.now();
   const row = await env.DB.prepare(
-    `INSERT INTO recipes (user_id, folder_id,
+    `INSERT INTO recipes (user_id,
        name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      RETURNING ${RECIPE_COLUMNS}`,
   )
-    .bind(userId, recipe.value.folderId, ...contentValues(recipe.value), now, now)
+    .bind(userId, ...contentValues(recipe.value), now, now)
     .first();
   return json({ recipe: toRecipe(row) }, 201);
 }
 
-// Editing a language the LLM filled in makes it the user's own text, so its
-// machine-translated label is cleared (see schema.sql).
+// Replaces the text only: the tags, favorite and link stay. Editing a language the LLM
+// filled in makes it the user's own text, so its machine-translated label is cleared
+// (see schema.sql).
 async function updateRecipe(request, env, userId, id) {
-  const recipe = await readRecipe(request, env, userId);
+  const recipe = await readRecipe(request);
   if (recipe.error) return fail(400, recipe.error);
   const row = await env.DB.prepare(
     `UPDATE recipes SET
        machine_translated_lang = CASE
-         WHEN machine_translated_lang = 'en' AND (name_en <> ?3 OR ingredients_en <> ?4 OR steps_en <> ?5) THEN NULL
-         WHEN machine_translated_lang = 'he' AND (name_he <> ?6 OR ingredients_he <> ?7 OR steps_he <> ?8) THEN NULL
+         WHEN machine_translated_lang = 'en' AND (name_en <> ?2 OR ingredients_en <> ?3 OR steps_en <> ?4) THEN NULL
+         WHEN machine_translated_lang = 'he' AND (name_he <> ?5 OR ingredients_he <> ?6 OR steps_he <> ?7) THEN NULL
          ELSE machine_translated_lang END,
-       folder_id = ?2,
-       name_en = ?3, ingredients_en = ?4, steps_en = ?5,
-       name_he = ?6, ingredients_he = ?7, steps_he = ?8,
-       updated_at = ?9
-     WHERE id = ?10 AND user_id = ?1
+       name_en = ?2, ingredients_en = ?3, steps_en = ?4,
+       name_he = ?5, ingredients_he = ?6, steps_he = ?7,
+       updated_at = ?8
+     WHERE id = ?9 AND user_id = ?1
      RETURNING ${RECIPE_COLUMNS}`,
   )
-    .bind(userId, recipe.value.folderId, ...contentValues(recipe.value), Date.now(), id)
+    .bind(userId, ...contentValues(recipe.value), Date.now(), id)
     .first();
   return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');
 }
@@ -206,31 +235,32 @@ async function setFavorite(request, env, userId, id) {
   return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');
 }
 
+// Its tags go with it, and a tag that was only on this recipe is deleted too.
 async function deleteRecipe(env, userId, id) {
-  const deleted = await env.DB.prepare('DELETE FROM recipes WHERE id = ? AND user_id = ? RETURNING id')
-    .bind(id, userId)
-    .first();
-  return deleted ? json({ ok: true }) : fail(404, 'not_found');
+  const [deleted] = await env.DB.batch([
+    env.DB.prepare('DELETE FROM recipes WHERE id = ? AND user_id = ? RETURNING id').bind(id, userId),
+    deleteUnusedTags(env, userId),
+  ]);
+  return deleted.results.length ? json({ ok: true }) : fail(404, 'not_found');
 }
 
-// Routes /api/folders[/:id] and /api/recipes[/:id[/favorite]]. Returns null when the
+// Routes /api/tags[/:id] and /api/recipes[/:id[/favorite|/tags]]. Returns null when the
 // path isn't one of them.
 export function handleData(request, env, path, userId) {
-  const match = path.match(/^\/api\/(folders|recipes)(?:\/(\d+)(\/favorite)?)?$/);
-  if (!match || (match[1] === 'folders' && match[3])) return null;
-  const [, kind, idText, favorite] = match;
+  const match = path.match(/^\/api\/(tags|recipes)(?:\/(\d+)(?:\/(favorite|tags))?)?$/);
+  if (!match || (match[1] === 'tags' && match[3])) return null;
+  const [, kind, idText, part] = match;
   const id = idText === undefined ? null : Number(idText);
   const method = request.method;
 
-  if (kind === 'folders') {
-    if (id === null && method === 'GET') return listFolders(env, userId);
-    if (id === null && method === 'POST') return createFolder(request, env, userId);
-    if (id !== null && method === 'PUT') return renameFolder(request, env, userId, id);
-    if (id !== null && method === 'DELETE') return deleteFolder(env, userId, id);
-  }
-  if (kind === 'recipes' && favorite) {
+  if (kind === 'tags') {
+    if (id === null && method === 'GET') return listTags(env, userId);
+    if (id !== null && method === 'PUT') return renameTag(request, env, userId, id);
+  } else if (part === 'favorite') {
     if (method === 'PUT') return setFavorite(request, env, userId, id);
-  } else if (kind === 'recipes') {
+  } else if (part === 'tags') {
+    if (method === 'PUT') return setRecipeTags(request, env, userId, id);
+  } else {
     if (id === null && method === 'GET') return listRecipes(env, userId);
     if (id === null && method === 'POST') return createRecipe(request, env, userId);
     if (id !== null && method === 'GET') return getRecipe(env, userId, id);

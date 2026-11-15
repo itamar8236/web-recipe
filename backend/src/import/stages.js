@@ -209,10 +209,10 @@ async function extractRecipe(job, deps) {
 function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
   return [
     env.DB.prepare(
-      `INSERT INTO recipes (user_id, folder_id, platform, source_url, source_model,
+      `INSERT INTO recipes (user_id, platform, source_url, source_model,
          name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
          machine_translated_lang, created_at, updated_at)
-       SELECT ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
        WHERE EXISTS (SELECT 1 FROM llm_requests ${isCurrent})`,
     ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, now, now, job.id, job.attempt),
     env.DB.prepare(
@@ -223,7 +223,7 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
   ];
 }
 
-// A re-run replaces only the text and which model wrote it, so the folder and favorite
+// A re-run replaces only the text and which model wrote it, so the tags and favorite
 // stay. If the recipe was deleted meanwhile nothing is recreated and the card goes away.
 function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) {
   const sameRecipe = 'id = ? AND user_id = ? AND source_url = ?';

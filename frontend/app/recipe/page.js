@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/components/Language';
 import HeartButton from '@/components/HeartButton';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import RecipeTags from '@/components/RecipeTags';
 import { errorMessage, pickLanguage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
@@ -15,7 +16,7 @@ function RecipeView() {
   const router = useRouter();
   const id = Number(useSearchParams().get('id'));
   const [recipe, setRecipe] = useState(undefined); // undefined = loading, null = missing
-  const [folderName, setFolderName] = useState('');
+  const [tags, setTags] = useState([]); // every tag the user has
   const [loadError, setLoadError] = useState(null);
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -26,10 +27,10 @@ function RecipeView() {
     let cancelled = false;
     async function load() {
       try {
-        const [found, folders] = await Promise.all([api.getRecipe(id), api.getFolders()]);
+        const [found, loadedTags] = await Promise.all([api.getRecipe(id), api.getTags()]);
         if (cancelled) return;
         setRecipe(found);
-        setFolderName(folders.find((f) => f.id === found?.folderId)?.name ?? '');
+        setTags(loadedTags);
       } catch (err) {
         if (!cancelled) setLoadError(err);
       }
@@ -116,7 +117,6 @@ function RecipeView() {
           <HeartButton active={recipe.favorite} disabled={busy !== null} onClick={toggleFavorite} />
         </div>
         <div className={styles.metaRow}>
-          {folderName && <span className={styles.folder}>{folderName}</span>}
           <p className={styles.sourceRow}>
             {t.sourceLink}:{' '}
             {recipe.link ? (
@@ -129,6 +129,16 @@ function RecipeView() {
           </p>
         </div>
       </header>
+
+      <RecipeTags
+        recipe={recipe}
+        allTags={tags}
+        onChange={(saved) => {
+          // Only the tags are taken, so a heart tapped meanwhile isn't undone.
+          setRecipe((current) => ({ ...current, tagIds: saved.recipe.tagIds }));
+          setTags(saved.tags);
+        }}
+      />
 
       {!content.translated && <p className={styles.notice}>{t.notTranslated}</p>}
 

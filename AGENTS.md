@@ -8,10 +8,10 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 
 ## Status
 
-Built so far: the recipe browsing UI (folders, recipes, favorites, English/Hebrew, manual
+Built so far: the recipe browsing UI (tags, recipes, favorites, English/Hebrew, manual
 add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, editing your own username and
-password, the folders/recipes API, so a
+password, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
 a recipe from a YouTube, Facebook or Instagram link in the background with a Cloudflare
 Workflow, plus two AI tools on the edit form (translate a recipe, scan its video again). The sections
@@ -43,10 +43,12 @@ resolved. One short line each, linking to the README section with the details.
 
 **web-recipe** is a small personal web app for a handful of people to keep their recipes.
 
-- Recipes live in **folders** (a flat list) the user creates, renames, and deletes.
+- A recipe has any number of **tags** (none, one or more), and Home filters by tag. Tags
+  are added and removed on the recipe's own page (an existing tag or a new one), without
+  opening the edit form. A tag no recipe has is deleted by itself; a tag can be renamed.
 - Add, edit, and delete recipes **manually**, or **from a link**: the backend sends the
   post's text and video to Google's free LLMs in the background, so it keeps going after
-  the user leaves the app, and **saves the recipe by itself**, with no folder. The user can
+  the user leaves the app, and **saves the recipe by itself**, with no tags. The user can
   edit or delete it afterwards. Supported now: **YouTube**, **Facebook** (videos and reels)
   and **Instagram** (reels, and photo posts by their caption), public posts only. Only
   short videos are sent to the LLM (a longer one still works when its text holds the
@@ -68,7 +70,7 @@ resolved. One short line each, linking to the README section with the details.
   the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
-- **Up to 50 users**, each with their **own private folders, recipes, and favorites**
+- **Up to 50 users**, each with their **own private tags, recipes, and favorites**
   (nothing is shared between users). Anyone can **sign up** with a username and password
   (until 50 users exist). Login is **username plus a password**, and the session is
   remembered: after logging in once, a user never sees the login page again on that device
@@ -124,7 +126,7 @@ Browser
    │
    ▼
 One Cloudflare Worker  (backend/)
-├── /api/*   → JSON API (login required) ──► D1 (users, folders, recipes, imports)
+├── /api/*   → JSON API (login required) ──► D1 (users, tags, recipes, imports)
 │                                        └──► Workflow (import, in the background)
 │                                               ├──► YouTube Data API (video details)
 │                                               ├──► Facebook / Instagram (public post page, video file)

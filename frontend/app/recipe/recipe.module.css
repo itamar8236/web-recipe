@@ -50,15 +50,6 @@
   gap: 8px 14px;
 }
 
-.folder {
-  padding: 2px 14px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-dark);
-  font-weight: 600;
-  font-size: 15px;
-}
-
 .sourceRow {
   margin: 0;
   color: var(--ink-soft);
