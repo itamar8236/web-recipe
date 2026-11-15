@@ -1,5 +1,6 @@
 // Tags and recipes. Every query is filtered by `userId`, the user the session works
-// on (see getSessionUser), so nobody can read or change another user's data.
+// on (see getSessionUser), so nobody can change another user's data. Reading other users'
+// public recipes is only in browse.js.
 
 import { fail, json, readJson } from './http.js';
 
@@ -12,7 +13,7 @@ const MAX_LINE = 2000;
 const LANGS = ['en', 'he'];
 
 // A recipe as the frontend uses it: both languages side by side, `link` '' when manual.
-function toRecipe(row) {
+export function toRecipe(row) {
   const content = (lang) => ({
     name: row[`name_${lang}`],
     ingredients: JSON.parse(row[`ingredients_${lang}`]),
@@ -22,6 +23,7 @@ function toRecipe(row) {
     id: row.id,
     tagIds: JSON.parse(row.tag_ids).sort((a, b) => a - b),
     favorite: row.is_favorite === 1,
+    public: row.is_public === 1,
     link: row.source_url ?? '',
     sourceModel: row.source_model,
     en: content('en'),
@@ -30,7 +32,7 @@ function toRecipe(row) {
 }
 
 // tag_ids is a subquery, so the same list works in a SELECT and in RETURNING.
-const RECIPE_COLUMNS = `id, is_favorite, source_url, source_model,
+export const RECIPE_COLUMNS = `id, is_favorite, is_public, source_url, source_model,
   name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
   (SELECT json_group_array(tag_id) FROM recipe_tags WHERE recipe_id = recipes.id) AS tag_ids`;
 
@@ -104,12 +106,12 @@ export const contentValues = (recipe) =>
 
 // ---- Tags ----
 
-const selectTags = (env, userId) =>
+export const selectTags = (env, userId) =>
   env.DB.prepare('SELECT id, name FROM tags WHERE user_id = ? ORDER BY id').bind(userId);
 
 // A tag exists only while a recipe has it, so this runs with every change that can leave
 // one unused.
-const deleteUnusedTags = (env, userId) =>
+export const deleteUnusedTags = (env, userId) =>
   env.DB.prepare(
     'DELETE FROM tags WHERE user_id = ? AND NOT EXISTS (SELECT 1 FROM recipe_tags WHERE tag_id = tags.id)',
   ).bind(userId);
@@ -185,14 +187,15 @@ async function getRecipe(env, userId, id) {
   return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');
 }
 
+// A new recipe starts public or private as the user's default says.
 async function createRecipe(request, env, userId) {
   const recipe = await readRecipe(request);
   if (recipe.error) return fail(400, recipe.error);
   const now = Date.now();
   const row = await env.DB.prepare(
-    `INSERT INTO recipes (user_id,
+    `INSERT INTO recipes (user_id, is_public,
        name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     VALUES (?1, (SELECT default_public FROM users WHERE id = ?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
      RETURNING ${RECIPE_COLUMNS}`,
   )
     .bind(userId, ...contentValues(recipe.value), now, now)
@@ -200,7 +203,7 @@ async function createRecipe(request, env, userId) {
   return json({ recipe: toRecipe(row) }, 201);
 }
 
-// Replaces the text only: the tags, favorite and link stay. Editing a language the LLM
+// Replaces the text only: the tags, favorite, link and public flag stay. Editing a language the LLM
 // filled in makes it the user's own text, so its machine-translated label is cleared
 // (see schema.sql).
 async function updateRecipe(request, env, userId, id) {
@@ -235,6 +238,18 @@ async function setFavorite(request, env, userId, id) {
   return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');
 }
 
+// Public (others can browse and copy it) or private. Set, not toggled, like the favorite.
+async function setPublic(request, env, userId, id) {
+  const body = await readJson(request);
+  if (typeof body?.public !== 'boolean') return fail(400, 'invalid_request');
+  const row = await env.DB.prepare(
+    `UPDATE recipes SET is_public = ? WHERE id = ? AND user_id = ? RETURNING ${RECIPE_COLUMNS}`,
+  )
+    .bind(body.public ? 1 : 0, id, userId)
+    .first();
+  return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');
+}
+
 // Its tags go with it, and a tag that was only on this recipe is deleted too.
 async function deleteRecipe(env, userId, id) {
   const [deleted] = await env.DB.batch([
@@ -244,10 +259,10 @@ async function deleteRecipe(env, userId, id) {
   return deleted.results.length ? json({ ok: true }) : fail(404, 'not_found');
 }
 
-// Routes /api/tags[/:id] and /api/recipes[/:id[/favorite|/tags]]. Returns null when the
+// Routes /api/tags[/:id] and /api/recipes[/:id[/favorite|/public|/tags]]. Returns null when the
 // path isn't one of them.
 export function handleData(request, env, path, userId) {
-  const match = path.match(/^\/api\/(tags|recipes)(?:\/(\d+)(?:\/(favorite|tags))?)?$/);
+  const match = path.match(/^\/api\/(tags|recipes)(?:\/(\d+)(?:\/(favorite|public|tags))?)?$/);
   if (!match || (match[1] === 'tags' && match[3])) return null;
   const [, kind, idText, part] = match;
   const id = idText === undefined ? null : Number(idText);
@@ -258,6 +273,8 @@ export function handleData(request, env, path, userId) {
     if (id !== null && method === 'PUT') return renameTag(request, env, userId, id);
   } else if (part === 'favorite') {
     if (method === 'PUT') return setFavorite(request, env, userId, id);
+  } else if (part === 'public') {
+    if (method === 'PUT') return setPublic(request, env, userId, id);
   } else if (part === 'tags') {
     if (method === 'PUT') return setRecipeTags(request, env, userId, id);
   } else {

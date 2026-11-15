@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import ModeTabs from '@/components/ModeTabs';
 import TagBar from '@/components/TagBar';
 import ImportCards, { useImports } from '@/components/ImportCards';
 import ImportDialog from '@/components/ImportDialog';
@@ -103,6 +104,7 @@ export default function HomePage() {
   }
 
   return (
+    <ModeTabs current="mine" show={canImport}>
     <div className={styles.layout}>
       <aside className={styles.side}>
         <SearchBox value={query} onChange={setQuery} />
@@ -189,5 +191,6 @@ export default function HomePage() {
         />
       )}
     </div>
+    </ModeTabs>
   );
 }

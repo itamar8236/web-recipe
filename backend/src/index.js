@@ -1,3 +1,4 @@
+import { handleBrowse } from './browse.js';
 import { handleData } from './data.js';
 import { handleImports } from './imports.js';
 import { handleTranslate } from './translate.js';
@@ -14,9 +15,18 @@ const MAX_PASSWORD = 200;
 const usernameValid = (username) => username.length >= 1 && username.length <= 50;
 const passwordValid = (password) => password.length >= MIN_PASSWORD && password.length <= MAX_PASSWORD;
 
+// defaultPublic and copyTags are the user's own defaults (see schema.sql).
 function publicUser(user) {
-  return { id: user.id, username: user.username, is_admin: user.is_admin === 1 };
+  return {
+    id: user.id,
+    username: user.username,
+    is_admin: user.is_admin === 1,
+    defaultPublic: user.default_public === 1,
+    copyTags: user.copy_tags === 1,
+  };
 }
+
+const USER_COLUMNS = 'id, username, is_admin, default_public, copy_tags';
 
 // Reads { username, password } from the body. Returns null if it isn't a JSON object of
 // strings (readJson also refuses a body another site's plain HTML form could send, so no
@@ -36,7 +46,7 @@ async function login(request, env) {
   if (!credentials) return fail(400, 'invalid_request');
 
   const user = await env.DB.prepare(
-    'SELECT id, username, is_admin, password_hash FROM users WHERE username = ?',
+    `SELECT ${USER_COLUMNS}, password_hash FROM users WHERE username = ?`,
   )
     .bind(credentials.username)
     .first();
@@ -63,7 +73,7 @@ async function register(request, env) {
     row = await env.DB.prepare(
       `INSERT INTO users (username, password_hash, created_at)
        SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM users) < ?
-       RETURNING id, username, is_admin`,
+       RETURNING ${USER_COLUMNS}`,
     )
       .bind(username, await hashPassword(password), Date.now(), MAX_USERS)
       .first();
@@ -76,15 +86,21 @@ async function register(request, env) {
   return json({ user: publicUser(row) }, 201, await startSession(request, env, row.id));
 }
 
-// Changes the logged-in user's own username and/or password. The old password is not
+// Changes the logged-in user's own username, password and/or defaults. The old password is not
 // asked for, and every existing login stays (the owner chose both): the session already
 // proves who this is, and the new details are only needed for the next login. It always
 // changes the real user, never the one the admin is acting as.
 async function updateMe(request, env, user) {
   const body = await readJson(request);
   if (!body) return fail(400, 'invalid_request');
-  const { username, password } = body;
-  if (username === undefined && password === undefined) return fail(400, 'invalid_request');
+  const { username, password, defaultPublic, copyTags } = body;
+  if ([username, password, defaultPublic, copyTags].every((value) => value === undefined)) {
+    return fail(400, 'invalid_request');
+  }
+  for (const flag of [defaultPublic, copyTags]) {
+    if (flag !== undefined && typeof flag !== 'boolean') return fail(400, 'invalid_request');
+  }
+  const flagValue = (flag) => (flag === undefined ? null : Number(flag));
   if (username !== undefined && typeof username !== 'string') return fail(400, 'invalid_request');
   if (password !== undefined && typeof password !== 'string') return fail(400, 'invalid_request');
   const newName = username?.trim();
@@ -94,10 +110,17 @@ async function updateMe(request, env, user) {
   let row;
   try {
     row = await env.DB.prepare(
-      `UPDATE users SET username = COALESCE(?, username), password_hash = COALESCE(?, password_hash)
-        WHERE id = ? RETURNING id, username, is_admin`,
+      `UPDATE users SET username = COALESCE(?, username), password_hash = COALESCE(?, password_hash),
+              default_public = COALESCE(?, default_public), copy_tags = COALESCE(?, copy_tags)
+        WHERE id = ? RETURNING ${USER_COLUMNS}`,
     )
-      .bind(newName ?? null, password === undefined ? null : await hashPassword(password), user.id)
+      .bind(
+        newName ?? null,
+        password === undefined ? null : await hashPassword(password),
+        flagValue(defaultPublic),
+        flagValue(copyTags),
+        user.id,
+      )
       .first();
   } catch (error) {
     if (String(error.message).includes('UNIQUE')) return fail(409, 'username_taken');
@@ -128,6 +151,7 @@ async function handleApi(request, env, path) {
     handleImports(request, env, path, user.data_user_id) ??
     handleTranslate(request, env, path, user.data_user_id) ??
     handleData(request, env, path, user.data_user_id) ??
+    handleBrowse(request, env, path, user.data_user_id) ??
     fail(404, 'not_found')
   );
 }

@@ -44,7 +44,8 @@ async function dataRequest(path, method, body) {
   }
 }
 
-// The logged-in user ({ id, username, is_admin }), or null when nobody is logged in.
+// The logged-in user ({ id, username, is_admin, defaultPublic, copyTags }), or null when
+// nobody is logged in.
 export async function getMe() {
   try {
     return (await request('/api/auth/me')).user;
@@ -62,8 +63,9 @@ export async function register(username, password) {
   return (await request('/api/auth/register', 'POST', { username, password })).user;
 }
 
-// Changes the logged-in user's username and/or password; `changes` holds only what
-// changes. Returns the updated user.
+// Changes the logged-in user's username, password and/or defaults (`defaultPublic`: new
+// recipes start public; `copyTags`: saving someone else's recipe copies its tags too);
+// `changes` holds only what changes. Returns the updated user.
 export async function updateAccount(changes) {
   return (await dataRequest('/api/auth/me', 'PUT', changes)).user;
 }
@@ -153,7 +155,9 @@ export async function setRecipeTags(id, names) {
 }
 
 // ---- Recipes ----
-// A recipe is { id, tagIds, favorite, link, en: {name, ingredients[], steps[]}, he: {...} }.
+// A recipe is { id, tagIds, favorite, public, link, en: {name, ingredients[], steps[]}, he: {...} }.
+// `public` means other users can see and copy it; a guest's recipes are never sent anywhere,
+// so theirs is always true and means nothing.
 
 export async function getRecipes() {
   if (guest) return copy(memory.recipes);
@@ -182,7 +186,7 @@ export async function saveRecipe(id, data) {
     if (!fields.en.name && !fields.he.name) throw new ApiError(400, 'name_required');
     const existing = findRecipe(id);
     if (existing) Object.assign(existing, fields);
-    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', favorite: false, ...fields });
+    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', favorite: false, public: true, ...fields });
     return copy(existing ?? memory.recipes.at(-1));
   }
   const body = { en: data.en, he: data.he };
@@ -202,6 +206,17 @@ export async function setFavorite(id, favorite) {
   return (await dataRequest(`/api/recipes/${id}/favorite`, 'PUT', { favorite })).recipe;
 }
 
+// Public (other users can see and copy it) or private. Returns the updated recipe.
+export async function setRecipePublic(id, isPublic) {
+  if (guest) {
+    const recipe = findRecipe(id);
+    if (!recipe) throw new ApiError(404, 'not_found');
+    recipe.public = isPublic;
+    return copy(recipe);
+  }
+  return (await dataRequest(`/api/recipes/${id}/public`, 'PUT', { public: isPublic })).recipe;
+}
+
 export async function deleteRecipe(id) {
   if (guest) {
     memory.recipes = memory.recipes.filter((r) => r.id !== id);
@@ -209,6 +224,26 @@ export async function deleteRecipe(id) {
     return;
   }
   await dataRequest(`/api/recipes/${id}`, 'DELETE');
+}
+
+// ---- Browse: other users' public recipes ----
+// A browsed recipe is { id, owner, tags: [name], link, en, he }: who saved it and its tags
+// by name. It needs an account, like everything that reads the database.
+
+// A number for a new shuffle of the feed (the backend's order depends on it).
+export const newBrowseSeed = () => 1 + Math.floor(Math.random() * 1000000);
+
+// One page of the feed, in the order `seed` gives. `after` is the `next` of the page
+// before (null for the first). Returns { recipes, next }, `next` null on the last page.
+export async function getBrowse(seed, after = null) {
+  if (guest) throw new ApiError(403, 'browse_needs_login');
+  return dataRequest(`/api/browse?seed=${seed}${after ? `&after=${after}` : ''}`);
+}
+
+// Saves the user's own copy of a browsed recipe. Returns the new recipe.
+export async function copyRecipe(id) {
+  if (guest) throw new ApiError(403, 'browse_needs_login');
+  return (await dataRequest(`/api/browse/${id}/copy`, 'POST', {})).recipe;
 }
 
 // ---- Imports from a video link ----

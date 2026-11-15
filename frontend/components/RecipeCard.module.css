@@ -53,6 +53,14 @@
   font-weight: 600;
 }
 
+.private {
+  padding: 2px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 @media (min-width: 760px) {
   .heart {
     top: 8px;

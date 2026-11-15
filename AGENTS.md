@@ -10,8 +10,8 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 
 Built so far: the recipe browsing UI (tags, recipes, favorites, English/Hebrew, manual
 add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
-log-out with remembered sessions plus a guest mode, editing your own username and
-password, the tags/recipes API, so a
+log-out with remembered sessions plus a guest mode, editing your own username,
+password and defaults, browsing and copying other users' public recipes, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
 a recipe from a YouTube, Facebook or Instagram link in the background with a Cloudflare
 Workflow, plus two AI tools on the edit form (translate a recipe, scan its video again). The sections
@@ -36,6 +36,8 @@ resolved. One short line each, linking to the README section with the details.
 - Facebook and Instagram are read as an anonymous visitor, so only public posts work, and
   Meta may block or change this at any time (`backend/README.md` → Facebook and Instagram).
   Not yet checked from Cloudflare's network. Facebook photo and text posts aren't supported.
+- Browse shows a recipe the user already saved, and other users' public copies of one
+  recipe, since a copy keeps no link to its original (`backend/README.md` → Browse API). Accepted.
 - `ConfirmDialog` opens with focus on its confirm button, not Cancel (`frontend/README.md` →
   UX rules).
 
@@ -70,15 +72,23 @@ resolved. One short line each, linking to the README section with the details.
   the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
-- **Up to 50 users**, each with their **own private tags, recipes, and favorites**
-  (nothing is shared between users). Anyone can **sign up** with a username and password
+- **Up to 50 users**, each with their **own tags, recipes, and favorites**. Nobody can
+  change another user's data. Each recipe is **public or private**: other users can see a
+  public one in Browse and copy it, and a private one is seen only by its owner. Anyone can **sign up** with a username and password
   (until 50 users exist). Login is **username plus a password**, and the session is
   remembered: after logging in once, a user never sees the login page again on that device
   unless they log out. Changing their own username or password keeps them logged in on
   every device.
+- **Browse**: a logged-in user can switch from "My recipes" to other users' public
+  recipes. They show in a **random order**, a few at a time, with more loading as the
+  user scrolls. Each shows **who saved it and its tags**, and one tap saves an **identical
+  copy** as the user's own recipe (then theirs to edit; the original never changes).
+- **Two defaults per user**, in "My account", both on for every old and new user: **new
+  recipes are public**, and **a copy from Browse brings the recipe's tags** (as the
+  user's own tags).
 - **Guest mode**: the login screen has "Continue as guest". The app is fully usable, but
   nothing is read from or written to the database; the guest starts empty and loses
-  everything on reload. Importing from a link and the AI tools need an account.
+  everything on reload. Importing from a link, the AI tools and Browse need an account.
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not

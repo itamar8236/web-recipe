@@ -15,6 +15,7 @@ export default function RecipeCard({ recipe, tagNames, saving, onToggleFavorite 
       <Link href={`/recipe?id=${recipe.id}`} className={styles.card}>
         <h2 className={styles.name}>{content.name}</h2>
         <p className={styles.meta}>
+          {recipe.public === false && <span className={styles.private}>🔒 {t.privateLabel}</span>}
           {tagNames.map((name) => <span key={name} className={styles.tag}>{name}</span>)}
           <span>{t.ingredients}: {content.ingredients.length}</span>
         </p>

@@ -61,6 +61,33 @@
   font-weight: 600;
 }
 
+.visibility {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.visibilityText {
+  flex: 1 1 200px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 16px;
+}
+
+.visibilityButton {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding-inline: 16px;
+  font-size: 16px;
+}
+
 .notice {
   margin: 0;
   padding: 10px 14px;

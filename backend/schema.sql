@@ -38,6 +38,9 @@
 -- rows exist, and a login matches the username plus the password.
 -- password_hash keeps the PBKDF2 iterations and salt inside the string, so iterations can
 -- be raised later and old hashes still verify.
+-- default_public and copy_tags are the user's own defaults, changed in "My account":
+-- whether a recipe they add starts public (others can browse and copy it) or private, and
+-- whether copying someone else's recipe also copies its tags. Both start as yes.
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY,
   username      TEXT    NOT NULL UNIQUE COLLATE NOCASE
@@ -45,6 +48,8 @@ CREATE TABLE IF NOT EXISTS users (
   is_admin      INTEGER NOT NULL DEFAULT 0 CHECK (is_admin IN (0, 1)),
   -- The prefix check rejects a plaintext password stored here by mistake.
   password_hash TEXT    NOT NULL CHECK (password_hash LIKE 'pbkdf2-sha256$%$%$%'),
+  default_public INTEGER NOT NULL DEFAULT 1 CHECK (default_public IN (0, 1)),
+  copy_tags     INTEGER NOT NULL DEFAULT 1 CHECK (copy_tags IN (0, 1)),
   created_at    INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER))
 );
 
@@ -118,8 +123,11 @@ END;
 -- platform is 'manual' or the site an import came from ('youtube', 'facebook',
 -- 'instagram'). It has no list CHECK, so adding a site needs no table rebuild; the backend
 -- only ever writes the name of one of its own adapters.
--- is_favorite is a plain column because only the owner ever sees a recipe, so "my
--- favorite" and "favorite" are the same thing.
+-- is_favorite is a plain column because a favorite is the owner's own mark: other users
+-- who browse a public recipe never see or change it.
+-- is_public says other users may see the recipe in Browse and copy it. Only the owner can
+-- ever change the recipe itself. A copy saved from Browse is a plain recipe of its new
+-- owner: nothing links it to the one it was copied from.
 -- source_model is the LLM that produced an imported recipe (NULL for manual recipes).
 -- machine_translated_lang names the language an import's model filled in as a translation
 -- of the post's own language. Only the backend reads it (the API doesn't return it); it is
@@ -128,6 +136,7 @@ CREATE TABLE IF NOT EXISTS recipes (
   id             INTEGER PRIMARY KEY,
   user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   is_favorite    INTEGER NOT NULL DEFAULT 0 CHECK (is_favorite IN (0, 1)),
+  is_public      INTEGER NOT NULL DEFAULT 1 CHECK (is_public IN (0, 1)),
   platform       TEXT    NOT NULL DEFAULT 'manual',
   source_url     TEXT,
   source_model   TEXT,
