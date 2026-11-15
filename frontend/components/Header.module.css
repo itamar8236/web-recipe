@@ -131,3 +131,9 @@
   stroke-width: 2;
   stroke-linecap: round;
 }
+
+.barError {
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 0 16px 8px;
+}

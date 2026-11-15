@@ -5,18 +5,15 @@ JSON API, stores data in Cloudflare D1, handles login, calls Google's free LLMs 
 YouTube, Facebook and Instagram links into recipes, and serves the frontend's static build. Read the root
 `AGENTS.md` first.
 
-"Current state", the API tables and "Import from a YouTube link" describe what exists; the
-other sections after them describe what the backend must do once built. Record new files, schema and endpoints
-here in the same PR that adds them.
+Record new files, schema and endpoints here in the same PR that adds them.
 
 ## Current state
 
 The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
-everything else is the static build from `../frontend/out`, served by Cloudflare. The auth
-API, the folders/recipes API, the import from a link and translation below exist; the admin
-endpoints don't yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
-`frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
-automatically through Workers Builds (root directory `/`), which builds with
+everything else is the static build from `../frontend/out`, served by Cloudflare. Run it
+locally with `npm run dev` (port 8787, after `npm run build` in `frontend/`). Never run
+`npm run deploy` (`wrangler deploy`): production is deployed only by merging a PR into
+`main`, through Workers Builds (root directory `/`), which builds with
 `cd frontend && npm install && npm run build` and then:
 
 - on `main`: `cd backend && npm install && npx wrangler deploy` (production).
@@ -53,13 +50,13 @@ session except the three public auth endpoints; unknown paths are 404 when logge
 `user` is `{ id, username, is_admin }`. Cookies (both HttpOnly, SameSite=Lax, 10 years,
 `Secure` on https): `device` (random id, kept across logouts) and `session` (random
 secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
-device. Not built yet: login rate limiting, the admin endpoints.
+device. Not built yet: login rate limiting.
 
 ## Folders and recipes API
 
-All need a session (401 `not_logged_in` otherwise) and work only on the data of the user
-the session acts for (`COALESCE(sessions.acting_as_user_id, sessions.user_id)`, so admin
-impersonation will just work once it can be started). Another user's folder or recipe
+All need a session (401 `not_logged_in` otherwise) and work only on the logged-in user's
+data (the queries read `COALESCE(sessions.acting_as_user_id, sessions.user_id)`, and
+nothing sets `acting_as_user_id`, so it is always the session's user). Another user's folder or recipe
 answers 404, exactly like one that doesn't exist. Bodies must be JSON with
 `Content-Type: application/json` (400 `invalid_request` otherwise). A path that exists
 with the wrong method answers 405 `method_not_allowed`.
@@ -82,8 +79,9 @@ with the wrong method answers 405 `method_not_allowed`.
 manual recipes), `sourceModel` is the LLM that produced it (`null` for manual recipes) and
 `folderId` is `null` for "No folder". The backend trims names and
 lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ingredients
-or steps per language, 2000 chars per line. Editing a language the LLM filled in clears
-`machine_translated_lang`.
+or steps per language, 2000 chars per line. The table also keeps
+`machine_translated_lang` (which language an import's model filled in, as a translation),
+and editing that language clears it; the API never returns it.
 
 ## Import API
 
@@ -139,19 +137,11 @@ Needs a session like the rest. `from` is `'en'` or `'he'`, `content` is
 recipe being edited (omit for one not saved yet). There is no model choice; a `model`
 field from an older page is ignored. See [Translation](#translation).
 
-The sections below describe what the backend must do once built, except "Import from a
-YouTube link", which exists.
-
 ## Data
 
-- **Users**: up to 50. The owner is the only admin.
+- **Users**: up to 50.
 - **Every user has their own private folders and recipes.** No other user sees or
-  changes them, and every query is filtered by the user the session acts for.
-- **Admin impersonation**: the admin can "act as" any user and then sees and changes
-  that user's folders and recipes exactly as they would, until tapping "Stop". It is
-  stored on the admin's session (`sessions.acting_as_user_id`), so it doesn't affect the
-  user's own devices, and the database refuses it for anyone but the admin.
-- **Deleting a user deletes everything of theirs**: sessions, folders, and recipes.
+  changes them, and every query is filtered by the logged-in user.
 - **Folders**: a flat list per user, created, renamed, and deleted (only when empty).
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
   and Hebrew** so either version can be edited. A recipe sits in one of its owner's
@@ -199,29 +189,19 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
 - Passwords are never stored or logged in plain text: only a salted PBKDF2-SHA256 hash
   (WebCrypto, built into Workers), stored with its iterations and salt so the cost can
   be raised later.
-- Anyone can sign up (`/api/auth/register`) while fewer than 50 users exist. Only the admin
-  deletes users (planned). The first admin is created by hand on production (see the top
-  of `schema.sql`). Users change their own username and password
-  (`PUT /api/auth/me`), without typing the old password: the owner chose that, since the
-  session already proves who it is. It always changes the real logged-in user, even while
-  the admin is acting as someone else.
+- Anyone can sign up (`/api/auth/register`) while fewer than 50 users exist. Users change
+  their own username and password (`PUT /api/auth/me`), without typing the old password:
+  the owner chose that, since the session already proves who it is.
 - Changing your own username or password keeps every login you already have (on all
   devices); the new details are needed only for the next login.
 - After a successful login the user stays logged in on that device and doesn't see the
-  login page again, unless they log out or the admin deletes
-  them. Logins don't expire.
+  login page again, unless they log out. Logins don't expire.
 - **One session row per device**: the first login on a browser gives it a long-lived
   device id cookie (kept across logouts). Logging in again on that device replaces its
   row instead of adding one, so rows grow only with new devices. Logging out deletes it.
-- Deleting a user logs them out everywhere right away.
-- Every API endpoint requires a logged-in user, except sign-up, login and logout. User management and
-  starting or stopping impersonation require the admin. While impersonating, recipe and
-  folder endpoints use the impersonated user; user management still checks the real
-  user (the admin), and the admin can't change the user's password while acting as them.
+- Every API endpoint requires a logged-in user, except sign-up, login and logout.
 
-## Import from a YouTube link
-
-(The heading is kept for the links that point here; it covers all three sites.)
+## Import from a link
 
 Users paste a link and go back to the video, and a normal request stops when they leave, so
 imports run in a **Cloudflare Workflow**. The recipe is written once, complete, with no
@@ -266,7 +246,9 @@ already has that recipe the card fails with `already_imported`, and if the same 
 already being imported (the unique index) the newer row dismisses itself. A share link that
 leads to something that isn't a video or post fails with `link_unsupported`.
 
-**Facebook and Instagram.** Both are read the way an anonymous visitor's browser reads a
+### Facebook and Instagram
+
+Both are read the way an anonymous visitor's browser reads a
 public post: one page request with the headers a browser sends (Facebook answers 400
 without them), no account, cookies, tokens, proxies or scraping services. The post's data
 is in `<script type="application/json">` blocks; only the one or two blocks that mention
@@ -284,6 +266,8 @@ by a fixed path, because the layout differs between a reel page and a watch page
   differently (a login wall or a block), which shows as `login_required` or
   `source_blocked` with the reason in `error_detail` and in the logs. Meta can also change
   its pages at any time; `scripts/e2e-links.mjs` is the check.
+
+### Video, models and failures
 
 **Video.** A video is sent if it's public and at most `IMPORT_MAX_VIDEO_MINUTES` (3); one
 of unknown length is not sent. Gemini reads a YouTube video from its link. A Facebook or
@@ -303,8 +287,8 @@ first. Everything from the site is sent as data, and everything the model return
 untrusted and is validated before it's stored.
 
 **Models.** Users choose nothing by default; `models.js` tries models in a fixed order and
-moves on **at once** from one that is busy (503), hit a short rate limit, or is out for the
-day. All of it is config (`wrangler.jsonc`), so changing a model, the order or a limit
+moves on **at once** from one that is busy (503), hit a short rate limit, is out for the
+day, or can't run (below). All of it is config (`wrangler.jsonc`), so changing a model, the order or a limit
 needs no code change:
 
 | Setting | Value | Used for |
@@ -322,6 +306,15 @@ needs no code change:
 - **The fallback model** can't watch a video, so a request with one never reaches it. It
   is off until `GROQ_API_KEY` is set. Groq's free limit when checked was 1,000 requests and
   200,000 tokens a day, 8,000 tokens a minute.
+- **A model that can't run** (`ModelUnusableError`): Google or Groq rejected the request
+  with a 4xx other than 429 that is about the model or the key, such as a retired or renamed
+  model (404) or a key that isn't accepted (400/401/403). The failure is logged, its
+  request is given back to the shared count, and the next model is tried; a best model
+  that can't run still uses up one of the user's 5, like any try that reached Google. A
+  request with no video is only our prompt, so any such 4xx counts. With a video, a 4xx
+  counts only when Google's message names the model, the key, or the API being off
+  (`SERVICE_DISABLED`), or it is a 401; any other is the video being refused
+  (`VideoRefusedError`), and the stage asks again without it (see Failures).
 - **Which model answered** is stored on the recipe (`source_model`) and on the request
   (`llm_requests.model`).
 - When tested on the same six links (2026-11-14), `gemini-3.6-flash` and
@@ -341,9 +334,9 @@ choice (`state.bestChosen`) holds through Workflow retries, busy waits and a Ret
 **Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
 way to ask how many requests are left, so `llm_usage` counts them: every real call first
 reserves one, in one atomic statement, up to the model's limit in `LLM_DAILY_LIMITS`. A
-failed call still counts, because Google may have counted it, except a 503 or a short rate
-limit: Google says a 503 is "unrelated to your quota", so its request is given back to this
-shared count (not to the user's 5, see above). Some users report Google counts them anyway;
+failed call still counts, because Google may have counted it, except a 503, a short rate
+limit, or a model that can't run: Google says a 503 is "unrelated to your quota", and a
+rejected request is never served, so its request is given back to this shared count (not to the user's 5, see above). Some users report Google counts them anyway;
 if so, Google's per-day 429 below sets the count right. A 429 naming a per-day quota sets
 the model's count to the limit, which alone keeps it unused until the reset. Any other 429
 (a per-minute limit) is treated like a busy model; nothing is remembered, so the next
@@ -366,7 +359,8 @@ in `error_detail` (never sent to the browser).
 | Every model it could use is busy (503) | `llm_error` | yes, see below | yes |
 | Other 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
 | Invalid output | `bad_result` | yes, 3 tries per stage | yes |
-| Every model it could use is out for the day | `quota` | no | yes |
+| Every model it could use is out for the day (some may also have been unable to run) | `quota` | no | yes |
+| No model it could use can run (all retired or key refused) | `llm_error` | no | yes |
 | Stuck for 30 minutes | `timed_out` | no | yes |
 
 Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
@@ -407,7 +401,20 @@ says the limits aren't guaranteed. PR previews
 can't exercise any of this: a preview's binding uses the Workflow already deployed to
 production, and gives `workflow.not_found` before the first deploy.
 
-**Known small gaps**, all rare and harmless:
+**Logging.** `llm.js` logs each Gemini request (the model, the video link and the full
+prompt) and each failure (the status and Google's error text), never the key. Import prompts
+hold only our instructions and a public video description. A translation's prompt holds the
+user's own recipe, so it is never logged (`logPrompt: false`). Production keeps the logs for 3
+days (Workers Logs, `observability` in `wrangler.jsonc`), and `npx wrangler tail` shows
+them live. A failed import also keeps the reason in `llm_requests.error_detail`.
+
+**Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
+request. Real imports run locally on the dev keys in `.dev.vars`, which use a test quota;
+agents don't ask for the best model unless the owner says so (`local-dev` skill).
+
+### Known small gaps
+
+All rare and harmless:
 
 - "Scan the video again" still shows while that scan is running; tapping it answers
   `not_rerunnable`.
@@ -422,17 +429,6 @@ production, and gives `workflow.not_found` before the first deploy.
   it starts, even if the fallback model could have read its text.
 - A scan that asked for the best model doesn't say when another model answered instead;
   the recipe's `source_model` shows it.
-
-**Logging.** `llm.js` logs each Gemini request (the model, the video link and the full
-prompt) and each failure (the status and Google's error text), never the key. Import prompts
-hold only our instructions and a public video description. A translation's prompt holds the
-user's own recipe, so it is never logged (`logPrompt: false`). Production keeps the logs for 3
-days (Workers Logs, `observability` in `wrangler.jsonc`), and `npx wrangler tail` shows
-them live. A failed import also keeps the reason in `llm_requests.error_detail`.
-
-**Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
-request. Real imports run locally on the dev keys in `.dev.vars`, which use a test quota;
-agents don't ask for the best model unless the owner says so (`local-dev` skill).
 
 ## Translation
 
@@ -451,8 +447,9 @@ endpoint never writes a recipe). It works for any recipe, manual ones too, but n
 - There is no model choice and no per-user limit. A translation takes one request from
   the shared daily count (`llm_usage`) of the model that answers: the translation models
   in order (`LLM_TRANSLATE_MODELS`), then the fallback model.
-- Nothing waits, since the user is waiting: a busy or used-up model is skipped at once.
-  Only every model being busy (`model_busy`) or out (`quota`) fails.
+- Nothing waits, since the user is waiting: a busy, used-up or unusable model is skipped
+  at once. Only every model being busy (`model_busy`), out (`quota`), or unable to run
+  (`llm_error`) fails.
 - The answer is untrusted: it must pass the same checks as a recipe's text, and must keep
   each part (name, ingredients, steps) the original had, or it's `bad_result`.
 
