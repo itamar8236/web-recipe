@@ -211,10 +211,10 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
     env.DB.prepare(
       `INSERT INTO recipes (user_id, platform, source_url, source_model,
          name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
-         machine_translated_lang, created_at, updated_at)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         machine_translated_lang, created_at, updated_at, is_public)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT default_public FROM users WHERE id = ?)
        WHERE EXISTS (SELECT 1 FROM llm_requests ${isCurrent})`,
-    ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, now, now, job.id, job.attempt),
+    ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, now, now, job.user_id, job.id, job.attempt),
     env.DB.prepare(
       `UPDATE llm_requests SET status = 'done', state = '{}', model = ?, updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE user_id = ? AND source_url = ? ORDER BY id DESC LIMIT 1)

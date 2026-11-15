@@ -755,9 +755,21 @@ describe('the Workflow, end to end', () => {
     const after = await reload(row);
     expect(after).toMatchObject({ status: 'done', title: 'Shakshuka video', error: null, used_best: 0 });
     const recipe = await env.DB.prepare('SELECT * FROM recipes WHERE id = ?').bind(after.recipe_id).first();
-    expect(recipe).toMatchObject({ name_en: 'Shakshuka', source_url: VIDEO_URL, source_model: FIRST });
+    expect(recipe).toMatchObject({ name_en: 'Shakshuka', source_url: VIDEO_URL, source_model: FIRST, is_public: 1 });
     expect(calls('youtube/v3')).toHaveLength(1);
     expect(calls('generativelanguage')).toHaveLength(1);
+  });
+
+  it('saves the recipe as private when that is the user’s default', async () => {
+    fakeGoogle();
+    const row = await newImport();
+    await env.DB.prepare('UPDATE users SET default_public = 0 WHERE id = ?').bind(row.user_id).run();
+    await runWorkflow(row);
+
+    const recipe = await env.DB.prepare('SELECT is_public FROM recipes WHERE id = ?')
+      .bind((await reload(row)).recipe_id)
+      .first();
+    expect(recipe.is_public).toBe(0);
   });
 
   it('marks a permanent failure and does not retry it', async () => {

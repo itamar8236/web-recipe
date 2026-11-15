@@ -22,7 +22,8 @@ locally with `npm run dev` (port 8787, after `npm run build` in `frontend/`). Ne
   (see [Database](#database)). It needs the `previews` block in
   `wrangler.jsonc`.
 
-Code: `src/index.js` (routes and auth), `src/data.js` (tags and recipes),
+Code: `src/index.js` (routes and auth), `src/data.js` (tags and recipes), `src/browse.js`
+(other users' public recipes),
 `src/imports.js` (import endpoints), `src/translate.js` (translation), `src/http.js` (JSON helpers), `src/session.js`
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
 `workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
@@ -45,9 +46,11 @@ session except the three public auth endpoints; unknown paths are 404 when logge
 | `POST /api/auth/login` `{username, password}` | Log in on this device | 200 `{user}` | 400 `invalid_request`, 401 `invalid_credentials` (same for wrong password and unknown user) |
 | `POST /api/auth/logout` | Delete this device's session | 200 `{ok}` | none (works without a session) |
 | `GET /api/auth/me` | Who is logged in | 200 `{user}` | 401 `not_logged_in` |
-| `PUT /api/auth/me` `{username?, password?}` | Change your own username and/or password (at least one; the old password is not asked for). Every existing login stays, on this device and the others | 200 `{user}` | 400 `invalid_request`, `username_invalid`, `password_invalid` (same limits as sign-up), 409 `username_taken`, 401 `not_logged_in` |
+| `PUT /api/auth/me` `{username?, password?, defaultPublic?, copyTags?}` | Change your own username, password and/or defaults (at least one; the old password is not asked for). Every existing login stays, on this device and the others | 200 `{user}` | 400 `invalid_request` (also a default that isn't `true`/`false`), `username_invalid`, `password_invalid` (same limits as sign-up), 409 `username_taken`, 401 `not_logged_in` |
 
-`user` is `{ id, username, is_admin }`. Cookies (both HttpOnly, SameSite=Lax, 10 years,
+`user` is `{ id, username, is_admin, defaultPublic, copyTags }`. The last two are the user's
+defaults, both `true` for a new user: a recipe they add (manually, by import or by copying)
+starts public, and copying a recipe in Browse copies its tags too. Cookies (both HttpOnly, SameSite=Lax, 10 years,
 `Secure` on https): `device` (random id, kept across logouts) and `session` (random
 secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
 device. Not built yet: login rate limiting.
@@ -71,9 +74,11 @@ with the wrong method answers 405 `method_not_allowed`.
 | `PUT /api/recipes/:id` `{en, he}` | Replace its text (tags, favorite and link are kept) | 200 `{recipe}` | 400 as above, 404 |
 | `PUT /api/recipes/:id/tags` `{tags: [name]}` | Set its tags to exactly these names | 200 `{recipe, tags}` | 400 `invalid_request`, `name_required` (a blank name), `too_long` (a name > 100 chars, or > 20 tags), 404 |
 | `PUT /api/recipes/:id/favorite` `{favorite: true\|false}` | Set (not toggle) the favorite | 200 `{recipe}` | 400 `invalid_request`, 404 |
+| `PUT /api/recipes/:id/public` `{public: true\|false}` | Set (not toggle) whether other users can see and copy it | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `DELETE /api/recipes/:id` | Delete | 200 `{ok}` | 404 |
 
-`recipe` is `{ id, tagIds, favorite, link, sourceModel, en, he }`, where `en` and `he` are
+`recipe` is `{ id, tagIds, favorite, public, link, sourceModel, en, he }`, where `public` says
+other users can see it in Browse (a new recipe gets the user's `defaultPublic`), `en` and `he` are
 `{ name, ingredients: [string], steps: [string] }`, `link` is the source video (`''` for
 manual recipes), `sourceModel` is the LLM that produced it (`null` for manual recipes) and
 `tagIds` is the ids of its tags, lowest first (`[]` for none). The backend trims names and
@@ -81,6 +86,34 @@ lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ing
 or steps per language, 2000 chars per line. The table also keeps
 `machine_translated_lang` (which language an import's model filled in, as a translation),
 and editing that language clears it; the API never returns it.
+
+## Browse API
+
+The only endpoints that read another user's recipes (`src/browse.js`). Both need a session.
+
+| Endpoint | Purpose | Success | Errors |
+|---|---|---|---|
+| `GET /api/browse?seed=<n>[&after=<next>]` | One page (10) of other users' public recipes | 200 `{recipes, next}` | 400 `invalid_request` (`seed` not a whole number from 1 to 1000002, or a bad `after`) |
+| `POST /api/browse/:id/copy` `{}` | Save your own copy of that recipe | 201 `{recipe}` (the new one, as in the recipes API) | 404 `not_found` (missing, private, or your own), 409 `already_saved` |
+
+- A browsed recipe is `{ id, owner, tags, link, en, he }`: `owner` is the username of who
+  saved it and `tags` its tag **names** (ids mean nothing to another user). The owner's
+  favorite mark is never sent.
+- **What shows**: public recipes of other users that the user doesn't have yet. "Has" means
+  they copied it (`recipes.copied_from`) or have a recipe from the same link. A copy stays
+  out while the recipe it was copied from is public (or is the user's own), so a recipe
+  doesn't show once per person who saved it. Two users who each imported the same link
+  themselves do both show.
+- **Random order**: the browser picks `seed` once per visit (and on "Shuffle"). The order
+  is by `(id + seed)³ mod 1000003`, so one seed always gives the same order and another
+  seed a different one, with no stored state. `next` is where the page ended in that order
+  (`null` on the last page) and comes back as `after`; continuing from the last recipe
+  rather than from a count means a recipe saved or deleted meanwhile never makes a page
+  skip or repeat one.
+- **Copy** is one batch: the new recipe has the same text, link, platform and model, no
+  favorite, `copied_from` set, and is public or private by the user's `defaultPublic`. With
+  `copyTags` on, each of the original's tags is found by name among the user's own tags or
+  created. The original is never changed, and later changes to either don't reach the other.
 
 ## Import API
 
@@ -139,15 +172,16 @@ field from an older page is ignored. See [Translation](#translation).
 ## Data
 
 - **Users**: up to 50.
-- **Every user has their own private tags and recipes.** No other user sees or
-  changes them, and every query is filtered by the logged-in user.
+- **Every user has their own tags and recipes.** No other user changes them, and every
+  query in `data.js` is filtered by the logged-in user. Other users can only read a recipe
+  that is public (`recipes.is_public`, on by default), through the Browse API, and copy it.
 - **Tags**: a flat list per user (`tags`), linked to recipes through `recipe_tags`, so a
   recipe has any number of them. A name is unique per user, ignoring the case of English
   letters. A tag exists only while a recipe has it: there is no create or delete
   endpoint. A tag can be renamed, but not to another tag's name (no silent merge).
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
   and Hebrew** so either version can be edited. Its tags are set on their own
-  (see the API above), never with its text. A favorite is a flag on the recipe, since only its owner sees it.
+  (see the API above), never with its text. A favorite is a flag on the recipe, since it is the owner's own mark and is never shown to others.
 - **Model requests** live in the `llm_requests` table: **one row per request** a user
   makes, with a `purpose`: `import` (a new import, each Retry, each re-scan) or `translation` (linked to the recipe by `recipe_id`). So an
   unfinished import never appears as a recipe, and the rows are the record of who used the
