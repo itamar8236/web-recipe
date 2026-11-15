@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "wrangler dev --port 8787",
     "db:pull": "node scripts/db-pull.mjs",
+    "db:copy-main": "node scripts/db-copy-main.mjs",
     "db:schema:local": "wrangler d1 execute recipes-db --local --file=schema.sql --yes",
     "deploy": "wrangler deploy",
     "test": "vitest run"

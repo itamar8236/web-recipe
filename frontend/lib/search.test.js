@@ -25,6 +25,12 @@ describe('matchesSearch', () => {
     expect(matchesSearch(recipe, 'basil chicken')).toBe(false);
   });
 
+  it('finds a recipe by its tag names', () => {
+    expect(matchesSearch(recipe, 'dinn', ['Dinner', 'ארוחת ערב'])).toBe(true);
+    expect(matchesSearch(recipe, 'ערב soup', ['Dinner', 'ארוחת ערב'])).toBe(true);
+    expect(matchesSearch(recipe, 'dinner')).toBe(false);
+  });
+
   it('does not search the steps', () => {
     expect(matchesSearch(recipe, 'simmer')).toBe(false);
   });

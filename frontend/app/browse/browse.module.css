@@ -5,27 +5,9 @@
   gap: 14px;
 }
 
-.titleRow {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px 12px;
-}
-
-.titleRow p {
-  margin: 4px 0 0;
-}
-
 .title {
   font-size: 23px;
   overflow-wrap: anywhere;
-}
-
-.shuffle {
-  flex: 0 0 auto;
-  min-height: 44px;
-  padding-inline: 16px;
-  font-size: 15px;
 }
 
 .list {

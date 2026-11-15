@@ -230,7 +230,7 @@ export async function deleteRecipe(id) {
 // A browsed recipe is { id, owner, tags: [name], link, en, he }: who saved it and its tags
 // by name. It needs an account, like everything that reads the database.
 
-// A number for a new shuffle of the feed (the backend's order depends on it).
+// A number for a new random order of the feed (the backend's order depends on it).
 export const newBrowseSeed = () => 1 + Math.floor(Math.random() * 1000000);
 
 // One page of the feed, in the order `seed` gives. `after` is the `next` of the page

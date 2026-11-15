@@ -37,7 +37,7 @@ frontend/
 │   ├── i18n.js            # UI strings in en/he + pickLanguage()
 │   ├── recipeForm.js      # Edit form text <-> api lines, withTranslation()
 │   ├── recipeForm.test.js # Vitest tests for recipeForm.js
-│   ├── search.js          # matchesSearch(): recipe name/ingredient search
+│   ├── search.js          # matchesSearch(): recipe name/ingredient/tag search
 │   └── search.test.js     # Vitest tests for search.js
 ├── styles/globals.css     # Design tokens (CSS variables), buttons, form fields
 └── next.config.mjs
@@ -97,8 +97,9 @@ frontend/
    heart to mark a favorite (each user sees only their own tags, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
    the selected tag). A small "Search" button above the tags opens a search box
    (× or leaving it empty closes it again) that filters the cards while typing, by recipe
-   name or ingredients in both languages (every typed word must match), combined with the
-   selected tag and "Favorites". It runs in the browser on the loaded recipes.
+   name, ingredients (both languages) or tag names (every typed word must match),
+   combined with the selected tag and "Favorites". It runs in the browser on the loaded
+   recipes.
 3. **Add recipe** (`components/ImportDialog`, a popup, no route): "+ Add recipe" opens it
    for a logged-in user. A guest goes straight to the manual form, since importing needs
    an account. One focused link field; it asks only for the link, never the site.
@@ -158,7 +159,11 @@ frontend/
    - Other users' public recipes in a random order, 10 at a time. The next page loads by
      itself when the end of the list comes within 600px of the screen
      (`IntersectionObserver`); the "Show more" button at the end does the same by hand.
-     "Shuffle" starts over in a new order. The end says "You have seen them all."
+     Each visit gets a new order. The end says "You have seen them all."
+   - The same "Search" button as on Home sits above the title and searches name,
+     ingredients and tags the same way, on the recipes loaded so far. While few match,
+     the end of the list stays near the screen, so more pages keep loading by themselves
+     until enough match or there are no more (then "No recipes found." if none did).
    - Each card (`components/BrowseCard`) shows the name, "Saved by <username>", the tags,
      the ingredient count and the source link, with two buttons side by side: **Show
      recipe** opens the ingredients and steps inside the card, and **+ Save a copy** saves

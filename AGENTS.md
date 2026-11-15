@@ -180,7 +180,7 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 | Tests          | `npm test` (Workers runtime, throwaway local DB) | `npm test`        |
 | Lint           | (planned)                                    | `npm run lint`    |
 | Build          | n/a                                          | `npm run build` → `out/` |
-| DB             | `npm run db:schema:local` (apply `schema.sql` locally). Owner only, wrangler is otherwise logged out: `npx wrangler login`, `npm run db:pull` (prod → local), `npx wrangler logout`; production schema is applied by the owner | n/a |
+| DB             | `npm run db:schema:local` (apply `schema.sql` locally); in a worktree, `npm run db:copy-main` (copy the main checkout's local DB). Owner only, wrangler is otherwise logged out: `npx wrangler login`, `npm run db:pull` (prod → local), `npx wrangler logout`; production schema is applied by the owner | n/a |
 | Deploy         | only by merging a PR into `main` (Workers Builds); never run `npm run deploy` | (deployed with backend) |
 
 ## Never do these

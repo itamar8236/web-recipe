@@ -61,9 +61,10 @@ export default function HomePage() {
   }
   if (!tags) return <p>{t.loading}</p>;
 
+  const tagName = (id) => tags.find((tag) => tag.id === id)?.name;
   const visible = recipes.filter((r) => {
     if (favoritesOnly && !r.favorite) return false;
-    if (!matchesSearch(r, query)) return false;
+    if (!matchesSearch(r, query, r.tagIds.map(tagName).filter(Boolean))) return false;
     if (selected === 'all') return true;
     return selected === 'none' ? r.tagIds.length === 0 : r.tagIds.includes(selected);
   });
@@ -72,7 +73,6 @@ export default function HomePage() {
     setActionError(null);
     setSelected(value);
   };
-  const tagName = (id) => tags.find((tag) => tag.id === id)?.name;
   const viewTitle = selected === 'all' ? t.allRecipes : selected === 'none' ? t.noTags : tagName(selected);
   const newRecipeHref = '/recipe/edit';
   const [emptyTitle, emptyHint] = query.trim()

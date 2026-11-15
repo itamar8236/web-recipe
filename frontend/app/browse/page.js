@@ -4,14 +4,18 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import BrowseCard from '@/components/BrowseCard';
 import ModeTabs from '@/components/ModeTabs';
+import SearchBox from '@/components/SearchBox';
 import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
 import { errorMessage } from '@/lib/i18n';
+import { matchesSearch } from '@/lib/search';
 import * as api from '@/lib/api';
 import styles from './browse.module.css';
 
 // Other users' public recipes, in a random order, a page at a time: the next page loads
 // when the end of the list comes near the screen (and "Show more" does the same by hand).
+// Search filters the loaded recipes; while few match, the end stays near the screen, so
+// more pages keep loading until enough match or there are no more.
 function BrowseFeed() {
   const { t } = useLanguage();
   // null until the first load picks one, so nothing random runs while the page is built.
@@ -20,6 +24,7 @@ function BrowseFeed() {
   const [next, setNext] = useState(undefined); // undefined = first page not loaded, null = no more
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [query, setQuery] = useState('');
   const latest = useRef(0); // the newest request; an older one's answer is dropped
   const sentinel = useRef(null);
 
@@ -41,8 +46,8 @@ function BrowseFeed() {
     }
   }, []);
 
-  // A new order, from the top.
-  const shuffle = useCallback(() => {
+  // A new random order, from the top.
+  const start = useCallback(() => {
     const fresh = api.newBrowseSeed();
     setSeed(fresh);
     setRecipes([]);
@@ -52,8 +57,8 @@ function BrowseFeed() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    shuffle();
-  }, [shuffle]);
+    start();
+  }, [start]);
 
   const loadMore = useCallback(() => {
     if (!loading && next) loadPage(seed, next);
@@ -74,31 +79,33 @@ function BrowseFeed() {
   }, [next, loading, error, loadMore]);
 
   const firstLoad = next === undefined;
+  const searching = query.trim() !== '';
+  const visible = recipes.filter((recipe) => matchesSearch(recipe, query, recipe.tags));
 
   return (
     <section className={styles.feed}>
-      <div className={styles.titleRow}>
-        <div>
-          <h1 className={styles.title}>{t.browseTitle}</h1>
-          <p className="hint">{t.browseHint}</p>
-        </div>
-        <button type="button" className={`button secondary ${styles.shuffle}`} disabled={loading} onClick={shuffle}>
-          {t.shuffle}
-        </button>
-      </div>
+      <SearchBox value={query} onChange={setQuery} />
+      <h1 className={styles.title}>{t.browseTitle}</h1>
 
       {firstLoad && loading && <p>{t.loading}</p>}
 
-      {!firstLoad && recipes.length === 0 && !error && (
+      {!firstLoad && recipes.length === 0 && next === null && !error && (
         <div className={styles.empty}>
           <p className={styles.emptyTitle}>{t.browseEmpty}</p>
           <p>{t.browseEmptyHint}</p>
         </div>
       )}
 
-      {recipes.length > 0 && (
+      {searching && recipes.length > 0 && visible.length === 0 && next === null && !error && (
+        <div className={styles.empty}>
+          <p className={styles.emptyTitle}>{t.emptySearch}</p>
+          <p>{t.emptySearchHint}</p>
+        </div>
+      )}
+
+      {visible.length > 0 && (
         <ul className={styles.list}>
-          {recipes.map((recipe) => (
+          {visible.map((recipe) => (
             <li key={recipe.id}>
               <BrowseCard recipe={recipe} />
             </li>
@@ -110,7 +117,7 @@ function BrowseFeed() {
         <div className={styles.empty} role="alert">
           <p className={styles.emptyTitle}>{t.errBrowseLoad}</p>
           <p>{errorMessage(t, error)}</p>
-          <button type="button" className="button" onClick={() => (firstLoad ? shuffle() : loadPage(seed, next))}>
+          <button type="button" className="button" onClick={() => (firstLoad ? start() : loadPage(seed, next))}>
             {t.retry}
           </button>
         </div>
@@ -124,7 +131,7 @@ function BrowseFeed() {
         </div>
       )}
 
-      {!firstLoad && !error && next === null && recipes.length > 0 && (
+      {!firstLoad && !error && next === null && visible.length > 0 && (
         <p className={`hint ${styles.end}`}>{t.browseEnd}</p>
       )}
     </section>
