@@ -203,6 +203,10 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   `npm run db:pull`, `npx wrangler logout`. `db:pull`
   ([`scripts/db-pull.mjs`](scripts/db-pull.mjs)) exports production (read-only), replaces
   the local database with that copy, then applies `schema.sql` locally.
+- **A worktree's local copy**: each git worktree has its own `.wrangler/state`, empty at
+  first. `npm run db:copy-main` ([`scripts/db-copy-main.mjs`](scripts/db-copy-main.mjs))
+  replaces it with a copy of the main checkout's local database (found through git), then
+  applies `schema.sql`. It reads only local files and changes nothing in the main checkout.
 - **Changing an existing table** needs a one-off file in [`migrations/`](migrations), run
   once by the owner on production (each file says how at its top). `schema.sql` can't do
   it: it only creates what is missing. It may break the site for a few moments; the PR

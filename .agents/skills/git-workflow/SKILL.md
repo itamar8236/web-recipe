@@ -49,7 +49,7 @@ A worktree holds only tracked files:
   worktrees they create; for a worktree made with `git worktree add`, ask the owner to
   copy it in. Tests don't need it; only real imports do.
 - The local DB (`backend/.wrangler/state`) is per worktree and starts empty: follow the
-  `local-dev` skill (empty copy → ask the owner, or `npm run db:schema:local`).
+  `local-dev` skill (`npm run db:copy-main` in `backend/` copies the main checkout's one).
 - Windows: if `.claude/skills` is a small text file instead of a link, apply the fix in
   `AGENTS.md` → Agent setup in this worktree.
 - The repo lives in OneDrive, so worktrees inside it (Claude Code's default

@@ -6,8 +6,8 @@ description: How to run, test, and verify web-recipe locally against the local c
 # Running and testing web-recipe locally
 
 Always work against the **local** D1 database (`backend/.wrangler/state`). It's a copy
-of production that the owner refreshes. Each git worktree has its own copy, so a new
-worktree starts empty (step 1 below). Production (`recipes-db` on Cloudflare) holds
+of production that the owner refreshes in the main checkout. Each git worktree has its
+own copy, so a new worktree starts empty until it copies the main checkout's (step 1 below). Production (`recipes-db` on Cloudflare) holds
 real users' recipes; only the owner reads or changes it.
 
 Assume wrangler is **logged out**: the owner logs in only for a moment to refresh the
@@ -23,8 +23,10 @@ local copy, so agents can't reach production even by accident.
   production is deployed only when the owner merges a PR into `main`.
 - Production schema or data changes are the owner's job. If one is needed, write it in
   the PR with when to run it relative to merging (e.g. "run `npx wrangler d1 execute recipes-db --remote --file=schema.sql`").
-- `backend/.wrangler/prod-dump.sql` contains real user data: never commit it (`.wrangler/`
-  is gitignored), copy it elsewhere, or paste its contents in PRs, issues, or chat.
+- `backend/.wrangler/prod-dump.sql` and the local database contain real user data: never
+  commit them (`.wrangler/` is gitignored), copy them elsewhere, or paste their contents in
+  PRs, issues, or chat. The one allowed copy is `npm run db:copy-main` (step 1), which
+  copies the main checkout's local database into a worktree on the same computer.
 - Never read `backend/.dev.vars` or `.env`. `.dev.vars` holds the owner's dev keys, which
   use a test quota, not production's.
 - You may test real imports yourself on the local app, but only on links the owner gives
@@ -40,14 +42,21 @@ From `backend/`:
 ```
 npx wrangler d1 execute recipes-db --local --command="SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM tags) AS tags, (SELECT COUNT(*) FROM recipes) AS recipes"
 ```
-If it fails with `no such table`, or every count is 0, the local copy is empty. Stop and
-tell the owner, giving them these commands to run themselves from `backend/`:
+If it fails with `no such table`, or every count is 0, the local copy is empty. In a
+worktree, run `npm run db:copy-main` (from `backend/`): it replaces this worktree's local
+database with a copy of the main checkout's one, then applies `schema.sql`. It changes
+nothing in the main checkout. The copy is as fresh as the owner's last `db:pull`; run it
+again to pick up a newer one (it discards this worktree's local test data).
+
+If it says the main checkout has no local database, or the counts are still 0, stop and
+tell the owner, giving them these commands to run themselves from `backend/` in the main
+checkout:
 ```
 npx wrangler login
 npm run db:pull
 npx wrangler logout
 ```
-Continue only when they say it's done, or if they tell you to go on with an empty
+Then run `npm run db:copy-main` again. Continue only when they say it's done, or if they tell you to go on with an empty
 database (then run `npm run db:schema:local` and add test data through the app).
 
 ## 2. Start a dev session
