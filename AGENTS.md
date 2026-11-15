@@ -150,7 +150,7 @@ One Cloudflare Worker  (backend/)
 ├── backend/          # Cloudflare Worker: API, D1 access, LLM calls, serves frontend build
 ├── frontend/         # Next.js app (static export)
 ├── .agents/skills/   # Shared agent skills (source of truth)
-├── .claude/          # Claude Code settings; skills is a symlink to ../.agents/skills
+├── .claude/          # Claude Code settings and hooks; skills is a symlink to ../.agents/skills
 ├── .worktreeinclude  # Git-ignored files copied into new agent worktrees (no secrets in it)
 ├── AGENTS.md         # This file: rules for every agent
 └── CLAUDE.md         # Just `@AGENTS.md`, so Claude Code loads this file
@@ -227,12 +227,15 @@ Before every push:
   - `frontend-ui`: UI work in `frontend/`
   - `local-dev`: run and test the app against a local copy of the DB, never production
 - **Worktrees**: each session works in its own git worktree (`git-workflow` skill →
-  Start a task). A new worktree holds only tracked files: no `node_modules` and an empty
-  local DB. Claude Code and Codex copy the git-ignored files listed in `.worktreeinclude`
-  (`backend/.dev.vars`) into the worktrees they create; one made with `git worktree add`
-  gets none. The skill says how to set it up and how to remove it after the merge.
+  Start a task). If the session already runs in one, work there; never make a second.
+  A new worktree holds only tracked files: an empty local DB, and no `node_modules` until
+  the `SessionStart` hook (below) or `npm ci` installs them. Claude Code and Codex copy the
+  git-ignored files listed in `.worktreeinclude` (`backend/.dev.vars`) into the worktrees
+  they create; one made with `git worktree add` gets none. The skill says how to set it up
+  and how to remove it after the merge.
 - **Claude Code settings**: `.claude/settings.json` (committed) blocks force-pushes,
-  pushes to `main`, and reading secret files. Personal overrides go in
+  pushes to `main`, and reading secret files, and its `SessionStart` hook
+  (`.claude/hooks/install-deps.mjs`) installs missing `node_modules` in a new worktree. Personal overrides go in
   `.claude/settings.local.json` (git-ignored).
 - Don't commit plans, scratch files, or debug output. Unfixed bugs and trade-offs
   go in [Known bugs and accepted trade-offs](#known-bugs-and-accepted-trade-offs).

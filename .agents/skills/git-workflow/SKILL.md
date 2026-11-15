@@ -12,13 +12,21 @@ Every task (every agent session) runs in its **own git worktree**, so parallel s
 never edit, build or switch branches in each other's files. Never work in the main
 checkout or directly on `main`.
 
-If the session already runs in a worktree (Claude Code `--worktree`, the desktop app's
-**Worktree** option, Codex), branch there from the latest `origin/main`:
+First check where you are: `git rev-parse --git-dir --git-common-dir` prints two
+different paths inside a worktree and the same path in the main checkout.
+
+**Already in a worktree** (the usual case: the desktop app's **Worktree** option, Claude
+Code `--worktree`, Codex): never create a second one. Start your branch here from the
+latest `origin/main` and delete the branch the tool made for the session (e.g.
+`claude/<name>`), so it isn't left behind:
 ```bash
 git fetch origin main
-git switch -c <type>/<short-kebab-description> origin/main
+git switch --no-track -c <type>/<short-kebab-description> origin/main
+git branch -d @{-1}
 ```
-Otherwise create one from the main checkout (outside OneDrive is better, see below):
+(`--no-track` keeps the new branch from tracking `main`; `git push -u` sets its own upstream.)
+
+**In the main checkout** (no worktree yet), create one (outside OneDrive is better, see below):
 ```bash
 git fetch origin main
 git worktree add -b <type>/<short-kebab-description> <path> origin/main
@@ -31,7 +39,11 @@ started on. A branch can be checked out in only one worktree at a time.
 
 ### Set up a new worktree
 A worktree holds only tracked files:
-- Run `npm install` in `backend/` and in `frontend/` before running anything.
+- Packages: in Claude Code a `SessionStart` hook (`.claude/hooks/install-deps.mjs`, set in
+  `.claude/settings.json`) runs `npm ci` in `backend/` and `frontend/` when their
+  `node_modules` is missing, so a new session can test at once (the first start takes about
+  a minute). Elsewhere (Codex, `git worktree add`), or if the hook reports a failure, run
+  `npm ci` in both folders yourself before running anything.
 - `backend/.dev.vars` (dev keys) is git-ignored, so it isn't there. Never read or copy it
   yourself. Claude Code and Codex copy the files listed in `.worktreeinclude` into the
   worktrees they create; for a worktree made with `git worktree add`, ask the owner to

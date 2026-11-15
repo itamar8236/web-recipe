@@ -51,6 +51,8 @@ Continue only when they say it's done, or if they tell you to go on with an empt
 database (then run `npm run db:schema:local` and add test data through the app).
 
 ## 2. Start a dev session
+0. If `backend/node_modules` or `frontend/node_modules` is missing (a new worktree whose
+   setup hook didn't run), run `npm ci` in that folder first. Tests need it too.
 1. `cd frontend && npm run build` (the Worker serves `frontend/out`).
 2. `cd backend && npm run db:schema:local` (adds any tables new on this branch; it only
    creates what's missing, so existing data stays), then `npm run dev`: `wrangler dev` on
