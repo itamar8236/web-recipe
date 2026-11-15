@@ -102,7 +102,7 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
 - **What shows**: every public recipe of every other user. A copy keeps no link to its
   original (the owner's choice), so a recipe the user already saved shows again, another
   user's public copy shows beside the original, and saving one twice makes two copies.
-- **Random order**: the browser picks `seed` once per visit (and on "Shuffle"). The order
+- **Random order**: the browser picks `seed` once per visit. The order
   is by `(id + seed)³ mod 1000003`, so one seed always gives the same order and another
   seed a different one, with no stored state. `next` is where the page ended in that order
   (`null` on the last page) and comes back as `after`; continuing from the last recipe
