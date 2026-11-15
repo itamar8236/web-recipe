@@ -7,11 +7,11 @@ backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 ## Current state
 
 The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up, guest
-mode and creating a recipe from a YouTube, Facebook or Instagram link. A logged-in user's folders, recipes and favorites are loaded from and saved
+mode and creating a recipe from a YouTube, Facebook or Instagram link. A logged-in user's tags, recipes and favorites are loaded from and saved
 to the backend (D1). A **guest's** live only in memory in `lib/api.js`: nothing is sent
 to the backend, the app starts empty and everything is gone on reload. Components call
-the same `lib/api.js` functions in both modes. Folders are a flat list (no nesting or
-reordering).
+the same `lib/api.js` functions in both modes. Tags are a flat list (no nesting or
+reordering), and a recipe has any number of them.
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
 recipe has a `link`, otherwise plain "Added manually" text. The link is not editable in the
 UI; it is filled by video import.
@@ -26,12 +26,12 @@ frontend/
 │   ├── layout.js          # Root layout: wraps everything in the Shell
 │   ├── manifest.js        # Web app manifest (makes the site installable on Android)
 │   ├── icon.png           # Favicon
-│   ├── page.js            # Home: folders + recipes in the selected folder
+│   ├── page.js            # Home: tags + recipes with the selected tag
 │   ├── admin/page.js      # (planned) Admin: list, add, delete users (/admin)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), FolderBar, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), TagBar, RecipeTags, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -77,7 +77,7 @@ frontend/
 - Every change of who is using the app (log in, sign up, log out, guest) tells `lib/api.js`
   whether this is a guest (`setGuestMode`) and empties the guest's in-memory data, so one
   person's data never shows for the next.
-- A folders/recipes request that answers 401 (e.g. the admin deleted the user) brings back
+- A tags/recipes request that answers 401 (e.g. the admin deleted the user) brings back
   the login screen.
 - Auth cookies need the same origin as the API, so test login on the Worker (:8787, after
   `npm run build`); on `next dev` (:3000) there is no backend, so only guest mode works.
@@ -89,26 +89,28 @@ Built now: Login, Home (with the import dialog and cards), Recipe view, Edit, My
 The rest are planned.
 
 1. **Login / Sign up**: described above.
-2. **Home**: folders with recipe counts. On phones only, they are one row of pills that
-   scrolls sideways; on desktop, a side list with no scrolling;
-   recipes of the selected folder as cards. Create, rename, and delete folders inline.
-   Only an empty folder can be deleted (Delete looks disabled otherwise; tapping it shows a hint). Big "Add recipe" button. Each card has a
-   heart to mark a favorite (each user sees only their own folders, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
-   the selected folder). A small "Search" button above the folders opens a search box
+2. **Home**: tags with recipe counts (`components/TagBar`), which filter the list. On
+   phones only, they are one row of pills that scrolls sideways; on desktop, a side list
+   with no scrolling; recipes with the selected tag as cards, each showing all its tags.
+   "No tags" shows only while some recipe has none. The selected tag can be renamed
+   inline; there is no "new tag" or "delete tag" here: tags are added and removed on each
+   recipe's page, and a tag no recipe has is gone. Big "Add recipe" button. Each card has a
+   heart to mark a favorite (each user sees only their own tags, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
+   the selected tag). A small "Search" button above the tags opens a search box
    (× or leaving it empty closes it again) that filters the cards while typing, by recipe
    name or ingredients in both languages (every typed word must match), combined with the
-   selected folder and "Favorites". It runs in the browser on the loaded recipes.
+   selected tag and "Favorites". It runs in the browser on the loaded recipes.
 3. **Add recipe** (`components/ImportDialog`, a popup, no route): "+ Add recipe" opens it
    for a logged-in user. A guest goes straight to the manual form, since importing needs
    an account. One focused link field; it asks only for the link, never the site.
    - **Import** submits it: the dialog closes and a card shows at once.
-   - **"Write it manually"** opens the manual form (`/recipe/edit`, keeping the selected
-     folder). The manual form's Cancel returns to Home.
+   - **"Write it manually"** opens the manual form (`/recipe/edit`). The manual form's
+     Cancel returns to Home.
    - **×**, **Escape** and **tapping outside** close the dialog and stay on Home.
    - An invalid or unsupported link keeps the dialog open with the error under the field.
    - There is no model choice: the backend picks the models.
 4. **Import cards** (`components/ImportCards`, at the top of the content section, in every
-   folder view, not filtered by search):
+   tag view, not filtered by search):
    - Running: gray with a gentle pulse, the title or link, and "Getting the video
      details...", "Getting the video..." (Facebook and Instagram, whose video is handed to
      the model as a file) or "Reading the recipe..." (`stageMessage` in `lib/i18n.js`).
@@ -118,11 +120,15 @@ The rest are planned.
      card id) and the failed card is replaced by it.
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
-5. **Recipe view**: name, source link (opens the video), ingredients, steps. Heart, Edit
-   and Delete buttons (delete asks for confirmation). No AI actions here: they are all on
+5. **Recipe view**: name, source link (opens the video), tags, ingredients, steps. Heart, Edit
+   and Delete buttons (delete asks for confirmation).
+   - **Tags** (`components/RecipeTags`) are changed right here, not on the edit form, and
+     every tap saves at once. Each tag is a chip with an ×: tapping it removes the tag.
+     "+ Add tag" opens a small panel with the user's other tags (tap one to add it), a
+     field for a new tag, and Done. A new recipe has no tags until they are added here. No AI actions here: they are all on
    the edit form, so the view stays simple.
-6. **Edit**: name, ingredients, and steps (one per line) in the app's current language,
-   plus a folder picker. A short note explains that to write the other language you
+6. **Edit**: name, ingredients, and steps (one per line) in the app's current language.
+   Tags are not here (see Recipe view). A short note explains that to write the other language you
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other
    language with a "not written yet" note.
@@ -143,8 +149,8 @@ The rest are planned.
 7. **Users** (admin only): list of users, a form to add one (username and
    password), and per user an "Act as" button, a "Set password" button and a
    delete button (the last two with confirmation; deleting a user also deletes all their
-   folders and recipes, and the dialog says so). Shows "N / 50 users".
-   "Act as" opens Home showing that user's folders and recipes; every screen then works
+   tags and recipes, and the dialog says so). Shows "N / 50 users".
+   "Act as" opens Home showing that user's tags and recipes; every screen then works
    on their data, and a banner on every page says "Acting as <name>" with a "Stop"
    button that returns the admin to their own data.
 8. **My account** (`components/AccountDialog`, a popup): opened by tapping the name in
@@ -182,10 +188,10 @@ The rest are planned.
 ## API client
 
 `lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`, `updateAccount`,
-`logout`), folders (`getFolders`, `createFolder`, `renameFolder`, `deleteFolder`),
-recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setFavorite`, `deleteRecipe`) and imports
+`logout`), tags (`getTags`, `renameTag`),
+recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `deleteRecipe`) and imports
 (`getImports`, `startImport`, `retryImport`, `dismissImport`, `rerunRecipe`) and
-`translateRecipe`. For a guest the folder and recipe functions use memory instead, with the
+`translateRecipe`. For a guest the tag and recipe functions use memory instead, with the
 same checks and error codes as the backend, and the import and translate functions throw
 `import_needs_login` without calling the backend.
 

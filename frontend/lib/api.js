@@ -1,4 +1,4 @@
-// The only data layer for the UI. A logged-in user's folders and recipes come from the
+// The only data layer for the UI. A logged-in user's tags and recipes come from the
 // backend; a guest's live only in memory here (never sent anywhere) and are gone on
 // reload. Both modes have the same functions and errors, so components never check.
 
@@ -76,13 +76,13 @@ export async function logout() {
 
 let guest = false;
 let nextId = 0;
-let memory = { folders: [], recipes: [] };
+let memory = { tags: [], recipes: [] };
 
 // Called on every change of who uses the app. A guest starts from an empty app, and one
 // guest's data never shows for the next person.
 export function setGuestMode(on) {
   guest = on;
-  memory = { folders: [], recipes: [] };
+  memory = { tags: [], recipes: [] };
 }
 
 const copy = (value) => structuredClone(value);
@@ -94,50 +94,66 @@ function cleanContent(content) {
 }
 
 // The same checks the backend makes, so a guest sees the same messages.
-function folderName(name) {
+function tagName(name) {
   const trimmed = name.trim();
   if (!trimmed) throw new ApiError(400, 'name_required');
   return trimmed;
 }
 
-// ---- Folders ----
+// The backend compares tag names without case for ASCII letters only (SQLite's NOCASE).
+const tagKey = (name) => name.trim().replace(/[A-Z]/g, (letter) => letter.toLowerCase());
 
-export async function getFolders() {
-  if (guest) return copy(memory.folders);
-  return (await dataRequest('/api/folders')).folders;
+// A tag exists only while a recipe has it.
+function dropUnusedTags() {
+  memory.tags = memory.tags.filter((tag) => memory.recipes.some((r) => r.tagIds.includes(tag.id)));
 }
 
-export async function createFolder(name) {
-  if (guest) {
-    const folder = { id: ++nextId, name: folderName(name) };
-    memory.folders.push(folder);
-    return copy(folder);
-  }
-  return (await dataRequest('/api/folders', 'POST', { name })).folder;
+// ---- Tags ----
+// A tag is { id, name }. There is no "create" or "delete": a tag appears when a recipe
+// gets it (setRecipeTags) and is gone when no recipe has it.
+
+export async function getTags() {
+  if (guest) return copy(memory.tags);
+  return (await dataRequest('/api/tags')).tags;
 }
 
-export async function renameFolder(id, name) {
+export async function renameTag(id, name) {
   if (guest) {
-    const folder = memory.folders.find((f) => f.id === id);
-    if (!folder) throw new ApiError(404, 'not_found');
-    folder.name = folderName(name);
-    return copy(folder);
+    const tag = memory.tags.find((t) => t.id === id);
+    if (!tag) throw new ApiError(404, 'not_found');
+    const newName = tagName(name);
+    if (memory.tags.some((t) => t.id !== id && tagKey(t.name) === tagKey(newName))) throw new ApiError(409, 'tag_exists');
+    tag.name = newName;
+    return copy(tag);
   }
-  return (await dataRequest(`/api/folders/${id}`, 'PUT', { name })).folder;
+  return (await dataRequest(`/api/tags/${id}`, 'PUT', { name })).tag;
 }
 
-// Only empty folders can be deleted, so recipes are never lost or moved by accident.
-export async function deleteFolder(id) {
+// Sets the recipe's tags to exactly `names`: a name the user already has (in any case) is
+// that tag, and a new name becomes a new tag. Returns { recipe, tags }, the recipe and
+// all the user's tags after the change.
+export async function setRecipeTags(id, names) {
   if (guest) {
-    if (memory.recipes.some((r) => r.folderId === id)) throw new ApiError(409, 'folder_not_empty');
-    memory.folders = memory.folders.filter((f) => f.id !== id);
-    return;
+    const recipe = findRecipe(id);
+    if (!recipe) throw new ApiError(404, 'not_found');
+    const tagIds = new Set();
+    for (const name of names.map(tagName)) {
+      let tag = memory.tags.find((t) => tagKey(t.name) === tagKey(name));
+      if (!tag) {
+        tag = { id: ++nextId, name };
+        memory.tags.push(tag);
+      }
+      tagIds.add(tag.id);
+    }
+    recipe.tagIds = [...tagIds].sort((a, b) => a - b);
+    dropUnusedTags();
+    return copy({ recipe, tags: memory.tags });
   }
-  await dataRequest(`/api/folders/${id}`, 'DELETE');
+  return dataRequest(`/api/recipes/${id}/tags`, 'PUT', { tags: names });
 }
 
 // ---- Recipes ----
-// A recipe is { id, folderId, favorite, link, en: {name, ingredients[], steps[]}, he: {...} }.
+// A recipe is { id, tagIds, favorite, link, en: {name, ingredients[], steps[]}, he: {...} }.
 
 export async function getRecipes() {
   if (guest) return copy(memory.recipes);
@@ -158,18 +174,18 @@ export async function getRecipe(id) {
   }
 }
 
-// Creates the recipe when `id` is null, otherwise replaces its text and folder.
-// `data` is { folderId, en, he }.
+// Creates the recipe when `id` is null (with no tags), otherwise replaces its text.
+// `data` is { en, he }.
 export async function saveRecipe(id, data) {
   if (guest) {
-    const fields = { folderId: data.folderId ?? null, en: cleanContent(data.en), he: cleanContent(data.he) };
+    const fields = { en: cleanContent(data.en), he: cleanContent(data.he) };
     if (!fields.en.name && !fields.he.name) throw new ApiError(400, 'name_required');
     const existing = findRecipe(id);
     if (existing) Object.assign(existing, fields);
-    else memory.recipes.push({ id: ++nextId, link: '', favorite: false, ...fields });
+    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', favorite: false, ...fields });
     return copy(existing ?? memory.recipes.at(-1));
   }
-  const body = { folderId: data.folderId ?? null, en: data.en, he: data.he };
+  const body = { en: data.en, he: data.he };
   return id === null
     ? (await dataRequest('/api/recipes', 'POST', body)).recipe
     : (await dataRequest(`/api/recipes/${id}`, 'PUT', body)).recipe;
@@ -189,6 +205,7 @@ export async function setFavorite(id, favorite) {
 export async function deleteRecipe(id) {
   if (guest) {
     memory.recipes = memory.recipes.filter((r) => r.id !== id);
+    dropUnusedTags();
     return;
   }
   await dataRequest(`/api/recipes/${id}`, 'DELETE');

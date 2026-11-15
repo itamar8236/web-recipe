@@ -39,13 +39,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
   color: var(--ink-soft);
   font-size: 15px;
 }
 
-.folder {
+.tag {
   padding: 2px 12px;
+  overflow-wrap: anywhere;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-dark);

@@ -65,7 +65,7 @@ A worktree holds only tracked files:
   <why, if not obvious>
   ```
   Scopes: `frontend`, `backend`, `db`, `llm`, `config`, `deps`, `agents`, or a feature area
-  (`recipes`, `folders`, `import`).
+  (`recipes`, `tags`, `import`).
 - One logical change per commit.
 - AI agents end the message with a `Co-Authored-By:` trailer naming the model used.
 

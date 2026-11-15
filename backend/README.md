@@ -13,7 +13,7 @@ here in the same PR that adds them.
 
 The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
 everything else is the static build from `../frontend/out`, served by Cloudflare. The auth
-API, the folders/recipes API, the import from a link and translation below exist; the admin
+API, the tags/recipes API, the import from a link and translation below exist; the admin
 endpoints don't yet. Run it locally with `npm run dev` (port 8787, after `npm run build` in
 `frontend/`). Deploy with `npm run deploy` (`wrangler deploy`), or
 automatically through Workers Builds (root directory `/`), which builds with
@@ -25,7 +25,7 @@ automatically through Workers Builds (root directory `/`), which builds with
   (see [Database](#database)). It needs the `previews` block in
   `wrangler.jsonc`.
 
-Code: `src/index.js` (routes and auth), `src/data.js` (folders and recipes),
+Code: `src/index.js` (routes and auth), `src/data.js` (tags and recipes),
 `src/imports.js` (import endpoints), `src/translate.js` (translation), `src/http.js` (JSON helpers), `src/session.js`
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
 `workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
@@ -55,32 +55,31 @@ session except the three public auth endpoints; unknown paths are 404 when logge
 secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
 device. Not built yet: login rate limiting, the admin endpoints.
 
-## Folders and recipes API
+## Tags and recipes API
 
 All need a session (401 `not_logged_in` otherwise) and work only on the data of the user
 the session acts for (`COALESCE(sessions.acting_as_user_id, sessions.user_id)`, so admin
-impersonation will just work once it can be started). Another user's folder or recipe
+impersonation will just work once it can be started). Another user's tag or recipe
 answers 404, exactly like one that doesn't exist. Bodies must be JSON with
 `Content-Type: application/json` (400 `invalid_request` otherwise). A path that exists
 with the wrong method answers 405 `method_not_allowed`.
 
 | Endpoint | Purpose | Success | Errors |
 |---|---|---|---|
-| `GET /api/folders` | The user's folders, oldest first | 200 `{folders: [{id, name}]}` | |
-| `POST /api/folders` `{name}` | Create a folder | 201 `{folder}` | 400 `name_required`, `too_long` (> 100 chars) |
-| `PUT /api/folders/:id` `{name}` | Rename | 200 `{folder}` | 400 as above, 404 `not_found` |
-| `DELETE /api/folders/:id` | Delete an empty folder | 200 `{ok}` | 409 `folder_not_empty`, 404 |
+| `GET /api/tags` | The user's tags, oldest first | 200 `{tags: [{id, name}]}` | |
+| `PUT /api/tags/:id` `{name}` | Rename a tag | 200 `{tag}` | 400 `name_required`, `too_long` (> 100 chars), 409 `tag_exists` (another tag has that name), 404 `not_found` |
 | `GET /api/recipes` | All the user's recipes, oldest first | 200 `{recipes: [recipe]}` | |
 | `GET /api/recipes/:id` | One recipe | 200 `{recipe}` | 404 |
-| `POST /api/recipes` `{folderId, en, he}` | Create a manual recipe | 201 `{recipe}` | 400 `name_required` (no name in either language), `too_long`, `folder_not_found` |
-| `PUT /api/recipes/:id` `{folderId, en, he}` | Replace its text and folder (favorite and link are kept) | 200 `{recipe}` | 400 as above, 404 |
+| `POST /api/recipes` `{en, he}` | Create a manual recipe, with no tags | 201 `{recipe}` | 400 `name_required` (no name in either language), `too_long` |
+| `PUT /api/recipes/:id` `{en, he}` | Replace its text (tags, favorite and link are kept) | 200 `{recipe}` | 400 as above, 404 |
+| `PUT /api/recipes/:id/tags` `{tags: [name]}` | Set its tags to exactly these names | 200 `{recipe, tags}` | 400 `invalid_request`, `name_required` (a blank name), `too_long` (a name > 100 chars, or > 20 tags), 404 |
 | `PUT /api/recipes/:id/favorite` `{favorite: true\|false}` | Set (not toggle) the favorite | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `DELETE /api/recipes/:id` | Delete | 200 `{ok}` | 404 |
 
-`recipe` is `{ id, folderId, favorite, link, sourceModel, en, he }`, where `en` and `he` are
+`recipe` is `{ id, tagIds, favorite, link, sourceModel, en, he }`, where `en` and `he` are
 `{ name, ingredients: [string], steps: [string] }`, `link` is the source video (`''` for
 manual recipes), `sourceModel` is the LLM that produced it (`null` for manual recipes) and
-`folderId` is `null` for "No folder". The backend trims names and
+`tagIds` is the ids of its tags, lowest first (`[]` for none). The backend trims names and
 lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ingredients
 or steps per language, 2000 chars per line. Editing a language the LLM filled in clears
 `machine_translated_lang`.
@@ -145,17 +144,20 @@ YouTube link", which exists.
 ## Data
 
 - **Users**: up to 50. The owner is the only admin.
-- **Every user has their own private folders and recipes.** No other user sees or
+- **Every user has their own private tags and recipes.** No other user sees or
   changes them, and every query is filtered by the user the session acts for.
 - **Admin impersonation**: the admin can "act as" any user and then sees and changes
-  that user's folders and recipes exactly as they would, until tapping "Stop". It is
+  that user's tags and recipes exactly as they would, until tapping "Stop". It is
   stored on the admin's session (`sessions.acting_as_user_id`), so it doesn't affect the
   user's own devices, and the database refuses it for anyone but the admin.
-- **Deleting a user deletes everything of theirs**: sessions, folders, and recipes.
-- **Folders**: a flat list per user, created, renamed, and deleted (only when empty).
+- **Deleting a user deletes everything of theirs**: sessions, tags, and recipes.
+- **Tags**: a flat list per user (`tags`), linked to recipes through `recipe_tags`, so a
+  recipe has any number of them. A name is unique per user, ignoring the case of English
+  letters. A tag exists only while a recipe has it: there is no create or delete
+  endpoint. A tag can be renamed, but not to another tag's name (no silent merge).
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
-  and Hebrew** so either version can be edited. A recipe sits in one of its owner's
-  folders (or none). A favorite is a flag on the recipe, since only its owner sees it.
+  and Hebrew** so either version can be edited. Its tags are set on their own
+  (see the API above), never with its text. A favorite is a flag on the recipe, since only its owner sees it.
 - **Model requests** live in the `llm_requests` table: **one row per request** a user
   makes, with a `purpose`: `import` (a new import, each Retry, each re-scan) or `translation` (linked to the recipe by `recipe_id`). So an
   unfinished import never appears as a recipe, and the rows are the record of who used the
@@ -216,7 +218,7 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
 - Deleting a user logs them out everywhere right away.
 - Every API endpoint requires a logged-in user, except sign-up, login and logout. User management and
   starting or stopping impersonation require the admin. While impersonating, recipe and
-  folder endpoints use the impersonated user; user management still checks the real
+  tag endpoints use the impersonated user; user management still checks the real
   user (the admin), and the admin can't change the user's password while acting as them.
 
 ## Import from a YouTube link
@@ -225,7 +227,7 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
 
 Users paste a link and go back to the video, and a normal request stops when they leave, so
 imports run in a **Cloudflare Workflow**. The recipe is written once, complete, with no
-folder and no review: the user can edit or delete it afterwards.
+tags and no review: the user can edit or delete it afterwards.
 
 ```
 POST /api/imports {url}

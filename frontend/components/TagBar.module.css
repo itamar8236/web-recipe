@@ -12,10 +12,6 @@
   color: var(--ink-soft);
 }
 
-.newFolder {
-  border-style: dashed;
-}
-
 /* Phones: one row of pills that scrolls sideways, running to the screen edges. */
 .list {
   list-style: none;
@@ -92,11 +88,7 @@
   font-size: 16px;
 }
 
-.bar :global(.hint) {
-  margin: 0;
-}
-
-/* Desktop: folders become a vertical list beside the recipes. */
+/* Desktop: tags become a vertical list beside the recipes. */
 @media (min-width: 760px) {
   .bar {
     gap: 12px;

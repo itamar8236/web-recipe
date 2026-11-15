@@ -29,7 +29,7 @@ function cookie(request, name, value, maxAge) {
   return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
 }
 
-// The logged-in user for this request, or null. `data_user_id` is whose folders and
+// The logged-in user for this request, or null. `data_user_id` is whose tags and
 // recipes this session works on: the user, or the user the admin is acting as.
 export async function getSessionUser(request, env) {
   const token = readCookies(request).session;

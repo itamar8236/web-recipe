@@ -521,7 +521,7 @@ describe('stage: save', () => {
   const directSave = (job) => stage('save').run(job, { env });
   const recipes = async () => (await env.DB.prepare('SELECT * FROM recipes').all()).results;
 
-  it('writes a complete recipe with no folder and finishes the import', async () => {
+  it('writes a complete recipe with no tags and finishes the import', async () => {
     const userId = await insertUser();
     const row = await atSave(userId);
     await runStage(env, row.id, row.attempt, stage('save'));
@@ -529,7 +529,6 @@ describe('stage: save', () => {
     const [recipe] = await recipes();
     expect(recipe).toMatchObject({
       user_id: userId,
-      folder_id: null,
       is_favorite: 0,
       platform: 'youtube',
       source_url: VIDEO_URL,
@@ -607,13 +606,16 @@ describe('stage: save', () => {
         .bind(...Object.values(row))
         .first();
     };
-    const insertFolder = async (userId) =>
-      (await env.DB.prepare(`INSERT INTO folders (user_id, name) VALUES (?, 'Dinner') RETURNING id`).bind(userId).first()).id;
+    const tagRecipe = async (userId, recipeId) => {
+      const tag = await env.DB.prepare(`INSERT INTO tags (user_id, name) VALUES (?, 'Dinner') RETURNING id`).bind(userId).first();
+      await env.DB.prepare('INSERT INTO recipe_tags (recipe_id, tag_id) VALUES (?, ?)').bind(recipeId, tag.id).run();
+      return tag.id;
+    };
 
-    it('replaces the text and model, and keeps the folder and favorite', async () => {
+    it('replaces the text and model, and keeps the tags and favorite', async () => {
       const userId = await insertUser();
-      const folderId = await insertFolder(userId);
-      const recipe = await insertRecipe(userId, { folder_id: folderId });
+      const recipe = await insertRecipe(userId);
+      const tagId = await tagRecipe(userId, recipe.id);
       const row = await atSave(userId, ONE, { replace_recipe_id: recipe.id });
       await runStage(env, row.id, row.attempt, stage('save'));
 
@@ -621,7 +623,6 @@ describe('stage: save', () => {
       expect(others).toEqual([]);
       expect(after).toMatchObject({
         id: recipe.id,
-        folder_id: folderId,
         is_favorite: 1,
         created_at: 5,
         source_model: FIRST,
@@ -632,6 +633,8 @@ describe('stage: save', () => {
       expect(JSON.parse(after.ingredients_en)).toEqual(ONE.en.ingredients);
       expect(after.updated_at).toBeGreaterThan(5);
       expect(await reload(row)).toMatchObject({ status: 'done', state: '{}', recipe_id: recipe.id });
+      const kept = await env.DB.prepare('SELECT tag_id FROM recipe_tags WHERE recipe_id = ?').bind(recipe.id).all();
+      expect(kept.results).toEqual([{ tag_id: tagId }]);
     });
 
     it('does not recreate a deleted recipe, and dismisses the import', async () => {
@@ -752,7 +755,7 @@ describe('the Workflow, end to end', () => {
     const after = await reload(row);
     expect(after).toMatchObject({ status: 'done', title: 'Shakshuka video', error: null, used_best: 0 });
     const recipe = await env.DB.prepare('SELECT * FROM recipes WHERE id = ?').bind(after.recipe_id).first();
-    expect(recipe).toMatchObject({ name_en: 'Shakshuka', source_url: VIDEO_URL, source_model: FIRST, folder_id: null });
+    expect(recipe).toMatchObject({ name_en: 'Shakshuka', source_url: VIDEO_URL, source_model: FIRST });
     expect(calls('youtube/v3')).toHaveLength(1);
     expect(calls('generativelanguage')).toHaveLength(1);
   });

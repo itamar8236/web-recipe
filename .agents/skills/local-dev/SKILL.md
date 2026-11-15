@@ -37,7 +37,7 @@ local copy, so agents can't reach production even by accident.
 ## 1. Check the local copy
 From `backend/`:
 ```
-npx wrangler d1 execute recipes-db --local --command="SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM folders) AS folders, (SELECT COUNT(*) FROM recipes) AS recipes"
+npx wrangler d1 execute recipes-db --local --command="SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM tags) AS tags, (SELECT COUNT(*) FROM recipes) AS recipes"
 ```
 If it fails with `no such table`, or every count is 0, the local copy is empty. Stop and
 tell the owner, giving them these commands to run themselves from `backend/`:
