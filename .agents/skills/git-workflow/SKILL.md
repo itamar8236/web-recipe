@@ -99,21 +99,20 @@ without the owner's approval.
 
 ### Let the owner test it
 The owner tests PRs in their main checkout, which has their packages, `.dev.vars` and
-local DB. A branch can be checked out in only one folder, so after every push free it:
-```bash
-git switch --detach
-```
+local DB. A branch can be checked out in only one folder, so the owner checks the PR out
+**detached** (`--detach`): the branch itself stays in your worktree, and you can keep
+committing and pushing to it while they test.
 Start **How to test** in the PR body with the owner's steps, saying only the extra
 setup this PR needs:
 ```
-1. `gh pr checkout <number>`
+1. `gh pr checkout <number> --detach`
 2. (only if needed) `npm install` in `frontend/` or `backend/`; `npm --prefix backend run db:schema:local`
 3. `npm --prefix frontend run build; if ($?) { npm --prefix backend run dev }`, open http://localhost:8787
 4. When done: Ctrl+C, then `git switch main`
 ```
-Running `gh pr checkout <number>` again picks up newer commits. To add commits later,
-take the branch back in your worktree first: `git switch <branch>` (if the owner has it
-checked out, ask them to `git switch main`).
+Running `gh pr checkout <number> --detach` again picks up newer commits. If the owner did
+check the branch out by name, don't wait for them: commit on a detached `HEAD` in your
+worktree and push with `git push origin HEAD:<branch>`.
 
 ## 5. After the merge
 Remove the worktree (Claude Code and Codex usually do this when the session is closed or
