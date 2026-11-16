@@ -98,7 +98,7 @@ async function runOne(link) {
     if (card.status !== 'done') return { ...row, result: 'still running, gave up waiting' };
     const { recipe } = (await api(`/api/recipes/${card.recipeId}`)).data;
     await api(`/api/imports/${id}`, 'DELETE');
-    return { ...row, result: 'recipe', storedLink: recipe.link, model: recipe.sourceModel, recipe: { en: recipe.en, he: recipe.he } };
+    return { ...row, result: 'recipe', storedLink: recipe.link, model: recipe.sourceModel, recipe: { en: recipe.en, he: recipe.he, calories: recipe.calories, protein: recipe.protein } };
   }
 }
 
@@ -127,7 +127,7 @@ for (const link of links) {
   results.push(result);
   const size = result.recipe ? `, ${result.recipe.en.ingredients.length} ingredients, ${result.recipe.en.steps.length} steps` : '';
   console.log(`${linkForm(link)} | ${result.time} | ${result.result}${result.model ? ` by ${result.model}` : ''}${size} | ${result.stages ?? ''}`);
-  if (result.recipe) console.log(`  ${result.recipe.en.name} / ${result.recipe.he.name}`);
+  if (result.recipe) console.log(`  ${result.recipe.en.name} / ${result.recipe.he.name} | per serving: ${result.recipe.calories ?? '?'} kcal, ${result.recipe.protein ?? '?'} g protein`);
   if (result.recipe && args.show) printRecipe(result.recipe);
   if (link !== links.at(-1)) await sleep(PAUSE_BETWEEN_LINKS_MS);
 }

@@ -53,7 +53,7 @@ async function listBrowse(request, env, userId) {
   }
 
   const { results } = await env.DB.prepare(
-    `SELECT r.id, r.is_favorite, r.is_public, r.source_url, r.source_model,
+    `SELECT r.id, r.is_favorite, r.is_public, r.source_url, r.source_model, r.calories, r.protein,
             r.name_en, r.ingredients_en, r.steps_en, r.name_he, r.ingredients_he, r.steps_he,
             users.username AS owner, ${TAG_NAMES} AS tag_names, ${ORDER_KEY} AS order_key
        FROM recipes AS r JOIN users ON users.id = r.user_id
@@ -73,7 +73,8 @@ async function listBrowse(request, env, userId) {
   });
 }
 
-// Saves the user's own copy of another user's public recipe: the same text and link,
+// Saves the user's own copy of another user's public recipe: the same text, link,
+// calories and protein,
 // public or private as the user's default says, with no favorite. Its tags come too when
 // the user's "copy tags" default is on, as the user's own tags (found by name, or made).
 // Saving the same recipe again makes another copy.
@@ -81,10 +82,10 @@ async function copyRecipe(env, userId, id) {
   const copy = await env.DB.prepare(
     `INSERT INTO recipes (user_id, is_public, platform, source_url, source_model,
        name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
-       machine_translated_lang, created_at, updated_at)
+       machine_translated_lang, calories, protein, created_at, updated_at)
      SELECT ?1, (SELECT default_public FROM users WHERE id = ?1), r.platform, r.source_url, r.source_model,
        r.name_en, r.ingredients_en, r.steps_en, r.name_he, r.ingredients_he, r.steps_he,
-       r.machine_translated_lang, ?3, ?3
+       r.machine_translated_lang, r.calories, r.protein, ?3, ?3
      FROM recipes AS r
      WHERE r.id = ?2 AND ${VISIBLE}
      RETURNING id`,

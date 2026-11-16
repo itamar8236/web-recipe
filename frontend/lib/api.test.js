@@ -46,6 +46,17 @@ describe('guest: recipes', () => {
     });
   });
 
+  it('keeps calories and protein, and checks them like the backend', async () => {
+    const saved = await api.saveRecipe(null, { en: content('Toast'), he: content(''), calories: 300, protein: 9 });
+    expect(saved).toMatchObject({ calories: 300, protein: 9 });
+    expect((await newRecipe('Plain')).calories).toBeNull();
+    await api.saveRecipe(saved.id, { en: content('Toast'), he: content(''), calories: null, protein: 9 });
+    expect(await api.getRecipe(saved.id)).toMatchObject({ calories: null, protein: 9 });
+    await expect(
+      api.saveRecipe(null, { en: content('Toast'), he: content(''), calories: 1.5 }),
+    ).rejects.toMatchObject({ code: 'invalid_nutrition' });
+  });
+
   it('updates an existing recipe and keeps its tags', async () => {
     const recipe = await newRecipe('Shakshuka');
     const { tags } = await api.setRecipeTags(recipe.id, ['Dinner']);

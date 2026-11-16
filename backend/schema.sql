@@ -128,6 +128,9 @@ END;
 -- is_public says other users may see the recipe in Browse and copy it. Only the owner can
 -- ever change the recipe itself. A copy saved from Browse is a plain recipe of its new
 -- owner: nothing links it to the one it was copied from.
+-- calories (kcal) and protein (grams) are per serving, whole numbers, NULL when not known.
+-- An import's model fills them in, and the user can write or change them. They are the
+-- same in both languages.
 -- source_model is the LLM that produced an imported recipe (NULL for manual recipes).
 -- machine_translated_lang names the language an import's model filled in as a translation
 -- of the post's own language. Only the backend reads it (the API doesn't return it); it is
@@ -151,6 +154,8 @@ CREATE TABLE IF NOT EXISTS recipes (
   steps_he       TEXT    NOT NULL DEFAULT '[]'
                  CHECK (json_valid(steps_he) AND json_type(steps_he) = 'array'),
   machine_translated_lang TEXT CHECK (machine_translated_lang IN ('en', 'he')),
+  calories       INTEGER CHECK (calories BETWEEN 0 AND 10000),
+  protein        INTEGER CHECK (protein BETWEEN 0 AND 1000),
   created_at     INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   updated_at     INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   CHECK (trim(name_en) <> '' OR trim(name_he) <> ''),

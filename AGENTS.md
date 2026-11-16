@@ -9,7 +9,7 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 ## Status
 
 Built so far: the recipe browsing UI (tags, recipes, favorites, English/Hebrew, manual
-add/edit/delete), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
+add/edit/delete, calories and protein per serving), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, editing your own username,
 password and defaults, browsing and copying other users' public recipes, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
@@ -72,6 +72,10 @@ resolved. One short line each, linking to the README section with the details.
   the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
+- A recipe may also have **calories and protein per serving** (optional, the same in both
+  languages), shown only on the recipe's own page. They are typed in the edit form, and an
+  import from a link gets them from the model in the same request as the recipe. Manual
+  recipes can't ask the model for them yet (a possible later feature).
 - **Up to 50 users**, each with their **own tags, recipes, and favorites**. Nobody can
   change another user's data. Each recipe is **public or private**: other users can see a
   public one in Browse and copy it, and a private one is seen only by its owner. Anyone can **sign up** with a username and password

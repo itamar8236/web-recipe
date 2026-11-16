@@ -3,7 +3,7 @@
 // Nothing here knows one site from another: that is the adapters' job (sources/).
 
 import { NonRetryableError } from 'cloudflare:workflows';
-import { contentValues, readContent } from '../data.js';
+import { contentValues, readContent, readNutrition } from '../data.js';
 import { ImportError } from './errors.js';
 import { callModel, ModelBusyError, VideoRefusedError, videoFiles } from './llm.js';
 import { callChosenModel } from './models.js';
@@ -38,6 +38,9 @@ const ANSWER_SCHEMA = {
     language: { type: 'string', enum: ['he', 'en', 'other'] },
     en: contentSchema,
     he: contentSchema,
+    // Optional, so a model that can't tell still gives the recipe.
+    calories: { type: 'number' },
+    protein: { type: 'number' },
   },
   required: ['status', 'language', 'en', 'he'],
 };
@@ -53,7 +56,9 @@ Set "status":
 
 Set "language" to the source language: "he", "en" or "other". Write that language faithfully and translate into the other of English and Hebrew. For any other language, write English first, then translate it to Hebrew.
 
-Write natural Hebrew with common kitchen terms. Put one item in each array entry. Do not number the steps. For "none" or "multiple", leave every name and list empty.`;
+Write natural Hebrew with common kitchen terms. Put one item in each array entry. Do not number the steps. For "none" or "multiple", leave every name and list empty.
+
+For "one", also set "calories" (kcal) and "protein" (grams) for one serving, as whole numbers. Use the post's own numbers if it gives them. Otherwise estimate them from the ingredients and their quantities, divided by the number of servings the recipe says it makes, or by a typical number of servings for this dish. Leave them out only if the ingredients give you no way to estimate.`;
 
 function buildPrompt({ description, subtitles }, hasVideo) {
   const parts = [INSTRUCTIONS];
@@ -106,10 +111,21 @@ function readLanguage(value) {
   return content.value;
 }
 
+// Calories and protein are a bonus: a number that is missing or out of range is dropped
+// (null), and the recipe is still saved.
+function readNutritionAnswer(output) {
+  const rounded = (value) => (typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null);
+  const nutrition = { calories: rounded(output.calories), protein: rounded(output.protein) };
+  for (const field of Object.keys(nutrition)) {
+    if (readNutrition({ [field]: nutrition[field] }).error) nutrition[field] = null;
+  }
+  return nutrition;
+}
+
 // The model's answer is untrusted: nothing is stored until it passes these checks.
 function readRecipe(output) {
   if (!['he', 'en', 'other'].includes(output.language)) throw badResult();
-  return { language: output.language, en: readLanguage(output.en), he: readLanguage(output.he) };
+  return { language: output.language, en: readLanguage(output.en), he: readLanguage(output.he), ...readNutritionAnswer(output) };
 }
 
 function ask(job, deps, text, video) {
@@ -211,10 +227,10 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
     env.DB.prepare(
       `INSERT INTO recipes (user_id, platform, source_url, source_model,
          name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
-         machine_translated_lang, created_at, updated_at, is_public)
-       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT default_public FROM users WHERE id = ?)
+         machine_translated_lang, calories, protein, created_at, updated_at, is_public)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT default_public FROM users WHERE id = ?)
        WHERE EXISTS (SELECT 1 FROM llm_requests ${isCurrent})`,
-    ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, now, now, job.user_id, job.id, job.attempt),
+    ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, ...nutritionValues(recipe), now, now, job.user_id, job.id, job.attempt),
     env.DB.prepare(
       `UPDATE llm_requests SET status = 'done', state = '{}', model = ?, updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE user_id = ? AND source_url = ? ORDER BY id DESC LIMIT 1)
@@ -223,8 +239,11 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
   ];
 }
 
-// A re-run replaces only the text and which model wrote it, so the tags and favorite
-// stay. If the recipe was deleted meanwhile nothing is recreated and the card goes away.
+// State saved before calories and protein existed has neither, which is null.
+const nutritionValues = (recipe) => [recipe.calories ?? null, recipe.protein ?? null];
+
+// A re-run replaces only the text, calories, protein and which model wrote it, so the tags
+// and favorite stay. If the recipe was deleted meanwhile nothing is recreated and the card goes away.
 function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) {
   const sameRecipe = 'id = ? AND user_id = ? AND source_url = ?';
   const recipeKey = [job.replace_recipe_id, job.user_id, job.source_url];
@@ -232,10 +251,10 @@ function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) 
     env.DB.prepare(
       `UPDATE recipes SET source_model = ?,
          name_en = ?, ingredients_en = ?, steps_en = ?, name_he = ?, ingredients_he = ?, steps_he = ?,
-         machine_translated_lang = ?, updated_at = ?
+         machine_translated_lang = ?, calories = ?, protein = ?, updated_at = ?
        WHERE ${sameRecipe}
          AND EXISTS (SELECT 1 FROM llm_requests ${isCurrent})`,
-    ).bind(model, ...contentValues(recipe), machineLang, now, ...recipeKey, job.id, job.attempt),
+    ).bind(model, ...contentValues(recipe), machineLang, ...nutritionValues(recipe), now, ...recipeKey, job.id, job.attempt),
     env.DB.prepare(
       `UPDATE llm_requests SET
          status = CASE WHEN EXISTS (SELECT 1 FROM recipes WHERE ${sameRecipe}) THEN 'done' ELSE 'dismissed' END,

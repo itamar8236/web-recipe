@@ -163,6 +163,16 @@ function RecipeView() {
         </ol>
       </section>
 
+      {(recipe.calories !== null || recipe.protein !== null) && (
+        <section className={styles.card}>
+          <h2>{t.nutrition}</h2>
+          <ul className={styles.nutrition}>
+            {recipe.calories !== null && <li>{t.caloriesValue(recipe.calories)}</li>}
+            {recipe.protein !== null && <li>{t.proteinValue(recipe.protein)}</li>}
+          </ul>
+        </section>
+      )}
+
       {error && <p className="error" role="alert">{error}</p>}
 
       <div className={styles.actions}>
