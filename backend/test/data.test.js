@@ -149,6 +149,30 @@ describe('recipes', () => {
     expect((await as(cookie).del(`/api/recipes/${recipe.id}`)).status).toBe(404);
   });
 
+  it('saves calories and protein, keeps them when an update leaves them out, and clears them with null', async () => {
+    const created = await as(cookie).post('/api/recipes', { ...recipeBody('Toast'), calories: 350, protein: 12 });
+    const { recipe } = await created.json();
+    expect(recipe).toMatchObject({ calories: 350, protein: 12 });
+    expect((await newRecipe('Plain')).calories).toBeNull();
+
+    const kept = await as(cookie).put(`/api/recipes/${recipe.id}`, recipeBody('Better toast'));
+    expect((await kept.json()).recipe).toMatchObject({ calories: 350, protein: 12 });
+    const changed = await as(cookie).put(`/api/recipes/${recipe.id}`, { ...recipeBody('Toast'), calories: null, protein: 0 });
+    expect((await changed.json()).recipe).toMatchObject({ calories: null, protein: 0 });
+  });
+
+  it.each([
+    ['a decimal', { calories: 12.5 }],
+    ['a negative number', { protein: -1 }],
+    ['too many calories', { calories: 10001 }],
+    ['too much protein', { protein: 1001 }],
+    ['text', { calories: '300' }],
+  ])('rejects %s as calories or protein', async (_, nutrition) => {
+    const response = await as(cookie).post('/api/recipes', { ...recipeBody('Toast'), ...nutrition });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe('invalid_nutrition');
+  });
+
   it('rejects bad input', async () => {
     const noName = await as(cookie).post('/api/recipes', { en: content(' '), he: content('') });
     expect((await noName.json()).error).toBe('name_required');

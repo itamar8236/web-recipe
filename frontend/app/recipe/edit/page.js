@@ -8,7 +8,7 @@ import { useLanguage } from '@/components/Language';
 import RecipeAiTools from '@/components/RecipeAiTools';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
-import { blankText, toContent, toText, withTranslation } from '@/lib/recipeForm';
+import { blankText, toContent, toNumber, toNumberText, toText, withTranslation } from '@/lib/recipeForm';
 import styles from '../recipe.module.css';
 
 function RecipeForm() {
@@ -17,7 +17,7 @@ function RecipeForm() {
   const params = useSearchParams();
   const id = params.get('id') ? Number(params.get('id')) : null;
 
-  const [form, setForm] = useState({ en: blankText, he: blankText });
+  const [form, setForm] = useState({ en: blankText, he: blankText, calories: '', protein: '' });
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'missing' | 'error'
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [saving, setSaving] = useState(false);
@@ -47,7 +47,12 @@ function RecipeForm() {
         if (recipe) {
           setLink(recipe.link);
           setIsPublic(recipe.public);
-          setForm({ en: toText(recipe.en), he: toText(recipe.he) });
+          setForm({
+            en: toText(recipe.en),
+            he: toText(recipe.he),
+            calories: toNumberText(recipe.calories),
+            protein: toNumberText(recipe.protein),
+          });
         }
         setStatus('ready');
       } catch (err) {
@@ -108,6 +113,8 @@ function RecipeForm() {
       const saved = await api.saveRecipe(id, {
         en: toContent(values.en),
         he: toContent(values.he),
+        calories: toNumber(values.calories),
+        protein: toNumber(values.protein),
       });
       try {
         if (loggedIn && saved.public !== isPublic) await api.setRecipePublic(saved.id, isPublic);
@@ -165,6 +172,29 @@ function RecipeForm() {
         </label>
         <textarea id="steps" className="field" value={current.steps} onChange={(e) => update('steps', e.target.value)} />
       </div>
+
+      <fieldset className={styles.nutritionFields}>
+        <legend className="label">
+          {t.nutrition} <span className="hint">({t.nutritionHint})</span>
+        </legend>
+        <div className={styles.nutritionRow}>
+          {['calories', 'protein'].map((field) => (
+            <div key={field}>
+              <label className="label" htmlFor={field}>{t[field]}</label>
+              <input
+                id={field}
+                className="field"
+                type="number"
+                inputMode="numeric"
+                min="0"
+                step="1"
+                value={form[field]}
+                onChange={(e) => setForm({ ...form, [field]: e.target.value })}
+              />
+            </div>
+          ))}
+        </div>
+      </fieldset>
 
       {loggedIn && (
         <div className={styles.visibility}>

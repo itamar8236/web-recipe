@@ -129,6 +129,14 @@ describe('saving a copy', () => {
     expect(recipe.tagIds).toHaveLength(2);
     expect(await myRecipes(noa)).toHaveLength(2);
 
+    // Calories and protein come with the copy, but Browse itself doesn't show them.
+    await as(dana).put(`/api/recipes/${original.id}`, { en: original.en, he: original.he, calories: 300, protein: 9 });
+    const withNutrition = await (await copy(noa, original.id)).json();
+    expect(withNutrition.recipe).toMatchObject({ calories: 300, protein: 9 });
+    const [browsed] = (await browse(noa)).recipes;
+    expect(browsed).not.toHaveProperty('calories');
+    expect(browsed).not.toHaveProperty('protein');
+
     // The copy is noa's: changing it leaves dana's recipe alone.
     await as(noa).put(`/api/recipes/${recipe.id}`, { en: content('Changed'), he: content('') });
     expect((await myRecipes(dana))[0].en.name).toBe('Toast');

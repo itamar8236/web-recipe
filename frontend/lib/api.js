@@ -90,6 +90,25 @@ export function setGuestMode(on) {
 const copy = (value) => structuredClone(value);
 const findRecipe = (id) => memory.recipes.find((r) => r.id === id);
 
+// The backend's limits for calories (kcal) and protein (grams) per serving.
+const NUTRITION_LIMITS = { calories: 10000, protein: 1000 };
+
+// Like the backend: a whole number in range or null; undefined keeps the recipe's value.
+function cleanNutrition(data, existing) {
+  const nutrition = {};
+  for (const [field, max] of Object.entries(NUTRITION_LIMITS)) {
+    const value = data[field];
+    if (value === undefined) {
+      nutrition[field] = existing?.[field] ?? null;
+    } else if (value === null || (Number.isInteger(value) && value >= 0 && value <= max)) {
+      nutrition[field] = value;
+    } else {
+      throw new ApiError(400, 'invalid_nutrition');
+    }
+  }
+  return nutrition;
+}
+
 function cleanContent(content) {
   const lines = (list) => list.map((line) => line.trim()).filter(Boolean);
   return { name: content.name.trim(), ingredients: lines(content.ingredients), steps: lines(content.steps) };
@@ -155,7 +174,8 @@ export async function setRecipeTags(id, names) {
 }
 
 // ---- Recipes ----
-// A recipe is { id, tagIds, favorite, public, link, en: {name, ingredients[], steps[]}, he: {...} }.
+// A recipe is { id, tagIds, favorite, public, link, calories, protein, en: {name, ingredients[], steps[]}, he: {...} }.
+// calories (kcal) and protein (grams) are per serving, null when not known.
 // `public` means other users can see and copy it; a guest's recipes are never sent anywhere,
 // so theirs is always true and means nothing.
 
@@ -179,17 +199,18 @@ export async function getRecipe(id) {
 }
 
 // Creates the recipe when `id` is null (with no tags), otherwise replaces its text.
-// `data` is { en, he }.
+// `data` is { en, he, calories, protein }; a calories or protein left out stays as it is.
 export async function saveRecipe(id, data) {
   if (guest) {
     const fields = { en: cleanContent(data.en), he: cleanContent(data.he) };
     if (!fields.en.name && !fields.he.name) throw new ApiError(400, 'name_required');
     const existing = findRecipe(id);
+    Object.assign(fields, cleanNutrition(data, existing));
     if (existing) Object.assign(existing, fields);
     else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', favorite: false, public: true, ...fields });
     return copy(existing ?? memory.recipes.at(-1));
   }
-  const body = { en: data.en, he: data.he };
+  const body = { en: data.en, he: data.he, calories: data.calories, protein: data.protein };
   return id === null
     ? (await dataRequest('/api/recipes', 'POST', body)).recipe
     : (await dataRequest(`/api/recipes/${id}`, 'PUT', body)).recipe;

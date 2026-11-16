@@ -120,14 +120,18 @@ frontend/
      card id) and the failed card is replaced by it.
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
-5. **Recipe view**: name, source link (opens the video), tags, ingredients, steps. Heart, Edit
-   and Delete buttons (delete asks for confirmation).
+5. **Recipe view**: name, source link (opens the video), tags, a "Per serving" card with
+   calories and protein (only when the recipe has either), ingredients, steps. Heart, Edit
+   and Delete buttons (delete asks for confirmation). Calories and protein show only here,
+   never on the Home or Browse cards.
    - **Tags** (`components/RecipeTags`) are changed right here, not on the edit form, and
      every tap saves at once. Each tag is a chip with an ×: tapping it removes the tag.
      "+ Add tag" opens a small panel with the user's other tags (tap one to add it), a
      field for a new tag, and Done. A new recipe has no tags until they are added here. No AI actions here: they are all on
    the edit form, so the view stays simple.
-6. **Edit**: name, ingredients, and steps (one per line) in the app's current language.
+6. **Edit**: name, ingredients, and steps (one per line) in the app's current language,
+   plus two optional number fields, calories (kcal) and protein (g) per serving, which are
+   the same in both languages (empty = not known).
    Tags are not here (see Recipe view). A short note explains that to write the other language you
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other

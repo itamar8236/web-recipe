@@ -123,7 +123,7 @@ const atSave = (userId, recipe = ONE, fields = {}) =>
     quota_day: today(),
     state: JSON.stringify({
       meta: meta(),
-      recipe: { language: recipe.language, en: recipe.en, he: recipe.he },
+      recipe: { language: recipe.language, en: recipe.en, he: recipe.he, calories: recipe.calories, protein: recipe.protein },
       model: FIRST,
       done: ['meta', 'video', 'extract'],
       version: 2,
@@ -209,7 +209,7 @@ describe('stage: extract', () => {
 
     const after = await reload(row);
     const state = JSON.parse(after.state);
-    expect(state.recipe).toEqual({ language: 'he', en: ONE.en, he: ONE.he });
+    expect(state.recipe).toEqual({ language: 'he', en: ONE.en, he: ONE.he, calories: null, protein: null });
     expect(state.model).toBe(FIRST);
     expect(state.done).toEqual(['meta', 'video', 'extract']);
     expect(after).toMatchObject({ stage: 'save', status: 'running', error: null, used_best: 0 });
@@ -236,9 +236,23 @@ describe('stage: extract', () => {
       'natural Hebrew with common kitchen terms',
       'one item in each array entry',
       'Do not number the steps',
+      '"calories" (kcal) and "protein" (grams) for one serving',
+      "Use the post's own numbers if it gives them",
+      'Otherwise estimate them from the ingredients',
     ]) {
       expect(prompt).toContain(rule);
     }
+  });
+
+  it('keeps the calories and protein, rounded, and drops ones out of range', async () => {
+    const userId = await insertUser();
+    const row = await atExtract(userId);
+    await runExtract(row, fakeLlm({ ...ONE, calories: 412.6, protein: 31.2 }));
+    expect(JSON.parse((await reload(row)).state).recipe).toMatchObject({ calories: 413, protein: 31 });
+
+    const bad = await atExtract(userId, {}, { source_id: 'other' });
+    await runExtract(bad, fakeLlm({ ...ONE, calories: -5, protein: 5000 }));
+    expect(JSON.parse((await reload(bad)).state).recipe).toMatchObject({ calories: null, protein: null });
   });
 
   it.each([
@@ -539,7 +553,14 @@ describe('stage: save', () => {
     });
     expect(JSON.parse(recipe.ingredients_he)).toEqual(ONE.he.ingredients);
     expect(JSON.parse(recipe.steps_en)).toEqual(ONE.en.steps);
+    expect(recipe).toMatchObject({ calories: null, protein: null });
     expect(await reload(row)).toMatchObject({ status: 'done', state: '{}', recipe_id: recipe.id });
+  });
+
+  it('writes the calories and protein the model gave', async () => {
+    const row = await atSave(await insertUser(), { ...ONE, calories: 420, protein: 25 });
+    await runStage(env, row.id, row.attempt, stage('save'));
+    expect((await recipes())[0]).toMatchObject({ calories: 420, protein: 25 });
   });
 
   it.each([
@@ -612,11 +633,11 @@ describe('stage: save', () => {
       return tag.id;
     };
 
-    it('replaces the text and model, and keeps the tags and favorite', async () => {
+    it('replaces the text, calories, protein and model, and keeps the tags and favorite', async () => {
       const userId = await insertUser();
-      const recipe = await insertRecipe(userId);
+      const recipe = await insertRecipe(userId, { calories: 100, protein: 2 });
       const tagId = await tagRecipe(userId, recipe.id);
-      const row = await atSave(userId, ONE, { replace_recipe_id: recipe.id });
+      const row = await atSave(userId, { ...ONE, calories: 500, protein: 40 }, { replace_recipe_id: recipe.id });
       await runStage(env, row.id, row.attempt, stage('save'));
 
       const [after, ...others] = await recipes();
@@ -629,6 +650,8 @@ describe('stage: save', () => {
         name_en: 'Shakshuka',
         name_he: 'שקשוקה',
         machine_translated_lang: 'en',
+        calories: 500,
+        protein: 40,
       });
       expect(JSON.parse(after.ingredients_en)).toEqual(ONE.en.ingredients);
       expect(after.updated_at).toBeGreaterThan(5);

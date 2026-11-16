@@ -12,6 +12,10 @@ const MAX_LINE = 2000;
 
 const LANGS = ['en', 'he'];
 
+// Calories (kcal) and protein (grams) per serving, whole numbers. Both optional: null
+// when nobody knows them.
+const NUTRITION_LIMITS = { calories: 10000, protein: 1000 };
+
 // A recipe as the frontend uses it: both languages side by side, `link` '' when manual.
 export function toRecipe(row) {
   const content = (lang) => ({
@@ -26,13 +30,15 @@ export function toRecipe(row) {
     public: row.is_public === 1,
     link: row.source_url ?? '',
     sourceModel: row.source_model,
+    calories: row.calories,
+    protein: row.protein,
     en: content('en'),
     he: content('he'),
   };
 }
 
 // tag_ids is a subquery, so the same list works in a SELECT and in RETURNING.
-export const RECIPE_COLUMNS = `id, is_favorite, is_public, source_url, source_model,
+export const RECIPE_COLUMNS = `id, is_favorite, is_public, source_url, source_model, calories, protein,
   name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
   (SELECT json_group_array(tag_id) FROM recipe_tags WHERE recipe_id = recipes.id) AS tag_ids`;
 
@@ -81,7 +87,21 @@ export function readContent(value) {
   return { value: { name, ingredients, steps } };
 }
 
-// Reads { en, he }. Tags are not part of it: they have their own endpoint.
+// Reads { calories, protein } from `value`. Each is a whole number in range, null (not
+// known), or left out (undefined: an update then keeps what the recipe has).
+export function readNutrition(value) {
+  const nutrition = {};
+  for (const [field, max] of Object.entries(NUTRITION_LIMITS)) {
+    const number = value?.[field];
+    if (number !== undefined && number !== null && !(Number.isInteger(number) && number >= 0 && number <= max)) {
+      return { error: 'invalid_nutrition' };
+    }
+    nutrition[field] = number;
+  }
+  return { value: nutrition };
+}
+
+// Reads { en, he, calories?, protein? }. Tags are not part of it: they have their own endpoint.
 async function readRecipe(request) {
   const body = await readJson(request);
   if (!body) return { error: 'invalid_request' };
@@ -93,7 +113,9 @@ async function readRecipe(request) {
     recipe[lang] = content.value;
   }
   if (!recipe.en.name && !recipe.he.name) return { error: 'name_required' };
-  return { value: recipe };
+  const nutrition = readNutrition(body);
+  if (nutrition.error) return nutrition;
+  return { value: { ...recipe, ...nutrition.value } };
 }
 
 // The bound values for the content columns, in RECIPE_COLUMNS order (en, then he).
@@ -194,16 +216,18 @@ async function createRecipe(request, env, userId) {
   const now = Date.now();
   const row = await env.DB.prepare(
     `INSERT INTO recipes (user_id, is_public,
-       name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he, created_at, updated_at)
-     VALUES (?1, (SELECT default_public FROM users WHERE id = ?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+       name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he, created_at, updated_at,
+       calories, protein)
+     VALUES (?1, (SELECT default_public FROM users WHERE id = ?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
      RETURNING ${RECIPE_COLUMNS}`,
   )
-    .bind(userId, ...contentValues(recipe.value), now, now)
+    .bind(userId, ...contentValues(recipe.value), now, now, recipe.value.calories ?? null, recipe.value.protein ?? null)
     .first();
   return json({ recipe: toRecipe(row) }, 201);
 }
 
-// Replaces the text only: the tags, favorite, link and public flag stay. Editing a language the LLM
+// Replaces the text, and the calories and protein the body has (one left out stays): the
+// tags, favorite, link and public flag stay. Editing a language the LLM
 // filled in makes it the user's own text, so its machine-translated label is cleared
 // (see schema.sql).
 async function updateRecipe(request, env, userId, id) {
@@ -217,11 +241,22 @@ async function updateRecipe(request, env, userId, id) {
          ELSE machine_translated_lang END,
        name_en = ?2, ingredients_en = ?3, steps_en = ?4,
        name_he = ?5, ingredients_he = ?6, steps_he = ?7,
-       updated_at = ?8
+       updated_at = ?8,
+       calories = CASE WHEN ?10 THEN ?11 ELSE calories END,
+       protein = CASE WHEN ?12 THEN ?13 ELSE protein END
      WHERE id = ?9 AND user_id = ?1
      RETURNING ${RECIPE_COLUMNS}`,
   )
-    .bind(userId, ...contentValues(recipe.value), Date.now(), id)
+    .bind(
+      userId,
+      ...contentValues(recipe.value),
+      Date.now(),
+      id,
+      recipe.value.calories === undefined ? 0 : 1,
+      recipe.value.calories ?? null,
+      recipe.value.protein === undefined ? 0 : 1,
+      recipe.value.protein ?? null,
+    )
     .first();
   return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');
 }

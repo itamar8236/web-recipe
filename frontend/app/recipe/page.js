@@ -149,6 +149,16 @@ function RecipeView() {
 
       {!content.translated && <p className={styles.notice}>{t.notTranslated}</p>}
 
+      {(recipe.calories !== null || recipe.protein !== null) && (
+        <section className={styles.card}>
+          <h2>{t.nutrition}</h2>
+          <ul className={styles.nutrition}>
+            {recipe.calories !== null && <li>{t.caloriesValue(recipe.calories)}</li>}
+            {recipe.protein !== null && <li>{t.proteinValue(recipe.protein)}</li>}
+          </ul>
+        </section>
+      )}
+
       <section className={styles.card}>
         <h2>{t.ingredients}</h2>
         <ul className={styles.ingredients} lang={contentLang} dir={contentDir}>

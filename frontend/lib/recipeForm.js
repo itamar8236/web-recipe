@@ -14,6 +14,11 @@ export const toContent = (text) => ({
   steps: text.steps.split('\n'),
 });
 
+// Calories and protein are typed as text; '' means not known (null). Anything else is sent
+// as a number, and the backend says if it isn't a whole number in range.
+export const toNumberText = (value) => (value === null || value === undefined ? '' : String(value));
+export const toNumber = (text) => (text.trim() === '' ? null : Number(text));
+
 // The form after a translation into `into` arrived: everything the user typed stays as
 // it is, and only the other language is replaced, so it can be saved right away.
 export const withTranslation = (form, into, content) => ({ ...form, [into]: toText(content) });

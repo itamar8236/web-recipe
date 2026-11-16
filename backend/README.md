@@ -70,18 +70,21 @@ with the wrong method answers 405 `method_not_allowed`.
 | `PUT /api/tags/:id` `{name}` | Rename a tag | 200 `{tag}` | 400 `name_required`, `too_long` (> 100 chars), 409 `tag_exists` (another tag has that name), 404 `not_found` |
 | `GET /api/recipes` | All the user's recipes, oldest first | 200 `{recipes: [recipe]}` | |
 | `GET /api/recipes/:id` | One recipe | 200 `{recipe}` | 404 |
-| `POST /api/recipes` `{en, he}` | Create a manual recipe, with no tags | 201 `{recipe}` | 400 `name_required` (no name in either language), `too_long` |
-| `PUT /api/recipes/:id` `{en, he}` | Replace its text (tags, favorite and link are kept) | 200 `{recipe}` | 400 as above, 404 |
+| `POST /api/recipes` `{en, he, calories?, protein?}` | Create a manual recipe, with no tags | 201 `{recipe}` | 400 `name_required` (no name in either language), `too_long`, `invalid_nutrition` |
+| `PUT /api/recipes/:id` `{en, he, calories?, protein?}` | Replace its text, and the calories and protein sent (one left out is kept; `null` clears it). Tags, favorite and link are kept | 200 `{recipe}` | 400 as above, 404 |
 | `PUT /api/recipes/:id/tags` `{tags: [name]}` | Set its tags to exactly these names | 200 `{recipe, tags}` | 400 `invalid_request`, `name_required` (a blank name), `too_long` (a name > 100 chars, or > 20 tags), 404 |
 | `PUT /api/recipes/:id/favorite` `{favorite: true\|false}` | Set (not toggle) the favorite | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `PUT /api/recipes/:id/public` `{public: true\|false}` | Set (not toggle) whether other users can see and copy it | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `DELETE /api/recipes/:id` | Delete | 200 `{ok}` | 404 |
 
-`recipe` is `{ id, tagIds, favorite, public, link, sourceModel, en, he }`, where `public` says
+`recipe` is `{ id, tagIds, favorite, public, link, sourceModel, calories, protein, en, he }`, where `public` says
 other users can see it in Browse (a new recipe gets the user's `defaultPublic`), `en` and `he` are
 `{ name, ingredients: [string], steps: [string] }`, `link` is the source video (`''` for
 manual recipes), `sourceModel` is the LLM that produced it (`null` for manual recipes) and
-`tagIds` is the ids of its tags, lowest first (`[]` for none). The backend trims names and
+`tagIds` is the ids of its tags, lowest first (`[]` for none). `calories` (kcal) and
+`protein` (grams) are per serving, whole numbers, `null` when not known; they are the same
+in both languages, and `invalid_nutrition` means one isn't a whole number from 0 to 10000
+(calories) or 1000 (protein). The backend trims names and
 lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ingredients
 or steps per language, 2000 chars per line. The table also keeps
 `machine_translated_lang` (which language an import's model filled in, as a translation),
@@ -98,7 +101,8 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
 
 - A browsed recipe is `{ id, owner, tags, link, en, he }`: `owner` is the username of who
   saved it and `tags` its tag **names** (ids mean nothing to another user). The owner's
-  favorite mark is never sent.
+  favorite mark is never sent, nor the calories and protein (shown only on a recipe's own
+  page); a copy brings them along.
 - **What shows**: every public recipe of every other user. A copy keeps no link to its
   original (the owner's choice), so a recipe the user already saved shows again, another
   user's public copy shows beside the original, and saving one twice makes two copies.
@@ -252,9 +256,18 @@ POST /api/imports {url}
 Workflow: each stage is one retried step, and saves its result to the row
   meta     The post's details from its site: title, text, subtitles, video facts (no LLM)
   video    Facebook and Instagram only: stream the video file into Gemini's file store
-  extract  One call with the text and, if it can be sent, the video
+  extract  One call with the text and, if it can be sent, the video; the same call
+           gives the calories and protein per serving
   save     One D1 batch: insert the recipe, or replace it on a re-scan, + mark the import done
 ```
+
+**Calories and protein.** The extract prompt asks for them per serving, as whole numbers:
+the post's own numbers if it gives them, otherwise the model's estimate from the
+ingredients and the number of servings. They are optional in the answer schema, so a model
+that leaves them out still gives the recipe. A value that is missing, or outside 0-10000
+kcal / 0-1000 g, is stored as `null` rather than failing the import; decimals are rounded.
+A re-scan replaces them along with the text. Manual recipes don't call the model for them
+(a later feature).
 
 **Links.** Only the backend decides which site a link is (`sources/index.js`), from the
 link's text alone. A new platform is one adapter added to `SOURCES` (the adapter shape is
