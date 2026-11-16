@@ -6,7 +6,7 @@ import { ImportError } from '../errors.js';
 
 // The headers a browser sends when someone opens a link. Facebook answers 400 to a request
 // without them.
-const BROWSER_HEADERS = {
+export const BROWSER_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -94,7 +94,7 @@ export function findObject(node, matches) {
   return null;
 }
 
-function decodeEntities(text) {
+export function decodeEntities(text) {
   const named = { amp: '&', quot: '"', lt: '<', gt: '>', apos: "'" };
   return text.replace(/&(?:#x([0-9a-f]+)|#(\d+)|(\w+));/gi, (entity, hex, decimal, name) => {
     if (name) return named[name.toLowerCase()] ?? entity;

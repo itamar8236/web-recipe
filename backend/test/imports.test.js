@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { facebook } from '../src/import/sources/facebook.js';
 import { detectSource, readLink, SOURCES } from '../src/import/sources/index.js';
 import { instagram } from '../src/import/sources/instagram.js';
+import { web } from '../src/import/sources/web.js';
 import { youtube } from '../src/import/sources/youtube.js';
 import { nextQuotaReset, quotaDay } from '../src/import/models.js';
 import worker from '../src/index.js';
@@ -63,22 +64,29 @@ describe('link detection', () => {
   });
 
   it.each([
-    ['TikTok', 'https://www.tiktok.com/@cook/video/1234567890123456789'],
-    ['an unknown site', 'https://example.com/recipe'],
-    ['a lookalike host', `https://youtube.com.evil.example/watch?v=${ID}`],
-    ['a host that ends the same', `https://notyoutube.com/watch?v=${ID}`],
-    ['a subdomain not on the list', `https://music.youtube.com/watch?v=${ID}`],
+    ['a lookalike host on a reserved name', `https://youtube.com.evil.example/watch?v=${ID}`],
     ['a user-info trick', `https://youtube.com@evil.example/watch?v=${ID}`],
   ])('refuses %s as link_unsupported', (_, text) => {
     expect(readLink(text)).toEqual({ error: 'link_unsupported' });
   });
 
-  it('has three sources, each found through detectSource by its own hosts', () => {
-    expect(SOURCES).toEqual([youtube, facebook, instagram]);
+  it.each([
+    ['TikTok', 'https://www.tiktok.com/@cook/video/1234567890123456789'],
+    ['an unknown site', 'https://example.com/recipe'],
+    ['a lookalike host', `https://youtube.com.evil.com/watch?v=${ID}`],
+    ['a host that ends the same', `https://notyoutube.com/watch?v=${ID}`],
+    ['a subdomain not on the list', `https://music.youtube.com/watch?v=${ID}`],
+  ])('reads %s as a plain web page, never as YouTube', (_, text) => {
+    expect(readLink(text).source).toBe(web);
+  });
+
+  it('has four sources, each found through detectSource by its own hosts, the web last', () => {
+    expect(SOURCES).toEqual([youtube, facebook, instagram, web]);
     expect(detectSource(new URL(CANONICAL))).toBe(youtube);
     expect(detectSource(new URL('https://m.facebook.com/reel/1234567890'))).toBe(facebook);
     expect(detectSource(new URL('https://instagr.am/p/Cabcdefghij/'))).toBe(instagram);
-    expect(detectSource(new URL('https://example.com/'))).toBeUndefined();
+    expect(detectSource(new URL('https://example.com/'))).toBe(web);
+    expect(detectSource(new URL('http://127.0.0.1/'))).toBeUndefined();
   });
 });
 
@@ -280,8 +288,7 @@ describe('import endpoints', () => {
       ['plain text', 'not a link', 'link_invalid'],
       ['a Facebook profile', 'https://www.facebook.com/somecook', 'link_invalid'],
       ['an Instagram profile', 'https://www.instagram.com/somecook/', 'link_invalid'],
-      ['TikTok', 'https://www.tiktok.com/@a/video/1', 'link_unsupported'],
-      ['an unknown site', 'https://example.com/recipe', 'link_unsupported'],
+      ['an IP address', 'http://10.0.0.1/recipe', 'link_unsupported'],
       ['a lookalike host', `https://youtube.com.evil.example/watch?v=${ID}`, 'link_unsupported'],
     ])('refuses %s, with no external call and no row', async (_, url, code) => {
       const { cookie } = await signUp();

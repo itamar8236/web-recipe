@@ -263,17 +263,17 @@ describe('errorMessage', () => {
   });
 
   it.each([
-    ['link_invalid', "That doesn't look like a video link"],
-    ['link_unsupported', 'Only YouTube, Facebook and Instagram links for now'],
+    ['link_invalid', "That doesn't look like a link to a video or a recipe"],
+    ['link_unsupported', "This link can't be imported"],
     ['already_imported', 'You already have this recipe'],
     ['too_many_imports', 'Wait for current ones, or try tomorrow'],
-    ['video_unavailable', 'Video or post not found'],
-    ['login_required', 'This post needs a login. Only public posts can be imported.'],
-    ['source_blocked', "Couldn't reach the site. Try again later."],
+    ['video_unavailable', 'Page, video or post not found'],
+    ['login_required', 'This page needs a login. Only public pages and posts can be imported.'],
+    ['source_blocked', "Couldn't reach the site. Check the link, or try again later."],
     ['video_private', 'The video must be public'],
     ['video_too_long', 'Only short videos for now'],
     ['no_recipe', 'No recipe found, add it manually'],
-    ['multiple_recipes', 'Pick a video with one recipe'],
+    ['multiple_recipes', 'Pick a link with one recipe'],
     ['llm_error', 'Temporary problem'],
     ['bad_result', "Couldn't read a clean recipe"],
     ['timed_out', 'Something went wrong'],
@@ -305,7 +305,7 @@ describe('errorMessage', () => {
 
 describe('stageMessage', () => {
   it.each([
-    ['meta', 'Getting the video details...'],
+    ['meta', 'Getting the details...'],
     ['video', 'Getting the video...'],
     ['extract', 'Reading the recipe...'],
     ['save', 'Reading the recipe...'],

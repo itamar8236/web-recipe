@@ -13,9 +13,9 @@ add/edit/delete, calories and protein per serving), the D1 binding + schema (`ba
 log-out with remembered sessions plus a guest mode, editing your own username,
 password and defaults, browsing and copying other users' public recipes, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
-a recipe from a YouTube, Facebook or Instagram link in the background with a Cloudflare
-Workflow, plus three AI tools on the edit form (translate a recipe, calculate its calories and protein,
-scan its video again). The sections
+a recipe from a YouTube, Facebook or Instagram link, or from any public recipe web page, in
+the background with a Cloudflare Workflow, plus three AI tools on the edit form (translate a
+recipe, calculate its calories and protein, scan its link again). The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
 ## Known bugs and accepted trade-offs
@@ -34,6 +34,9 @@ resolved. One short line each, linking to the README section with the details.
   model, 500 on the small one (`backend/README.md` → Import from a link). Accepted.
 - A few rare import edge cases are left as they are (`backend/README.md` → Import from a
   link → Known small gaps).
+- Web pages are read as plain text, as an anonymous visitor: a site that blocks bots or
+  builds its page only in JavaScript fails with `source_blocked` or `no_recipe`
+  (`backend/README.md` → Web pages). Accepted.
 - Facebook and Instagram are read as an anonymous visitor, so only public posts work, and
   Meta may block or change this at any time (`backend/README.md` → Facebook and Instagram).
   Not yet checked from Cloudflare's network. Facebook photo and text posts aren't supported.
@@ -50,10 +53,11 @@ resolved. One short line each, linking to the README section with the details.
   are added and removed on the recipe's own page (an existing tag or a new one), without
   opening the edit form. A tag no recipe has is deleted by itself; a tag can be renamed.
 - Add, edit, and delete recipes **manually**, or **from a link**: the backend sends the
-  post's text and video to Google's free LLMs in the background, so it keeps going after
+  post's text and video, or the web page's text, to Google's free LLMs in the background, so it keeps going after
   the user leaves the app, and **saves the recipe by itself**, with no tags. The user can
   edit or delete it afterwards. Supported now: **YouTube**, **Facebook** (videos and reels)
-  and **Instagram** (reels, and photo posts by their caption), public posts only. Only
+  and **Instagram** (reels, and photo posts by their caption), public posts only, and any
+  other public **web page** with a recipe (a recipe site or blog, read as text). Only
   short videos are sent to the LLM (a longer one still works when its text holds the
   recipe); if a video can't be fetched, the text alone is used. Other platforms (TikTok,
   ...) may come later; don't build for them until asked.
@@ -65,13 +69,13 @@ resolved. One short line each, linking to the README section with the details.
   goes to the small model first. Which
   model wrote a recipe is stored with it.
 - The one choice is the **best model**: slower and more detailed, up to 5 a day per user,
-  offered only on "Scan the video again". Every try that calls it counts toward the 5.
+  offered only on "Scan the link again". Every try that calls it counts toward the 5.
   When it can't be used, the scan goes on with the usual models by itself, with no question.
 - The **edit form** holds the AI tools: **translate** the language being written into the
   other one (any recipe, manual ones too); when it works, the recipe is saved with the form's
   current text and the edit form closes. **Calculate calories and protein** per serving from
   the ingredients (any recipe), saved the same way. For an
-  imported recipe, **scan its video again**, which runs like a new import and replaces
+  imported recipe, **scan its link again**, which runs like a new import and replaces
   the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
@@ -147,6 +151,7 @@ One Cloudflare Worker  (backend/)
 │                                        └──► Workflow (import, in the background)
 │                                               ├──► YouTube Data API (video details)
 │                                               ├──► Facebook / Instagram (public post page, video file)
+│                                               ├──► Any other public web page (its text)
 │                                               ├──► Google LLMs (text + video → recipe)
 │                                               └──► Groq (text-only fallback)
 └── /*       → static files built from frontend/ (frontend/out)
@@ -198,9 +203,12 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
 - Run a real video import on a link the owner didn't give in the chat (`local-dev`).
-- Fetch a pasted link as it is, or follow a redirect automatically. The Worker fetches
-  only URLs it builds from a parsed id, on the site's own hosts, checking every hop
-  (`backend/README.md` → Links). No proxies, scraping services, logins or CAPTCHA solvers.
+- Follow a redirect automatically, or fetch anything a page links to. For YouTube,
+  Facebook and Instagram the Worker fetches only URLs it builds from a parsed id, on the
+  site's own hosts; any other link is fetched only after `isFetchableUrl` (a public domain
+  name, default port, no IPs or private-network names), re-checked at every hop
+  (`backend/README.md` → Links, Web pages). No proxies, scraping services, logins or
+  CAPTCHA solvers.
 - Add an API endpoint that skips the login check (only sign-up, login and logout are public).
 - Run `npm run deploy` or `wrangler deploy`. Run the app only locally (`npm run dev`);
   production changes only when the owner merges a PR into `main`.
