@@ -8,25 +8,34 @@ import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
 import styles from './RecipeAiTools.module.css';
 
+const CONFIRM = {
+  translate: { message: (t) => t.confirmTranslate, label: (t) => t.translateShort },
+  nutrition: { message: (t) => t.confirmEstimateNutrition, label: (t) => t.estimateNutritionShort },
+  rescan: { message: (t) => t.confirmRescan, label: (t) => t.rescanShort },
+};
+
 const hasText = (content) => Boolean(content.name.trim() || [...content.ingredients, ...content.steps].some((line) => line.trim()));
 
 // The AI actions on the edit form, for a logged-in user: translate the language being
-// written into the other one, and, for an imported recipe, scan its video again. The
+// written into the other one, estimate calories and protein per serving, and, for an
+// imported recipe, scan its video again. The
 // backend picks the models. The one choice here is asking a scan to use the best model,
 // for a recipe that came out thin: it is slower and each user gets a few a day, and when
 // it can't be used the scan goes on with the usual models by itself.
 // `content` is the language being written ({ name, ingredients[], steps[] }); the
 // translation is handed to `onTranslated`, which saves the recipe (and shows its own
-// error if that fails), so the button stays busy until it returns. `rescanId` is the
+// error if that fails), so the button stays busy until it returns. The estimate is handed
+// to `onNutrition` ({ calories, protein }) the same way; `hasNutrition` says the form
+// already has a number, which is replaced only after asking. `rescanId` is the
 // recipe's id when it has a video link, otherwise null; `recipeId` is its id, or null for
 // a recipe not saved yet. `onBusyChange(true/false)` lets the form hold Save while a
 // request runs.
-export default function RecipeAiTools({ from, content, otherHasText, recipeId, rescanId, onTranslated, onBusyChange }) {
+export default function RecipeAiTools({ from, content, otherHasText, hasNutrition, recipeId, rescanId, onTranslated, onNutrition, onBusyChange }) {
   const { t } = useLanguage();
   const router = useRouter();
   const [useBest, setUseBest] = useState(false);
-  const [busy, setBusyState] = useState(null); // null | 'translate' | 'rescan'
-  const [confirming, setConfirming] = useState(null); // null | 'translate' | 'rescan'
+  const [busy, setBusyState] = useState(null); // null | 'translate' | 'nutrition' | 'rescan'
+  const [confirming, setConfirming] = useState(null); // null | 'translate' | 'nutrition' | 'rescan'
   const [error, setError] = useState('');
 
   function setBusy(value) {
@@ -40,6 +49,19 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
     setBusy('translate');
     try {
       await onTranslated(await api.translateRecipe(from, content, recipeId));
+    } catch (err) {
+      setError(errorMessage(t, err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function estimateNutrition() {
+    setConfirming(null);
+    setError('');
+    setBusy('nutrition');
+    try {
+      await onNutrition(await api.estimateNutrition(content, recipeId));
     } catch (err) {
       setError(errorMessage(t, err));
     } finally {
@@ -76,6 +98,17 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
         </button>
       </div>
 
+      <div className={styles.row}>
+        <button
+          type="button"
+          className="button secondary"
+          disabled={busy !== null || !content.ingredients.some((line) => line.trim())}
+          onClick={() => (hasNutrition ? setConfirming('nutrition') : estimateNutrition())}
+        >
+          {busy === 'nutrition' ? t.estimatingNutrition : t.estimateNutrition}
+        </button>
+      </div>
+
       {rescanId !== null && (
         <div className={styles.row}>
           <button type="button" className="button secondary" disabled={busy !== null} onClick={() => setConfirming('rescan')}>
@@ -92,10 +125,10 @@ export default function RecipeAiTools({ from, content, otherHasText, recipeId, r
 
       {confirming && (
         <ConfirmDialog
-          message={confirming === 'translate' ? t.confirmTranslate : t.confirmRescan}
-          confirmLabel={confirming === 'translate' ? t.translateShort : t.rescanShort}
+          message={CONFIRM[confirming].message(t)}
+          confirmLabel={CONFIRM[confirming].label(t)}
           danger={false}
-          onConfirm={confirming === 'translate' ? translate : rescan}
+          onConfirm={{ translate, nutrition: estimateNutrition, rescan }[confirming]}
           onCancel={() => setConfirming(null)}
         />
       )}

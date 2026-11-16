@@ -14,7 +14,8 @@ log-out with remembered sessions plus a guest mode, editing your own username,
 password and defaults, browsing and copying other users' public recipes, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
 a recipe from a YouTube, Facebook or Instagram link in the background with a Cloudflare
-Workflow, plus two AI tools on the edit form (translate a recipe, scan its video again). The sections
+Workflow, plus three AI tools on the edit form (translate a recipe, calculate its calories and protein,
+scan its video again). The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
 ## Known bugs and accepted trade-offs
@@ -59,23 +60,25 @@ resolved. One short line each, linking to the README section with the details.
 - **Users don't choose a model.** An import tries a fixed list of free models in order
   and moves on at once from one that is busy, out for the day, or can't run (retired, or
   its key refused); a request with no video
-  (a translation, a caption-only import) ends on a **fallback** text model from another
-  free provider, if its key is set. A translation goes to the small model first. Which
+  (a translation, a calories estimate, a caption-only import) ends on a **fallback** text
+  model from another free provider, if its key is set. A translation or a calories estimate
+  goes to the small model first. Which
   model wrote a recipe is stored with it.
 - The one choice is the **best model**: slower and more detailed, up to 5 a day per user,
   offered only on "Scan the video again". Every try that calls it counts toward the 5.
   When it can't be used, the scan goes on with the usual models by itself, with no question.
 - The **edit form** holds the AI tools: **translate** the language being written into the
   other one (any recipe, manual ones too); when it works, the recipe is saved with the form's
-  current text and the edit form closes. For an
+  current text and the edit form closes. **Calculate calories and protein** per serving from
+  the ingredients (any recipe), saved the same way. For an
   imported recipe, **scan its video again**, which runs like a new import and replaces
   the recipe's text.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - A recipe may also have **calories and protein per serving** (optional, the same in both
   languages), shown only on the recipe's own page. They are typed in the edit form, and an
-  import from a link gets them from the model in the same request as the recipe. Manual
-  recipes can't ask the model for them yet (a possible later feature).
+  import from a link gets them from the model in the same request as the recipe; any
+  recipe can ask the model for them from the edit form.
 - **Up to 50 users**, each with their **own tags, recipes, and favorites**. Nobody can
   change another user's data. Each recipe is **public or private**: other users can see a
   public one in Browse and copy it, and a private one is seen only by its owner. Anyone can **sign up** with a username and password

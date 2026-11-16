@@ -22,3 +22,10 @@ export const toNumber = (text) => (text.trim() === '' ? null : Number(text));
 // The form after a translation into `into` arrived: everything the user typed stays as
 // it is, and only the other language is replaced, so it can be saved right away.
 export const withTranslation = (form, into, content) => ({ ...form, [into]: toText(content) });
+
+// The form after an estimate arrived: only calories and protein are replaced.
+export const withNutrition = (form, { calories, protein }) => ({
+  ...form,
+  calories: toNumberText(calories),
+  protein: toNumberText(protein),
+});

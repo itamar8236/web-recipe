@@ -2,7 +2,7 @@
 // data of the user the session acts for. The work itself happens in import/workflow.js.
 // Every start, Retry and re-scan is its own llm_requests row (purpose 'import'), so each
 // try that calls the best model counts toward the user's 5; translations are rows too, but
-// with purpose 'translation' (translate.js), and never show as cards.
+// with purpose 'translation' (translate.js) or 'nutrition' (nutrition.js), and never show as cards.
 
 import { fail, json, readJson } from './http.js';
 import { quotaDay, readModelState, startRefusal } from './import/models.js';

@@ -1,6 +1,7 @@
 import { handleBrowse } from './browse.js';
 import { handleData } from './data.js';
 import { handleImports } from './imports.js';
+import { handleNutrition } from './nutrition.js';
 import { handleTranslate } from './translate.js';
 import { fail, json, readJson } from './http.js';
 import { hashPassword, verifyPassword } from './password.js';
@@ -150,6 +151,7 @@ async function handleApi(request, env, path) {
   return (
     handleImports(request, env, path, user.data_user_id) ??
     handleTranslate(request, env, path, user.data_user_id) ??
+    handleNutrition(request, env, path, user.data_user_id) ??
     handleData(request, env, path, user.data_user_id) ??
     handleBrowse(request, env, path, user.data_user_id) ??
     fail(404, 'not_found')

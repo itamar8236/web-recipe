@@ -48,32 +48,34 @@ function readTranslation(output, source) {
 }
 
 // The code and status for each way the call can fail.
-function failureOf(error) {
+export function failureOf(error) {
   if (error instanceof ModelBusyError) return { status: 503, code: 'model_busy', detail: error.detail };
   if (!(error instanceof ImportError)) throw error;
   if (error.code === 'quota') return { status: 429, code: 'quota', detail: null };
   return { status: 502, code: error.code === 'bad_result' ? 'bad_result' : 'llm_error', detail: error.detail };
 }
 
-// The row this translation is recorded in, linked to the recipe being edited (none for a
-// recipe not saved yet).
-function insertRow(env, userId, recipeId, now) {
+// The row an edit-form request is recorded in, linked to the recipe being edited (none for
+// a recipe not saved yet). `purpose` is 'translation' or 'nutrition'; its stage is the same
+// word ('translate' for a translation, as before).
+export function insertRow(env, userId, recipeId, now, purpose = 'translation') {
+  const stage = purpose === 'translation' ? 'translate' : purpose;
   return env.DB.prepare(
     `INSERT INTO llm_requests (user_id, purpose, stage, recipe_id, quota_day, created_at, updated_at)
-     VALUES (?, 'translation', 'translate', ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      RETURNING *`,
   )
-    .bind(userId, recipeId, quotaDay(now), now, now)
+    .bind(userId, purpose, stage, recipeId, quotaDay(now), now, now)
     .first();
 }
 
-function finishRow(env, job, fields) {
+export function finishRow(env, job, fields) {
   return env.DB.prepare(`UPDATE llm_requests SET status = ?, model = ?, error = ?, error_detail = ?, updated_at = ? WHERE id = ?`)
     .bind(fields.status, fields.model ?? null, fields.error ?? null, fields.detail ?? null, Date.now(), job.id)
     .run();
 }
 
-async function recipeBelongsToUser(env, userId, recipeId) {
+export async function recipeBelongsToUser(env, userId, recipeId) {
   const row = await env.DB.prepare('SELECT 1 FROM recipes WHERE id = ? AND user_id = ?').bind(recipeId, userId).first();
   return row !== null;
 }

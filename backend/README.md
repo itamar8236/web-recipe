@@ -24,7 +24,7 @@ locally with `npm run dev` (port 8787, after `npm run build` in `frontend/`). Ne
 
 Code: `src/index.js` (routes and auth), `src/data.js` (tags and recipes), `src/browse.js`
 (other users' public recipes),
-`src/imports.js` (import endpoints), `src/translate.js` (translation), `src/http.js` (JSON helpers), `src/session.js`
+`src/imports.js` (import endpoints), `src/translate.js` (translation), `src/nutrition.js` (calories estimate), `src/http.js` (JSON helpers), `src/session.js`
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
 `workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
 choice, usage counting, reset time), `llm.js` (the only file that knows
@@ -136,7 +136,7 @@ All need a session, work only on the data of the user the session acts for, and 
   `recipeName` is `{ en, he }`, or `null` until there is a recipe. `error` is set only when
   `status` is `failed`.
 - `GET` returns `running`, `failed` and `done` import rows, newest first, never `dismissed`
-  or translations, and never reads `state`. It also marks `running` rows with no update for 30 minutes as failed
+  or translations and estimates, and never reads `state`. It also marks `running` rows with no update for 30 minutes as failed
   with `timed_out`.
 - `models` is `{ bestAvailable, bestLeftToday, bestLeftForUser, bestAvailableAt, resetsAt }`,
   times in epoch ms, about the best model only. `bestAvailable` is false when its shared
@@ -171,6 +171,15 @@ Needs a session like the rest. `from` is `'en'` or `'he'`, `content` is
 recipe being edited (omit for one not saved yet). There is no model choice; a `model`
 field from an older page is ignored. See [Translation](#translation).
 
+## Nutrition API
+
+| Endpoint | Purpose | Success | Errors |
+|---|---|---|---|
+| `POST /api/nutrition` `{content, recipeId?}` | Estimate calories and protein per serving | 200 `{calories, protein}` | 400 `invalid_request`, `too_long`, `no_ingredients`; 404 (another user's recipe); 429 `quota`; 502 `bad_result`, `llm_error`; 503 `model_busy` |
+
+Needs a session. `content` and `recipeId` are as for translate (the language being
+written). Stores nothing but its request row. See [Calories estimate](#calories-estimate).
+
 ## Data
 
 - **Users**: up to 50.
@@ -185,7 +194,7 @@ field from an older page is ignored. See [Translation](#translation).
   and Hebrew** so either version can be edited. Its tags are set on their own
   (see the API above), never with its text. A favorite is a flag on the recipe, since it is the owner's own mark and is never shown to others.
 - **Model requests** live in the `llm_requests` table: **one row per request** a user
-  makes, with a `purpose`: `import` (a new import, each Retry, each re-scan) or `translation` (linked to the recipe by `recipe_id`). So an
+  makes, with a `purpose`: `import` (a new import, each Retry, each re-scan), `translation` or `nutrition` (a calories estimate; both linked to the recipe being edited by `recipe_id`). So an
   unfinished import never appears as a recipe, and the rows are the record of who used the
   models: `model` is the model whose answer the request ended with (also for a failed
   one, when a model did answer), and a user's daily best-model uses are their rows with
@@ -503,6 +512,20 @@ endpoint never writes a recipe). It works for any recipe, manual ones too, but n
   (`llm_error`) fails.
 - The answer is untrusted: it must pass the same checks as a recipe's text, and must keep
   each part (name, ingredients, steps) the original had, or it's `bad_result`.
+
+## Calories estimate
+
+The edit form's "Calculate calories and protein" sends the language being written to
+`POST /api/nutrition`, which answers `{ calories, protein }` per serving and stores
+nothing; the form fills them in and saves the recipe, like a translation. It works the same
+way as [Translation](#translation) in every other respect: one plain request on the
+translation models then the fallback, no model choice, no per-user limit, never a card.
+
+- Each estimate is an `llm_requests` row with `purpose = 'nutrition'`, recorded like a
+  translation's.
+- The recipe needs at least one ingredient (`no_ingredients`).
+- Both numbers are rounded and must be in the recipe's ranges (calories up to 10000,
+  protein up to 1000), or it's `bad_result`.
 
 ## Secrets
 
