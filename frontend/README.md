@@ -132,6 +132,10 @@ frontend/
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
    language is required. If a language is left empty, the recipe view shows the other
    language with a "not written yet" note.
+   - **Public or private** (logged-in users only): a box saying which it is, with its
+     explanation and a "Make private" / "Make public" button. The button only changes the
+     form; Save (or a translation's save) stores it, and Cancel leaves it as it was. A new
+     recipe starts with the user's "New recipes are public" default.
    - **AI tools** (`components/RecipeAiTools`, a box above Save, logged-in users only). The
      backend picks the models; the one choice is a checkbox beside the scan button.
    - **"Translate to Hebrew" / "תרגום לאנגלית"** translates the language being written into
@@ -170,9 +174,9 @@ frontend/
      the user's own copy at once (no question: it is easy to delete). The button then
      becomes "✓ Saved to your recipes" with an Open link to the copy.
    - A recipe the user already saved still shows, on a later visit with the Save button again.
-   - On the **recipe view**, a logged-in user sees a box under the tags saying Public or
-     Private in words, with a "Make private" / "Make public" button that saves at once. A
-     private recipe's card on Home has a "🔒 Private" label.
+   - On the **recipe view**, a logged-in user sees a small "Public" or "🔒 Private" label
+     next to the source link, nothing more; it is changed in the edit form. A private
+     recipe's card on Home has a "🔒 Private" label.
 8. **My account** (`components/AccountDialog`, a popup): opened by tapping the name in
    the header. Username (filled in) and New password (empty = keep it), then Save, which
    asks "Save the changes to your account?" first. No old password and no typing the new
