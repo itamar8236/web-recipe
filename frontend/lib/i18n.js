@@ -151,7 +151,7 @@ export const strings = {
     makePrivate: 'Make private',
     defaultsTitle: 'My defaults',
     defaultPublicLabel: 'New recipes are public',
-    defaultPublicHint: 'Other users can see and copy a public recipe. You can change each recipe on its own page.',
+    defaultPublicHint: 'Other users can see and copy a public recipe. You can change each recipe when you edit it.',
     copyTagsLabel: "Copy the tags too when I save someone else's recipe",
   },
   he: {
@@ -304,7 +304,7 @@ export const strings = {
     makePrivate: 'להפוך לפרטי',
     defaultsTitle: 'ברירות המחדל שלי',
     defaultPublicLabel: 'מתכונים חדשים הם ציבוריים',
-    defaultPublicHint: 'משתמשים אחרים יכולים לראות ולהעתיק מתכון ציבורי. אפשר לשנות כל מתכון בעמוד שלו.',
+    defaultPublicHint: 'משתמשים אחרים יכולים לראות ולהעתיק מתכון ציבורי. אפשר לשנות כל מתכון בעריכה שלו.',
     copyTagsLabel: 'להעתיק גם את התגיות בשמירת מתכון של מישהו אחר',
   },
 };

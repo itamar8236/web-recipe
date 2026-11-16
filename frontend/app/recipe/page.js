@@ -21,8 +21,9 @@ function RecipeView() {
   const [loadError, setLoadError] = useState(null);
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [busy, setBusy] = useState(null); // null | 'favorite' | 'public' | 'delete'
+  const [busy, setBusy] = useState(null); // null | 'favorite' | 'delete'
   // A guest's recipes are never sent anywhere, so public or private means nothing to them.
+  // It is changed in the edit form; this page only says which it is.
   const canShare = useAuth().status === 'user';
   const [error, setError] = useState('');
 
@@ -108,20 +109,6 @@ function RecipeView() {
     }
   }
 
-  // Saved at once, like the heart, and the page shows the backend's answer.
-  async function togglePublic() {
-    setBusy('public');
-    setError('');
-    try {
-      const saved = await api.setRecipePublic(recipe.id, !recipe.public);
-      setRecipe((current) => ({ ...current, public: saved.public }));
-    } catch (err) {
-      setError(errorMessage(t, err));
-    } finally {
-      setBusy(null);
-    }
-  }
-
   return (
     <article className={styles.recipe}>
       <Link href="/" className={styles.back}>
@@ -144,6 +131,9 @@ function RecipeView() {
               <span>{t.manualSource}</span>
             )}
           </p>
+          {canShare && (
+            <span className={styles.visibilityLabel}>{recipe.public ? t.publicLabel : `🔒 ${t.privateLabel}`}</span>
+          )}
         </div>
       </header>
 
@@ -156,18 +146,6 @@ function RecipeView() {
           setTags(saved.tags);
         }}
       />
-
-      {canShare && (
-        <div className={styles.visibility}>
-          <p className={styles.visibilityText}>
-            <strong>{recipe.public ? t.publicLabel : `🔒 ${t.privateLabel}`}</strong>
-            <span className="hint">{recipe.public ? t.publicHint : t.privateHint}</span>
-          </p>
-          <button type="button" className={`button secondary ${styles.visibilityButton}`} disabled={busy !== null} onClick={togglePublic}>
-            {busy === 'public' ? t.saving : recipe.public ? t.makePrivate : t.makePublic}
-          </button>
-        </div>
-      )}
 
       {!content.translated && <p className={styles.notice}>{t.notTranslated}</p>}
 

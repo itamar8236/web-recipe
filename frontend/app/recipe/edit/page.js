@@ -24,8 +24,12 @@ function RecipeForm() {
   const [error, setError] = useState('');
   const [link, setLink] = useState('');
   const [aiBusy, setAiBusy] = useState(false);
-  // Translating and scanning need an account, like importing.
-  const loggedIn = useAuth().status === 'user';
+  // Translating and scanning need an account, like importing. So does public or private:
+  // a guest's recipes are never sent anywhere.
+  const auth = useAuth();
+  const loggedIn = auth.status === 'user';
+  // Saved with the form, so Cancel leaves it as it was. A new recipe starts with the default.
+  const [isPublic, setIsPublic] = useState(auth.user?.defaultPublic ?? true);
   // A translation saves when it arrives, so it needs what the user has typed by then,
   // not what the form held when they tapped Translate.
   const latest = useRef(form);
@@ -42,6 +46,7 @@ function RecipeForm() {
         if (id !== null && !recipe) return setStatus('missing');
         if (recipe) {
           setLink(recipe.link);
+          setIsPublic(recipe.public);
           setForm({ en: toText(recipe.en), he: toText(recipe.he) });
         }
         setStatus('ready');
@@ -104,6 +109,13 @@ function RecipeForm() {
         en: toContent(values.en),
         he: toContent(values.he),
       });
+      try {
+        if (loggedIn && saved.public !== isPublic) await api.setRecipePublic(saved.id, isPublic);
+      } catch (err) {
+        // A new recipe is already created, so saving again here would make a second one:
+        // its page opens instead, and says whether it is public.
+        if (id !== null) throw err;
+      }
       router.push(`/recipe?id=${saved.id}`);
     } catch (err) {
       setError(errorMessage(t, err));
@@ -153,6 +165,18 @@ function RecipeForm() {
         </label>
         <textarea id="steps" className="field" value={current.steps} onChange={(e) => update('steps', e.target.value)} />
       </div>
+
+      {loggedIn && (
+        <div className={styles.visibility}>
+          <p className={styles.visibilityText}>
+            <strong>{isPublic ? t.publicLabel : `🔒 ${t.privateLabel}`}</strong>
+            <span className="hint">{isPublic ? t.publicHint : t.privateHint}</span>
+          </p>
+          <button type="button" className={`button secondary ${styles.visibilityButton}`} disabled={saving || aiBusy} onClick={() => setIsPublic(!isPublic)}>
+            {isPublic ? t.makePrivate : t.makePublic}
+          </button>
+        </div>
+      )}
 
       {loggedIn && (
         <RecipeAiTools
