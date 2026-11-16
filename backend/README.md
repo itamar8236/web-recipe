@@ -524,8 +524,15 @@ translation models then the fallback, no model choice, no per-user limit, never 
 - Each estimate is an `llm_requests` row with `purpose = 'nutrition'`, recorded like a
   translation's.
 - The recipe needs at least one ingredient (`no_ingredients`).
-- Both numbers are rounded and must be in the recipe's ranges (calories up to 10000,
+- The model works step by step: it lists each ingredient with its grams, calories and
+  protein (counting a main ingredient the steps use but the list leaves out), then the
+  recipe's totals and its number of servings (the recipe's own, or a typical one). The
+  backend divides the totals by the servings; a small model tested on real recipes came out
+  much closer this way than asked for one number. Servings must be 1 to 200, and each
+  number per serving is rounded and must be in the recipe's ranges (calories up to 10000,
   protein up to 1000), or it's `bad_result`.
+- The servings are the weak spot: when a recipe doesn't say, the model guesses, and a wrong
+  guess changes both numbers in proportion.
 
 ## Secrets
 

@@ -8,6 +8,8 @@ import { call, cookiesFrom, insertUser, register } from './helpers.js';
 const SMALL = env.LLM_TRANSLATE_MODELS;
 const RECIPE = { name: 'Omelette', ingredients: ['3 eggs', '1 tbsp butter'], steps: ['Beat the eggs', 'Fry'] };
 
+// A model answer: whole-recipe totals and servings.
+const totals = (totalCalories, totalProtein, servings) => ({ ingredients: [], totalCalories, totalProtein, servings });
 const answering = (result) =>
   vi.fn(async () => {
     if (result instanceof Error) throw result;
@@ -37,16 +39,17 @@ describe('POST /api/nutrition', () => {
     expect((await call('/api/nutrition', { cookie })).status).toBe(405);
   });
 
-  it('estimates on the small model, rounds the numbers, records the request and saves nothing', async () => {
+  it('estimates on the small model, divides by the servings, records the request and saves nothing', async () => {
     const userId = await insertUser();
     const recipeId = await insertRecipe(userId);
-    const llm = answering({ calories: 320.4, protein: 19.6 });
+    const llm = answering(totals(641, 39, 2));
     const response = await estimate({ content: RECIPE, recipeId }, llm, userId);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ calories: 320, protein: 20 });
+    expect(await response.json()).toEqual({ calories: 321, protein: 20 });
     const [args] = llm.mock.calls[0];
     expect(args).toMatchObject({ model: SMALL, logPrompt: false });
     expect(args.prompt).toContain('3 eggs');
+    expect(args.schema.required).toEqual(['ingredients', 'totalCalories', 'totalProtein', 'servings']);
     expect(await rows()).toEqual([
       expect.objectContaining({ user_id: userId, purpose: 'nutrition', stage: 'nutrition', status: 'done', model: SMALL, recipe_id: recipeId, quota_day: quotaDay(Date.now()) }),
     ]);
@@ -59,7 +62,7 @@ describe('POST /api/nutrition', () => {
     ['a recipe id that is not a number', { content: RECIPE, recipeId: '5' }, 'invalid_request'],
     ['no ingredients', { content: { ...RECIPE, ingredients: [' '] } }, 'no_ingredients'],
   ])('answers 400 for %s, calling nothing', async (_, body, error) => {
-    const llm = answering({ calories: 1, protein: 1 });
+    const llm = answering(totals(1, 1, 1));
     const response = await estimate(body, llm);
     expect(response.status).toBe(400);
     expect((await response.json()).error).toBe(error);
@@ -69,14 +72,17 @@ describe('POST /api/nutrition', () => {
 
   it('answers 404 for another user’s recipe', async () => {
     const recipeId = await insertRecipe(await insertUser('dana'));
-    const response = await estimate({ content: RECIPE, recipeId }, answering({ calories: 1, protein: 1 }), await insertUser('noa'));
+    const response = await estimate({ content: RECIPE, recipeId }, answering(totals(1, 1, 1)), await insertUser('noa'));
     expect(response.status).toBe(404);
   });
 
   it.each([
-    ['a missing number', { calories: 300 }],
-    ['an out-of-range number', { calories: 99999, protein: 10 }],
-    ['not numbers', { calories: 'a lot', protein: 'some' }],
+    ['a missing total', { totalCalories: 300, servings: 2 }],
+    ['no servings', totals(300, 10, 0)],
+    ['far too many servings', totals(300, 10, 1000)],
+    ['a negative total', totals(-5, 10, 1)],
+    ['a serving out of range', totals(99999, 10, 1)],
+    ['not numbers', { totalCalories: 'a lot', totalProtein: 'some', servings: 2 }],
   ])('answers 502 bad_result for an answer with %s', async (_, output) => {
     const response = await estimate({ content: RECIPE }, answering(output));
     expect(response.status).toBe(502);
