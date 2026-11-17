@@ -67,7 +67,7 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
     >
       <div className={styles.content}>
         <div className={styles.head}>
-          <h2 id="import-title" className={styles.title}>{t.addFromVideo}</h2>
+          <h2 id="import-title" className={styles.title}>{t.addFromLink}</h2>
           <button type="button" className={styles.close} aria-label={t.close} disabled={busy} onClick={close}>
             ×
           </button>
@@ -75,7 +75,7 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
 
         <form className={styles.form} onSubmit={submit}>
           <div>
-            <label className="label" htmlFor="import-link">{t.videoLink}</label>
+            <label className="label" htmlFor="import-link">{t.importLink}</label>
             <input
               id="import-link"
               ref={inputRef}
@@ -86,7 +86,7 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              placeholder={t.videoLinkPlaceholder}
+              placeholder={t.importLinkPlaceholder}
               value={url}
               onChange={(event) => {
                 setUrl(event.target.value);

@@ -7,7 +7,7 @@ backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 ## Current state
 
 The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up, guest
-mode and creating a recipe from a YouTube, Facebook or Instagram link. A logged-in user's tags, recipes and favorites are loaded from and saved
+mode and creating a recipe from a YouTube, Facebook or Instagram link or a recipe web page. A logged-in user's tags, recipes and favorites are loaded from and saved
 to the backend (D1). A **guest's** live only in memory in `lib/api.js`: nothing is sent
 to the backend, the app starts empty and everything is gone on reload. Components call
 the same `lib/api.js` functions in both modes. Tags are a flat list (no nesting or
@@ -102,7 +102,8 @@ frontend/
    recipes.
 3. **Add recipe** (`components/ImportDialog`, a popup, no route): "+ Add recipe" opens it
    for a logged-in user. A guest goes straight to the manual form, since importing needs
-   an account. One focused link field; it asks only for the link, never the site.
+   an account. One focused link field ("A video, a post or a recipe page"); it asks only
+   for the link, never the site.
    - **Import** submits it: the dialog closes and a card shows at once.
    - **"Write it manually"** opens the manual form (`/recipe/edit`). The manual form's
      Cancel returns to Home.
@@ -111,7 +112,7 @@ frontend/
    - There is no model choice: the backend picks the models.
 4. **Import cards** (`components/ImportCards`, at the top of the content section, in every
    tag view, not filtered by search):
-   - Running: gray with a gentle pulse, the title or link, and "Getting the video
+   - Running: gray with a gentle pulse, the title or link, and "Getting the
      details...", "Getting the video..." (Facebook and Instagram, whose video is handed to
      the model as a file) or "Reading the recipe..." (`stageMessage` in `lib/i18n.js`).
    - Ready: "Recipe ready: <name>" with Open (which also dismisses) and ×. Needed because
@@ -120,7 +121,7 @@ frontend/
      card id) and the failed card is replaced by it.
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
-5. **Recipe view**: name, source link (opens the video), tags, ingredients, steps, then a
+5. **Recipe view**: name, source link (opens the video or page), tags, ingredients, steps, then a
    "Per serving" card with calories and protein (only when the recipe has either). Heart, Edit
    and Delete buttons (delete asks for confirmation). Calories and protein show only here,
    never on the Home or Browse cards.
@@ -153,7 +154,7 @@ frontend/
      serving from the language being written (it needs an ingredient), fills them in and
      saves the recipe at once, exactly like a translation. It asks first if calories or
      protein already has a value.
-   - **"Scan the video again"** (only for a recipe with a link) asks first, because it
+   - **"Scan the link again"** (only for a recipe with a link) asks first, because it
      replaces the recipe's text including edits, then starts it like a new import and
      returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
      to 5 a day)", is off by default; when that model can't be used the scan goes on with

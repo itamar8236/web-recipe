@@ -120,8 +120,8 @@ END;
 -- one row, so a recipe is read and saved in one statement. Either language may be empty
 -- ('' and '[]') until it is written or translated, but at least one name is set.
 -- source_url NULL means added manually. Its tags are in recipe_tags.
--- platform is 'manual' or the site an import came from ('youtube', 'facebook',
--- 'instagram'). It has no list CHECK, so adding a site needs no table rebuild; the backend
+-- platform is 'manual' or the source an import came from ('youtube', 'facebook',
+-- 'instagram', or 'web' for any other web page). It has no list CHECK, so adding a site needs no table rebuild; the backend
 -- only ever writes the name of one of its own adapters.
 -- is_favorite is a plain column because a favorite is the owner's own mark: other users
 -- who browse a public recipe never see or change it.

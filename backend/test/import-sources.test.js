@@ -4,6 +4,7 @@ import { facebook } from '../src/import/sources/facebook.js';
 import { readLink } from '../src/import/sources/index.js';
 import { instagram } from '../src/import/sources/instagram.js';
 import { openVideo } from '../src/import/sources/meta.js';
+import { web } from '../src/import/sources/web.js';
 import {
   emptyPage,
   facebookGonePage,
@@ -104,10 +105,13 @@ describe('Facebook links', () => {
     ['a lookalike host', `https://facebook.com.evil.com/reel/${FB_ID}`],
     ['a host that ends the same', `https://notfacebook.com/reel/${FB_ID}`],
     ['a subdomain not on the list', `https://business.facebook.com/reel/${FB_ID}`],
-    ['a user-info trick', `https://www.facebook.com@evil.com/reel/${FB_ID}`],
     ['a fb.watch lookalike', 'https://fb.watch.evil.com/abcdef/'],
-  ])('refuses %s as link_unsupported', (_, text) => {
-    expect(readLink(text)).toEqual({ error: 'link_unsupported' });
+  ])('reads %s as a plain web page, never as Facebook', (_, text) => {
+    expect(readLink(text).source).toBe(web);
+  });
+
+  it('refuses a user-info trick as link_unsupported', () => {
+    expect(readLink(`https://www.facebook.com@evil.com/reel/${FB_ID}`)).toEqual({ error: 'link_unsupported' });
   });
 });
 
@@ -153,8 +157,8 @@ describe('Instagram links', () => {
     ['a lookalike host', `https://instagram.com.evil.com/p/${IG_CODE}/`],
     ['a host that ends the same', `https://notinstagram.com/p/${IG_CODE}/`],
     ['a subdomain not on the list', `https://help.instagram.com/p/${IG_CODE}/`],
-  ])('refuses %s as link_unsupported', (_, text) => {
-    expect(readLink(text)).toEqual({ error: 'link_unsupported' });
+  ])('reads %s as a plain web page, never as Instagram', (_, text) => {
+    expect(readLink(text).source).toBe(web);
   });
 });
 

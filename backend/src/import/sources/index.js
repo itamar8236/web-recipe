@@ -16,9 +16,12 @@
 
 import { facebook } from './facebook.js';
 import { instagram } from './instagram.js';
+import { web } from './web.js';
 import { youtube } from './youtube.js';
 
-export const SOURCES = [youtube, facebook, instagram];
+// The web adapter takes any public link the others don't, so it stays last: a YouTube,
+// Facebook or Instagram link that isn't a post is still link_invalid, never a web page.
+export const SOURCES = [youtube, facebook, instagram, web];
 
 const MAX_LINK_LENGTH = 2048;
 

@@ -2,7 +2,7 @@
 
 The server side of web-recipe: one Cloudflare Worker in plain JavaScript that serves the
 JSON API, stores data in Cloudflare D1, handles login, calls Google's free LLMs to turn
-YouTube, Facebook and Instagram links into recipes, and serves the frontend's static build. Read the root
+YouTube, Facebook and Instagram links and recipe web pages into recipes, and serves the frontend's static build. Read the root
 `AGENTS.md` first.
 
 Record new files, schema and endpoints here in the same PR that adds them.
@@ -31,7 +31,7 @@ choice, usage counting, reset time), `llm.js` (the only file that knows
 Gemini's format, including its file store for videos), `groq.js` (the only file that knows
 Groq's format, for the fallback model), `errors.js`, and `sources/` (link detection and one
 adapter per site: `youtube.js`, `facebook.js`, `instagram.js`, with `meta.js` for what the
-last two share). `scripts/e2e-links.mjs` runs real imports through the local app by hand. Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
+last two share, and `web.js` for any other web page). `scripts/e2e-links.mjs` runs real imports through the local app by hand. Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
 throwaway local D1 built from `schema.sql`; never touches production or `.wrangler/state`).
 
 ## Auth API
@@ -263,7 +263,8 @@ POST /api/imports {url}
   parse link → guards → choose model → insert llm_requests row → start Workflow → 202
 
 Workflow: each stage is one retried step, and saves its result to the row
-  meta     The post's details from its site: title, text, subtitles, video facts (no LLM)
+  meta     The post's details from its site: title, text, subtitles, video facts (no LLM);
+           for a web page, its title and text
   video    Facebook and Instagram only: stream the video file into Gemini's file store
   extract  One call with the text and, if it can be sent, the video; the same call
            gives the calories and protein per serving
@@ -280,10 +281,12 @@ A re-scan replaces them along with the text. Manual recipes don't call the model
 
 **Links.** Only the backend decides which site a link is (`sources/index.js`), from the
 link's text alone. A new platform is one adapter added to `SOURCES` (the adapter shape is
-described at the top of that file); `stages.js` knows no site. Every other site answers
-`link_unsupported`, and a link on a known site that isn't a post answers `link_invalid`.
-The stored link is always rebuilt from the parsed id, so tracking parameters are dropped
-and every form of one post is the same import.
+described at the top of that file); `stages.js` knows no site. Any other link is a web page
+(`web.js`, the last adapter), unless `isFetchableUrl` refuses it (`link_unsupported`: an IP
+address, a private-network or single-label name, another port, or a login in the link). A
+link on a known site that isn't a post answers `link_invalid`, never a web page. The stored
+link is rebuilt from the parsed id (for a web page: the link without its `#fragment` and
+tracking parameters such as `utm_*` and `fbclid`), so every form of one post is the same import.
 
 - YouTube: `watch?v=`, `youtu.be/`, `shorts/`, `live/`.
 - Facebook (`facebook.com`, `www.`, `m.`, `web.`, `fb.watch`): `/reel/<id>`,
@@ -293,8 +296,8 @@ and every form of one post is the same import.
 - Instagram (`instagram.com`, `www.`, `instagr.am`): `[/<user>]/reel|reels|p|tv/<code>`,
   stored as `https://www.instagram.com/p/<code>/`. Share links: `/share/[reel|p/]<code>`.
 
-**The Worker never fetches a pasted URL as it is.** It fetches only URLs it builds from the
-parsed id, with `redirect: 'manual'`, and follows each redirect by hand only onto the
+**The Worker fetches a pasted URL as it is only for a web page** (see Web pages). For the
+three sites it fetches only URLs it builds from the parsed id, with `redirect: 'manual'`, and follows each redirect by hand only onto the
 site's own hosts (`fetchPage` in `sources/meta.js`). Video and subtitle files are fetched
 only from Meta's CDN (`*.fbcdn.net`, `*.cdninstagram.com`), and the upload address Gemini
 answers with is used only on Google's own host.
@@ -305,6 +308,38 @@ row, and then does the duplicate checks a normal link gets before starting: if t
 already has that recipe the card fails with `already_imported`, and if the same post is
 already being imported (the unique index) the newer row dismisses itself. A share link that
 leads to something that isn't a video or post fails with `link_unsupported`.
+
+### Web pages
+
+Any public page with a recipe, such as a recipe site or a blog post (`sources/web.js`).
+There is no id to rebuild a link from, so the pasted link is fetched, and that is guarded:
+
+- `isFetchableUrl` checks the link and **every redirect hop**, followed by hand (at most 5,
+  onto any public host, since a site often moves to its `www.` host): http or https, the
+  default port, no `user:pass@`, and a real domain name, never an IP address (the URL parser
+  turns every numeric form into one), `localhost` or a private-network name (`.local`,
+  `.internal`, ...). Cloudflare's own fetch can't reach private addresses either.
+- One request with a browser's headers, a 30-second timeout, at most 5 MB, and only
+  `text/html`, `application/xhtml+xml` or `text/plain`; anything else is
+  `link_unsupported`. Nothing the page links to is fetched, and no video is sent.
+- The text sent to the model is what a reader sees: scripts, styles, menus, footers,
+  sidebars and buttons are dropped, one block per line, at most 20,000 characters. A
+  schema.org `Recipe` block (JSON-LD, which many recipe sites have for search engines) goes
+  first when it has ingredients and steps, followed by the page text, since such blocks
+  often leave a part out (a topping's ingredients). The card's title is `og:title` or
+  `<title>`.
+- The prompt tells the model that a page's menus, ads, comments and other recipes' titles
+  are not part of the recipe. A page with no recipe ends as `no_recipe`, one with several
+  as `multiple_recipes`, and one with under 80 characters of text as `no_recipe` with no
+  model call.
+- Failures: 404 or 410 is `video_unavailable`; 401, or a redirect to a login path, is
+  `login_required`; 403, 429, 5xx and a site that can't be reached (also a domain that
+  doesn't exist) are `source_blocked`, retried by the Workflow; any other 4xx is
+  `source_blocked` with no retry.
+- A site that builds its page only in JavaScript, or blocks requests from servers, can't be
+  read (`no_recipe` or `source_blocked`). "Scan the link again" reads the page again.
+- Tested on 2026-11-17 on four Hebrew recipe sites (kerenagam.co.il, israelhayom.co.il,
+  mako.co.il, boxfromjerus.co.il): all four gave the full recipe on `gemini-3.6-flash`.
 
 ### Facebook and Instagram
 
@@ -407,11 +442,11 @@ in `error_detail` (never sent to the browser).
 
 | Case | Code | Automatic retry | User can Retry |
 |---|---|---|---|
-| Removed or private, or the video couldn't be used and nothing else had the recipe | `video_unavailable` | no | no |
+| Removed or private, or the video couldn't be used and nothing else had the recipe; a web page that answered 404/410 | `video_unavailable` | no | no |
 | The site redirected to a login page, or shows the post only after a login | `login_required` | no | yes |
 | The site answered 403/429/5xx, or sent a page with none of the known parts | `source_blocked` | yes, 3 tries | yes |
 | A share link led to a recipe the user already has | `already_imported` | no | no |
-| A share link led to something that isn't a video or post | `link_unsupported` | no | no |
+| A share link led to something that isn't a video or post; a web page redirected to a refused address, or isn't a page (a PDF, an image, over 5 MB) | `link_unsupported` | no | no |
 | Private or unlisted, description not enough | `video_private` | no | no |
 | Too long, description not enough | `video_too_long` | no | no |
 | No recipe | `no_recipe` | no | no |
@@ -476,7 +511,7 @@ agents don't ask for the best model unless the owner says so (`local-dev` skill)
 
 All rare and harmless:
 
-- "Scan the video again" still shows while that scan is running; tapping it answers
+- "Scan the link again" still shows while that scan is running; tapping it answers
   `not_rerunnable`.
 - A Retry that can no longer work says so and leaves the card for the user to dismiss.
 - Home can miss one recipe-list reload if an import finishes in the instant between its first
