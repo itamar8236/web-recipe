@@ -26,6 +26,7 @@ frontend/
 │   ├── icon.png           # Favicon
 │   ├── page.js            # Home: tags + recipes with the selected tag
 │   ├── browse/page.js     # Browse: other users' public recipes (/browse)
+│   ├── share/page.js      # Where Android's Share menu sends a link (/share?text=...)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
@@ -38,13 +39,16 @@ frontend/
 │   ├── recipeForm.js      # Edit form text <-> api lines, withTranslation()
 │   ├── recipeForm.test.js # Vitest tests for recipeForm.js
 │   ├── search.js          # matchesSearch(): recipe name/ingredient/tag search
+│   ├── share.js           # findSharedLink(): the link in what Android shared
+│   ├── share.test.js      # Vitest tests for share.js
 │   └── search.test.js     # Vitest tests for search.js
 ├── styles/globals.css     # Design tokens (CSS variables), buttons, form fields
 └── next.config.mjs
 ```
 
 - **Installable (PWA):** `app/manifest.js` + `public/sw.js` (registered in production only) let
-  Chrome on Android offer "Install app". Icons are cropped from the Recipe Rocket logo into
+  Chrome on Android offer "Install app". The manifest's `share_target` puts the installed
+  app in Android's Share menu (see Screens → Share). Icons are cropped from the Recipe Rocket logo into
   `public/icons/`. Needs HTTPS (fine on Cloudflare); it doesn't work on plain `http://` hosts.
 - Static export can't use dynamic route segments without a build-time list, so recipe
   pages take the id as a **query parameter** and fetch on the client.
@@ -193,6 +197,31 @@ frontend/
    change. Saving with nothing changed shows a hint instead. Under them, "My defaults" has
    two checkboxes saved with the same Save: "New recipes are public" and "Copy the tags
    too when I save someone else's recipe".
+
+9. **Share** (`/share`, no link to it in the app): where Android's Share menu opens the
+   installed app (`share_target` in `app/manifest.js`, method GET, so `sw.js` is
+   unchanged). Sharing a YouTube, Facebook or Instagram post, or a web page from Chrome,
+   to "Recipes" opens it with the shared text in `title`/`text`/`url`.
+   - It takes the first link out of that text (`lib/share.js`: Android puts the link in
+     `text`, often with words around it) and starts the import at once, with no question,
+     like "Import" in the Add recipe dialog. It then clears the query (`replaceState`), so
+     reopening the page never imports twice.
+   - Started: "Importing the recipe..." for 1.5 s, then the page calls `window.close()`,
+     which closes the app and returns Android to the app the user shared from, like
+     sharing to a chat app. The import goes on in the background; its card shows on Home.
+   - Closing works only while `/share` is the window's only history entry (the browser's
+     rule), which is how a share opens a closed app. If the app was already open, Chrome
+     may load the share into it instead and refuse to close: the page then says to use
+     the phone's Back button. Every outcome also has "Back to the app I came from" (the
+     same close) and "Open my recipes" (`router.replace`, so Back doesn't land on `/share`).
+   - Failed (an unsupported link, already imported, the quota...): the usual import error
+     message and the two buttons; it doesn't close by itself. No link: "No link was
+     shared." Logged out: the login screen first (in place, like every page), then the
+     import goes on; a guest gets "Log in to add a recipe from a link".
+   - Only Chrome (and other Chromium browsers) on Android, and only once the site is
+     installed as an app; nothing on iPhone. An app installed before this change gets the
+     Share entry when Chrome next refreshes its manifest (about once a day, when the app is
+     opened), or at once by uninstalling and installing it again.
 
 ## UX rules
 
