@@ -170,6 +170,7 @@ function RecipeView() {
             {recipe.calories !== null && <li>{t.caloriesValue(recipe.calories)}</li>}
             {recipe.protein !== null && <li>{t.proteinValue(recipe.protein)}</li>}
           </ul>
+          <p className={styles.nutritionNote}>{t.nutritionAiNote}</p>
         </section>
       )}
 

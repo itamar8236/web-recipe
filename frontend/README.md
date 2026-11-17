@@ -122,7 +122,7 @@ frontend/
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
 5. **Recipe view**: name, source link (opens the video or page), tags, ingredients, steps, then a
-   "Per serving" card with calories and protein (only when the recipe has either). Heart, Edit
+   "Per serving" card with calories and protein (only when the recipe has either) and a small note that they were calculated by AI and may be inaccurate. Heart, Edit
    and Delete buttons (delete asks for confirmation). Calories and protein show only here,
    never on the Home or Browse cards.
    - **Tags** (`components/RecipeTags`) are changed right here, not on the edit form, and
