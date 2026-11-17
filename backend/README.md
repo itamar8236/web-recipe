@@ -229,8 +229,9 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   hand: `npx wrangler d1 execute recipes-db --remote --file=schema.sql`.
 - The production dump (`.wrangler/prod-dump.sql`) holds real user data: it's git-ignored;
   never commit or paste it.
-- PR previews (`wrangler preview`) use the same binding, so a preview that someone uses
-  reads and writes production. Accepted for now: nobody else gets the preview links, and
+- PR previews (`wrangler preview`) use the same database, so a preview that someone uses
+  reads and writes production. Previews don't inherit bindings, so the `previews` block in
+  `wrangler.jsonc` repeats the D1 binding; without it every query fails. Accepted for now: nobody else gets the preview links, and
   a separate preview database may come later. It's a concern only if a PR would change
   production data during the build or deploy itself (see the `local-dev` skill).
 

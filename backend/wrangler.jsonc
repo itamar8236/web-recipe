@@ -45,9 +45,16 @@
     "IMPORT_BEST_DAILY_PER_USER": 5
   },
   // Required by `wrangler preview`, which Workers Builds runs for non-main branches.
-  // Previews don't inherit vars or Workflows, and a binding missing here can crash the
-  // preview, so these repeat the values above.
+  // Previews don't inherit bindings or vars (D1 included: without it here every query
+  // fails and nobody can log in), so these repeat the values above.
   "previews": {
+    "d1_databases": [
+      {
+        "binding": "DB",
+        "database_name": "recipes-db",
+        "database_id": "960675bb-9caa-4787-816d-89783cd505b6"
+      }
+    ],
     "workflows": [
       { "name": "recipe-import", "binding": "IMPORT_WORKFLOW", "class_name": "ImportWorkflow" }
     ],
