@@ -205,6 +205,13 @@
   font-weight: 700;
 }
 
+.nutritionNote {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted, inherit);
+  opacity: 0.8;
+}
+
 /* ---- Edit form ---- */
 
 .nutritionFields {
