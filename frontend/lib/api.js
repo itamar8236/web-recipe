@@ -315,3 +315,13 @@ export async function translateRecipe(from, content, recipeId = null) {
   if (recipeId !== null) body.recipeId = recipeId;
   return (await dataRequest('/api/translate', 'POST', body)).content;
 }
+
+// Estimates calories and protein per serving from one language's text ({ name,
+// ingredients, steps }). `recipeId` is the recipe being edited, or null for one not saved
+// yet. Nothing is saved: returns { calories, protein }.
+export async function estimateNutrition(content, recipeId = null) {
+  refuseGuest();
+  const body = { content };
+  if (recipeId !== null) body.recipeId = recipeId;
+  return dataRequest('/api/nutrition', 'POST', body);
+}

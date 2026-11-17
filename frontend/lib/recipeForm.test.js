@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toContent, toNumber, toNumberText, toText, withTranslation } from './recipeForm';
+import { toContent, toNumber, toNumberText, toText, withNutrition, withTranslation } from './recipeForm';
 
 describe('toText / toContent', () => {
   it('turns lines into text and back', () => {
@@ -35,5 +35,12 @@ describe('withTranslation', () => {
   it('does not change the form it was given', () => {
     withTranslation(form, 'he', translation);
     expect(form.he.name).toBe('מרק ישן');
+  });
+});
+
+describe('withNutrition', () => {
+  it('keeps the unsaved edits and replaces only calories and protein', () => {
+    const form = { en: { name: 'Soup (edited)', ingredients: '', steps: '' }, he: { name: '', ingredients: '', steps: '' }, calories: '1', protein: '' };
+    expect(withNutrition(form, { calories: 250, protein: 0 })).toEqual({ ...form, calories: '250', protein: '0' });
   });
 });

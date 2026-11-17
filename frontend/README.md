@@ -149,6 +149,10 @@ frontend/
      with the usual save error. It asks first ("... and save the recipe?") if the other
      language already has text. Works on manual recipes and on new ones before their first
      save (that creates the recipe). Save is held while it runs.
+   - **"Calculate calories and protein" / "חישוב קלוריות וחלבון"** estimates both per
+     serving from the language being written (it needs an ingredient), fills them in and
+     saves the recipe at once, exactly like a translation. It asks first if calories or
+     protein already has a value.
    - **"Scan the video again"** (only for a recipe with a link) asks first, because it
      replaces the recipe's text including edits, then starts it like a new import and
      returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
@@ -221,13 +225,13 @@ frontend/
 `logout`), tags (`getTags`, `renameTag`),
 recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `setRecipePublic`, `deleteRecipe`), browse (`getBrowse`, `copyRecipe`, `newBrowseSeed`) and imports
 (`getImports`, `startImport`, `retryImport`, `dismissImport`, `rerunRecipe`) and
-`translateRecipe`. For a guest the tag and recipe functions use memory instead. They
+`translateRecipe`, `estimateNutrition`. For a guest the tag and recipe functions use memory instead. They
 trim names and lines and drop blank lines like the backend, and make only some of its
 checks, with the same codes: `name_required` (a tag, or a recipe with no name in either
 language), `tag_exists`, and `not_found` for renaming a missing tag or setting a
 missing recipe's tags or favorite. There are no length limits (`too_long`); deleting a
 missing item does nothing, and `getRecipe` returns `null`.
-The import and translate functions throw `import_needs_login` without calling the backend,
+The import, translate and estimate functions throw `import_needs_login` without calling the backend,
 and the browse functions `browse_needs_login`.
 
 - Requests go to the same origin (`/api/...`), so the session cookie is sent without any

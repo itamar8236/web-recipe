@@ -8,7 +8,7 @@ import { useLanguage } from '@/components/Language';
 import RecipeAiTools from '@/components/RecipeAiTools';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
-import { blankText, toContent, toNumber, toNumberText, toText, withTranslation } from '@/lib/recipeForm';
+import { blankText, toContent, toNumber, toNumberText, toText, withNutrition, withTranslation } from '@/lib/recipeForm';
 import styles from '../recipe.module.css';
 
 function RecipeForm() {
@@ -30,8 +30,8 @@ function RecipeForm() {
   const loggedIn = auth.status === 'user';
   // Saved with the form, so Cancel leaves it as it was. A new recipe starts with the default.
   const [isPublic, setIsPublic] = useState(auth.user?.defaultPublic ?? true);
-  // A translation saves when it arrives, so it needs what the user has typed by then,
-  // not what the form held when they tapped Translate.
+  // A translation or an estimate saves when it arrives, so it needs what the user has typed by then,
+  // not what the form held when they tapped the button.
   const latest = useRef(form);
   useEffect(() => {
     latest.current = form;
@@ -142,6 +142,13 @@ function RecipeForm() {
     await save(next);
   }
 
+  // A finished estimate is saved at once too, with the user's unsaved edits.
+  async function saveNutrition(nutrition) {
+    const next = withNutrition(latest.current, nutrition);
+    setForm(next);
+    await save(next);
+  }
+
   // The form edits only the app's current language; the other language is kept as is,
   // unless the user translates into it.
   const current = form[lang];
@@ -213,9 +220,11 @@ function RecipeForm() {
           from={lang}
           content={toContent(current)}
           otherHasText={Boolean(form[other].name.trim() || form[other].ingredients.trim() || form[other].steps.trim())}
+          hasNutrition={Boolean(form.calories.trim() || form.protein.trim())}
           recipeId={id}
           rescanId={id !== null && link ? id : null}
           onTranslated={(content) => saveTranslation(other, content)}
+          onNutrition={saveNutrition}
           onBusyChange={setAiBusy}
         />
       )}

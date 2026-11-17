@@ -113,7 +113,7 @@ function readLanguage(value) {
 
 // Calories and protein are a bonus: a number that is missing or out of range is dropped
 // (null), and the recipe is still saved.
-function readNutritionAnswer(output) {
+export function readNutritionAnswer(output) {
   const rounded = (value) => (typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null);
   const nutrition = { calories: rounded(output.calories), protein: rounded(output.protein) };
   for (const field of Object.keys(nutrition)) {

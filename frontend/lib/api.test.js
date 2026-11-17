@@ -358,6 +358,7 @@ describe('guest: imports need an account', () => {
     ['dismissImport', () => api.dismissImport(1)],
     ['rerunRecipe', () => api.rerunRecipe(1)],
     ['translateRecipe', () => api.translateRecipe('en', { name: 'Tea', ingredients: [], steps: [] })],
+    ['estimateNutrition', () => api.estimateNutrition({ name: 'Tea', ingredients: [], steps: [] })],
   ])('%s is refused and never calls the backend', async (_, action) => {
     vi.stubGlobal('fetch', vi.fn());
     await expect(action()).rejects.toMatchObject({ code: 'import_needs_login' });
@@ -421,6 +422,15 @@ describe('logged in: imports', () => {
     expect(lastCall()).toEqual({ path: '/api/translate', method: 'POST', body: { from: 'en', content } });
     await api.translateRecipe('en', content, 12);
     expect(lastCall().body).toEqual({ from: 'en', content, recipeId: 12 });
+  });
+
+  it('estimates calories and protein, saving nothing', async () => {
+    const content = { name: 'Tea', ingredients: ['Water'], steps: ['Boil'] };
+    mockFetch(200, { calories: 2, protein: 0 });
+    expect(await api.estimateNutrition(content)).toEqual({ calories: 2, protein: 0 });
+    expect(lastCall()).toEqual({ path: '/api/nutrition', method: 'POST', body: { content } });
+    await api.estimateNutrition(content, 12);
+    expect(lastCall().body).toEqual({ content, recipeId: 12 });
   });
 
   it('passes on the backend error codes', async () => {
