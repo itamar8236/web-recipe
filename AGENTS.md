@@ -15,7 +15,8 @@ password and defaults, browsing and copying other users' public recipes, the tag
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
 a recipe from a YouTube, Facebook or Instagram link, or from any public recipe web page, in
 the background with a Cloudflare Workflow, plus three AI tools on the edit form (translate a
-recipe, calculate its calories and protein, scan its link again). The sections
+recipe, calculate its calories and protein, scan its link again), and importing a link
+from Android's Share menu into the installed app. The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
 ## Known bugs and accepted trade-offs
@@ -42,6 +43,8 @@ resolved. One short line each, linking to the README section with the details.
   Not yet checked from Cloudflare's network. Facebook photo and text posts aren't supported.
 - Browse shows a recipe the user already saved, and other users' public copies of one
   recipe, since a copy keeps no link to its original (`backend/README.md` → Browse API). Accepted.
+- Sharing to the app returns to the source app only when the app wasn't already open;
+  otherwise the user taps Back (`frontend/README.md` → Screens → Share). Android only.
 - `ConfirmDialog` opens with focus on its confirm button, not Cancel (`frontend/README.md` →
   UX rules).
 
@@ -71,6 +74,9 @@ resolved. One short line each, linking to the README section with the details.
 - The one choice is the **best model**: slower and more detailed, up to 5 a day per user,
   offered only on "Scan the link again". Every try that calls it counts toward the 5.
   When it can't be used, the scan goes on with the usual models by itself, with no question.
+- **Share to the app**: on Android, the installed app is in the Share menu. Sharing a
+  post or page to it starts the import on the logged-in account at once and then closes
+  the app, back to the app the user shared from.
 - The **edit form** holds the AI tools: **translate** the language being written into the
   other one (any recipe, manual ones too); when it works, the recipe is saved with the form's
   current text and the edit form closes. **Calculate calories and protein** per serving from
