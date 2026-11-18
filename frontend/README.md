@@ -7,14 +7,14 @@ backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 ## Current state
 
 The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up, guest
-mode and creating a recipe from a YouTube, Facebook or Instagram link or a recipe web page. A logged-in user's tags, recipes and favorites are loaded from and saved
+mode and creating a recipe from a YouTube, Facebook or Instagram link, a recipe web page or a photo of a written recipe. A logged-in user's tags, recipes and favorites are loaded from and saved
 to the backend (D1). A **guest's** live only in memory in `lib/api.js`: nothing is sent
 to the backend, the app starts empty and everything is gone on reload. Components call
 the same `lib/api.js` functions in both modes. Tags are a flat list (no nesting or
 reordering), and a recipe has any number of them.
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
-recipe has a `link`, otherwise plain "Added manually" text. The link is not editable in the
-UI; it is filled by video import.
+recipe has a `link`, "From a photo" when it was read from a photo (`fromPhoto`), otherwise
+plain "Added manually" text. The link is not editable in the UI; it is filled by import.
 
 ## Layout
 
@@ -39,6 +39,8 @@ frontend/
 │   ├── recipeForm.js      # Edit form text <-> api lines, withTranslation()
 │   ├── recipeForm.test.js # Vitest tests for recipeForm.js
 │   ├── search.js          # matchesSearch(): recipe name/ingredient/tag search
+│   ├── photo.js           # preparePhoto(): a chosen picture, ready to send
+│   ├── photo.test.js      # Vitest tests for photo.js
 │   ├── share.js           # findSharedLink(): the link in what Android shared
 │   ├── share.test.js      # Vitest tests for share.js
 │   └── search.test.js     # Vitest tests for search.js
@@ -114,18 +116,31 @@ frontend/
    - **×**, **Escape** and **tapping outside** close the dialog and stay on Home.
    - An invalid or unsupported link keeps the dialog open with the error under the field.
    - There is no model choice: the backend picks the models.
+   - **"📷 Choose a photo"**, a full-width button under them, opens a hidden
+     `<input type="file" accept="image/*">` with no `capture`, so the phone offers its
+     gallery, camera and files (iPhone: Photo Library, Take Photo, Choose File; a computer:
+     the file picker). One picture of a written recipe; it is uploaded at once
+     (`preparePhoto` in `lib/photo.js` sends anything up to 15 MB unchanged and shrinks
+     only a bigger one to 4096 px, JPEG 0.92). While it uploads the dialog stays open,
+     the button says "Uploading the photo..." and every button is disabled, so a double tap
+     can't send it twice; then the dialog closes and its card shows. The input is cleared
+     after each pick, so the same picture can be chosen again for a second read. Errors
+     (`photo_invalid`, `photo_too_big`, `photo_upload_failed`, `quota`, ...) show under the
+     field, like a link's. Photos always use the best model first; there is no checkbox.
 4. **Import cards** (`components/ImportCards`, at the top of the content section, in every
    tag view, not filtered by search):
    - Running: gray with a gentle pulse, the title or link, and "Getting the
      details...", "Getting the video..." (Facebook and Instagram, whose video is handed to
      the model as a file) or "Reading the recipe..." (`stageMessage` in `lib/i18n.js`).
+     A photo's card is titled "A photo" until the recipe has a name, and says "Reading the
+     photo..." at every stage.
    - Ready: "Recipe ready: <name>" with Open (which also dismisses) and ×. Needed because
      the recipe list is oldest-first.
    - Failed: red, the message, Retry when it can help, ×. Retry starts a new import (a new
      card id) and the failed card is replaced by it.
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
-5. **Recipe view**: name, source link (opens the video or page), tags, ingredients, steps, then a
+5. **Recipe view**: name, source link (opens the video or page; "From a photo" for a photo), tags, ingredients, steps, then a
    "Per serving" card with calories and protein (only when the recipe has either) and a small note that they were calculated by AI and may be inaccurate. Heart, Edit
    and Delete buttons (delete asks for confirmation). Calories and protein show only here,
    never on the Home or Browse cards.
@@ -254,7 +269,8 @@ frontend/
 `lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`, `updateAccount`,
 `logout`), tags (`getTags`, `renameTag`),
 recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `setRecipePublic`, `deleteRecipe`), browse (`getBrowse`, `copyRecipe`, `newBrowseSeed`) and imports
-(`getImports`, `startImport`, `retryImport`, `dismissImport`, `rerunRecipe`) and
+(`getImports`, `startImport`, `startPhotoImport` (the picture as the body, with its own
+`Content-Type`), `retryImport`, `dismissImport`, `rerunRecipe`) and
 `translateRecipe`, `estimateNutrition`. For a guest the tag and recipe functions use memory instead. They
 trim names and lines and drop blank lines like the backend, and make only some of its
 checks, with the same codes: `name_required` (a tag, or a recipe with no name in either

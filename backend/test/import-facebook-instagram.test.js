@@ -6,7 +6,7 @@ import { env, introspectWorkflow } from 'cloudflare:test';
 import { NonRetryableError } from 'cloudflare:workflows';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImportError } from '../src/import/errors.js';
-import { ModelBusyError, VideoRefusedError, videoFiles } from '../src/import/llm.js';
+import { ModelBusyError, VideoRefusedError, geminiFiles } from '../src/import/llm.js';
 import { quotaDay } from '../src/import/models.js';
 import { runStage, STAGES } from '../src/import/stages.js';
 import { handleTranslate } from '../src/translate.js';
@@ -486,7 +486,7 @@ describe('Gemini’s file store', () => {
   const FILE_URL = `https://generativelanguage.googleapis.com/v1beta/${FILE.name}`;
   const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers });
   const body = () => new Response('0123456789').body;
-  const upload = (extra = {}) => videoFiles.upload({ env, body: body(), bytes: 10, mimeType: 'video/mp4', ...extra });
+  const upload = (extra = {}) => geminiFiles.upload({ env, body: body(), bytes: 10, mimeType: 'video/mp4', ...extra });
   const requests = () => fetch.mock.calls.map(([url, options]) => ({ url: String(url), ...options }));
 
   describe('upload', () => {
@@ -517,7 +517,7 @@ describe('Gemini’s file store', () => {
       await upload();
       expect(requests().map((request) => request.url).join(' ')).not.toContain('fake-gemini-key');
       expect(log.mock.calls.flat().join(' ')).not.toContain('fake-gemini-key');
-      expect(log.mock.calls.flat().join(' ')).toContain('files/abc123, 10 bytes');
+      expect(log.mock.calls.flat().join(' ')).toContain('files/abc123, video/mp4, 10 bytes');
     });
 
     it.each([
@@ -555,7 +555,7 @@ describe('Gemini’s file store', () => {
   });
 
   describe('waitUntilReady', () => {
-    const wait = () => videoFiles.waitUntilReady({ env, file: FILE, pollMs: 0 });
+    const wait = () => geminiFiles.waitUntilReady({ env, file: FILE, pollMs: 0 });
     const states = (...list) => {
       const queue = [...list];
       stubFetch(async () => {
@@ -599,7 +599,7 @@ describe('Gemini’s file store', () => {
   describe('remove', () => {
     it('deletes the file', async () => {
       stubFetch(async () => json({}));
-      await videoFiles.remove({ env, file: FILE });
+      await geminiFiles.remove({ env, file: FILE });
       expect(requests()[0]).toMatchObject({ url: FILE_URL, method: 'DELETE' });
     });
 
@@ -608,8 +608,8 @@ describe('Gemini’s file store', () => {
       ['the network fails', () => { throw new TypeError('down'); }],
     ])('only logs when %s: Google deletes the file after 48 hours anyway', async (_, answer) => {
       stubFetch(async () => answer());
-      await expect(videoFiles.remove({ env, file: FILE })).resolves.toBeUndefined();
-      expect(log.mock.calls.flat().join(' ')).toContain('Video not deleted from Gemini: files/abc123');
+      await expect(geminiFiles.remove({ env, file: FILE })).resolves.toBeUndefined();
+      expect(log.mock.calls.flat().join(' ')).toContain('File not deleted from Gemini: files/abc123');
     });
   });
 });

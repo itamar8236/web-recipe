@@ -16,6 +16,7 @@
 
 import { facebook } from './facebook.js';
 import { instagram } from './instagram.js';
+import { photo } from './photo.js';
 import { web } from './web.js';
 import { youtube } from './youtube.js';
 
@@ -37,7 +38,8 @@ function parseHttpUrl(text) {
 
 export const detectSource = (url) => SOURCES.find((source) => source.matches(url));
 
-export const sourceFor = (platform) => SOURCES.find((source) => source.platform === platform);
+// A photo import is not a link, so it is found here but never by detectSource.
+export const sourceFor = (platform) => [...SOURCES, photo].find((source) => source.platform === platform);
 
 // Reads the pasted text. Returns { source, sourceId, sourceUrl }, or { error } with the
 // code to send. Nothing here fetches the link: only its text is looked at.

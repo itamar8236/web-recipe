@@ -254,6 +254,7 @@ describe('import endpoints', () => {
         status: 'running',
         stage: 'meta',
         link: CANONICAL,
+        fromPhoto: false,
         title: null,
         error: null,
         retryable: false,

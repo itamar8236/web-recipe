@@ -5,20 +5,25 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from './Language';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
+import { preparePhoto } from '@/lib/photo';
 import styles from './ImportDialog.module.css';
 
-// What "+ Add recipe" opens for a logged-in user. It asks only for the link: the backend
-// works out the site and which model reads it. Only "Write it manually" opens the manual
-// form; closing the dialog in any other way leaves the user on Home. `backAt` is when a
-// used-up daily limit resets, for the error that mentions it.
+// What "+ Add recipe" opens for a logged-in user. Its main action is the link: the backend
+// works out the site and which model reads it. Under it, "Choose a photo" opens the phone's
+// own chooser (gallery, camera or files; no `capture`, so the gallery is offered) for one
+// picture of a written recipe, which is uploaded at once. Only "Write it manually" opens
+// the manual form; closing the dialog in any other way leaves the user on Home. `backAt` is
+// when a used-up daily limit resets, for the error that mentions it.
 export default function ImportDialog({ backAt, manualHref, onClose, onStarted, onModelsStale }) {
   const { t } = useLanguage();
   const router = useRouter();
   const ref = useRef(null);
   const inputRef = useRef(null);
+  const fileRef = useRef(null);
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  // null, 'link' or 'photo': what is being sent, so only that button says so.
+  const [busy, setBusy] = useState(null);
 
   useEffect(() => {
     ref.current.showModal();
@@ -34,16 +39,27 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
     if (!busy) onClose();
   }
 
-  async function start() {
-    setBusy(true);
+  // The dialog stays open, with every button off, until the backend has the link or the
+  // whole picture (a few seconds for a full-size photo on mobile data).
+  async function send(what, startImport) {
+    setBusy(what);
     setError('');
     try {
-      onStarted(await api.startImport(url));
+      onStarted(await startImport());
     } catch (err) {
       setError(errorMessage(t, { code: err.code, retryAt: backAt }));
       if (err.code === 'quota') onModelsStale();
-      setBusy(false);
+      setBusy(null);
     }
+  }
+
+  const start = () => send('link', () => api.startImport(url));
+
+  function photoChosen(event) {
+    const [file] = event.target.files;
+    // Cleared, so choosing the same picture again (for a second read) still fires.
+    event.target.value = '';
+    if (file) send('photo', async () => api.startPhotoImport(await preparePhoto(file)));
   }
 
   function submit(event) {
@@ -67,8 +83,8 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
     >
       <div className={styles.content}>
         <div className={styles.head}>
-          <h2 id="import-title" className={styles.title}>{t.addFromLink}</h2>
-          <button type="button" className={styles.close} aria-label={t.close} disabled={busy} onClick={close}>
+          <h2 id="import-title" className={styles.title}>{t.addRecipeTitle}</h2>
+          <button type="button" className={styles.close} aria-label={t.close} disabled={busy !== null} onClick={close}>
             ×
           </button>
         </div>
@@ -97,13 +113,23 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
           </div>
 
           <div className={styles.actions}>
-            <button type="submit" className="button" disabled={busy || !url.trim()}>
-              {busy ? t.importStarting : t.importButton}
+            <button type="submit" className="button" disabled={busy !== null || !url.trim()}>
+              {busy === 'link' ? t.importStarting : t.importButton}
             </button>
-            <button type="button" className="button secondary" disabled={busy} onClick={writeManually}>
+            <button type="button" className="button secondary" disabled={busy !== null} onClick={writeManually}>
               {t.writeManually}
             </button>
           </div>
+
+          <button
+            type="button"
+            className={`button secondary ${styles.photo}`}
+            disabled={busy !== null}
+            onClick={() => fileRef.current.click()}
+          >
+            {busy === 'photo' ? t.uploadingPhoto : t.choosePhoto}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={photoChosen} />
         </form>
       </div>
     </dialog>

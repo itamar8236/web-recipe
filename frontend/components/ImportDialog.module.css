@@ -70,3 +70,7 @@
   flex-wrap: wrap;
   gap: 10px;
 }
+
+.photo {
+  width: 100%;
+}

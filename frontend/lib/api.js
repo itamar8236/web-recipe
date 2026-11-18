@@ -18,13 +18,18 @@ export function setLoggedOutHandler(handler) {
   onLoggedOut = handler;
 }
 
+// `body` is sent as JSON, except a Blob (a photo), which is sent as it is, with its type.
 async function request(path, method = 'GET', body) {
+  const isFile = body instanceof Blob;
+  let headers = {};
+  if (isFile) headers = { 'Content-Type': body.type };
+  else if (body !== undefined) headers = { 'Content-Type': 'application/json' };
   let response;
   try {
     response = await fetch(path, {
       method,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers,
+      body: isFile || body === undefined ? body : JSON.stringify(body),
     });
   } catch {
     throw new ApiError(0, 'network');
@@ -174,7 +179,8 @@ export async function setRecipeTags(id, names) {
 }
 
 // ---- Recipes ----
-// A recipe is { id, tagIds, favorite, public, link, calories, protein, en: {name, ingredients[], steps[]}, he: {...} }.
+// A recipe is { id, tagIds, favorite, public, link, fromPhoto, calories, protein, en: {name, ingredients[], steps[]}, he: {...} }.
+// `link` is '' for a manual recipe and for one read from a photo (then `fromPhoto` is true).
 // calories (kcal) and protein (grams) are per serving, null when not known.
 // `public` means other users can see and copy it; a guest's recipes are never sent anywhere,
 // so theirs is always true and means nothing.
@@ -207,7 +213,7 @@ export async function saveRecipe(id, data) {
     const existing = findRecipe(id);
     Object.assign(fields, cleanNutrition(data, existing));
     if (existing) Object.assign(existing, fields);
-    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', favorite: false, public: true, ...fields });
+    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', fromPhoto: false, favorite: false, public: true, ...fields });
     return copy(existing ?? memory.recipes.at(-1));
   }
   const body = { en: data.en, he: data.he, calories: data.calories, protein: data.protein };
@@ -268,7 +274,8 @@ export async function copyRecipe(id) {
 }
 
 // ---- Imports from a video link ----
-// An import is { id, status, stage, link, title, error, retryable, recipeId, recipeName }.
+// An import is { id, status, stage, link, fromPhoto, title, error, retryable, recipeId, recipeName };
+// a photo's has link '' and fromPhoto true.
 // Importing needs an account, so a guest is refused here and never reaches the backend.
 
 function refuseGuest() {
@@ -285,6 +292,14 @@ export async function getImports() {
 export async function startImport(url) {
   refuseGuest();
   return (await dataRequest('/api/imports', 'POST', { url })).import;
+}
+
+// Sends one picture (a Blob with an image type, from preparePhoto in lib/photo.js) to be
+// read in the background, always with the best model first. The same picture twice makes
+// two recipes. Returns the new card.
+export async function startPhotoImport(photo) {
+  refuseGuest();
+  return (await dataRequest('/api/imports/photo', 'POST', photo)).import;
 }
 
 // Returns the new card: a Retry is a new import, and the failed card goes away.

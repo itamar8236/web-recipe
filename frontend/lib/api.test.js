@@ -282,7 +282,7 @@ describe('errorMessage', () => {
     expect(errorMessage(strings.he, { code })).not.toBe(strings.he.errGeneric);
   });
 
-  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'model_busy', 'nothing_to_translate', 'import_needs_login'])(
+  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'model_busy', 'nothing_to_translate', 'import_needs_login', 'photo_invalid', 'photo_too_big', 'photo_unreadable', 'photo_expired', 'photo_copyrighted', 'photo_upload_failed'])(
     '%s has its own message in both languages',
     (code) => {
       expect(errorMessage(strings.en, { code })).not.toBe(strings.en.errGeneric);
@@ -314,6 +314,11 @@ describe('stageMessage', () => {
     expect(stageMessage(strings.en, stage)).toBe(message);
     expect(stageMessage(strings.he, stage)).toBeTruthy();
     expect(stageMessage(strings.he, stage)).not.toBe(message);
+  });
+
+  it('says the photo is being read at every stage of a photo import', () => {
+    for (const stage of ['meta', 'video', 'extract']) expect(stageMessage(strings.en, stage, true)).toBe('Reading the photo...');
+    expect(stageMessage(strings.he, 'meta', true)).toBe(strings.he.importStagePhoto);
   });
 });
 
@@ -359,6 +364,7 @@ describe('guest: imports need an account', () => {
     ['rerunRecipe', () => api.rerunRecipe(1)],
     ['translateRecipe', () => api.translateRecipe('en', { name: 'Tea', ingredients: [], steps: [] })],
     ['estimateNutrition', () => api.estimateNutrition({ name: 'Tea', ingredients: [], steps: [] })],
+    ['startPhotoImport', () => api.startPhotoImport(new Blob(['x'], { type: 'image/jpeg' }))],
   ])('%s is refused and never calls the backend', async (_, action) => {
     vi.stubGlobal('fetch', vi.fn());
     await expect(action()).rejects.toMatchObject({ code: 'import_needs_login' });
@@ -392,6 +398,16 @@ describe('logged in: imports', () => {
     mockFetch(202, { import: card });
     expect(await api.startImport('https://youtu.be/x')).toEqual(card);
     expect(lastCall()).toEqual({ path: '/api/imports', method: 'POST', body: { url: 'https://youtu.be/x' } });
+  });
+
+  it('sends a photo as it is, with its own type, and returns the card', async () => {
+    mockFetch(202, { import: card });
+    const photo = new Blob(['jpeg bytes'], { type: 'image/jpeg' });
+    expect(await api.startPhotoImport(photo)).toEqual(card);
+    const [path, options] = fetch.mock.calls.at(-1);
+    expect(path).toBe('/api/imports/photo');
+    expect(options).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'image/jpeg' } });
+    expect(options.body).toBe(photo);
   });
 
   it('retries and returns the new card', async () => {

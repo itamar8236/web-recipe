@@ -31,7 +31,9 @@ local copy, so agents can't reach production even by accident.
   use a test quota, not production's.
 - You may test real imports yourself on the local app, but only on links the owner gives
   in the chat. Don't tick "Use the best model" (or send `model: 'best'`) unless the owner
-  asks, so testing doesn't use up its 20 requests a day. Automated tests always use fake keys and stubs. List in
+  asks, so testing doesn't use up its 20 requests a day. A photo import always calls the best
+  model first, so run one only with the owner's OK, on pictures they gave in the chat (never
+  commit them or copy them into the repo). Automated tests always use fake keys and stubs. List in
   the PR the real imports you ran. `node scripts/e2e-links.mjs "<link>" ...` (from
   `backend/`, with the app running) runs the links the owner gave in the chat, or a file of
   them, through the local app on a test account, without the best model by default; it's the check after Facebook or Instagram change
