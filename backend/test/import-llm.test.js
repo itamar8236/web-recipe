@@ -145,6 +145,19 @@ describe('callModel: failures', () => {
     expect(error.detail).toBe('Gemini 503: This model is currently experiencing high demand.');
   });
 
+  // Cloudflare's answer when Google sent nothing back for about 100 s, as plain text.
+  it('reports a 524 as the model being busy, but counted, so the next model is tried', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('error code: 524', { status: 524 })));
+    const error = await call({ videoUrl: VIDEO }).catch((e) => e);
+    expect(error).toBeInstanceOf(ModelBusyError);
+    expect(error).toMatchObject({ counted: true, detail: 'Gemini 524: error code: 524' });
+  });
+
+  it('does not mark a 503 as counted', async () => {
+    respond({ error: { message: 'high demand' } }, 503);
+    expect(await call().catch((e) => e)).toMatchObject({ counted: false });
+  });
+
   it('gives up on a request that takes too long, so a retry never overlaps it', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new DOMException('timed out', 'TimeoutError'); }));
     await expect(call({ videoUrl: VIDEO })).rejects.toMatchObject({ code: 'llm_error', retryable: true });
@@ -243,5 +256,75 @@ describe('callModel: 429', () => {
   it('is still a quota error, not a video refusal, on a call with a video', async () => {
     respond({}, 429);
     await expect(call({ videoUrl: VIDEO })).rejects.toBeInstanceOf(QuotaError);
+  });
+});
+
+describe('callModel: background mode', () => {
+  const running = { id: 'v1_abc', status: 'in_progress' };
+  // Answers the POST with `first`, then each check with the next of `checks`.
+  const google = (first, ...checks) => {
+    const queue = [...checks];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url, options = {}) => {
+        const body = options.method === 'POST' ? first : queue.length > 1 ? queue.shift() : queue[0];
+        return body instanceof Response ? body : new Response(JSON.stringify(body));
+      }),
+    );
+  };
+  const background = (extra = {}) => call({ videoUrl: VIDEO, background: true, pollMs: 1, ...extra });
+
+  it('is off unless asked for', async () => {
+    respond(interaction('{"status":"none"}'));
+    await call();
+    expect(sentBody()).not.toHaveProperty('background');
+  });
+
+  it('asks for it, then checks the request by its id until it is done, and reads the answer', async () => {
+    google(running, running, running, { ...interaction('{"status":"one"}'), id: 'v1_abc' });
+    expect(await background()).toEqual({ status: 'one' });
+    expect(sentBody()).toMatchObject({ background: true, model: 'some-model' });
+    const checks = fetch.mock.calls.slice(1);
+    expect(checks).toHaveLength(3);
+    for (const [url, options] of checks) {
+      expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/interactions/v1_abc');
+      expect(options.method).toBeUndefined();
+      expect(options.headers['x-goog-api-key']).toBe('fake-gemini-key');
+    }
+    expect(log.mock.calls.at(-1)[0]).toMatch(/^LLM answer: model=some-model in \d+ ms \(background\), no usage reported$/);
+  });
+
+  it('reads an answer that is done at once, with no check', async () => {
+    google(interaction('{"status":"none"}'));
+    expect(await background()).toEqual({ status: 'none' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a request that failed at Google as temporary', async () => {
+    google(running, { id: 'v1_abc', status: 'failed' });
+    await expect(background()).rejects.toMatchObject({ code: 'llm_error', retryable: true, detail: 'Gemini answered with status failed' });
+  });
+
+  it('treats a failed check like any failed call', async () => {
+    google(running, new Response(JSON.stringify({ error: { message: 'high demand' } }), { status: 503 }));
+    await expect(background()).rejects.toBeInstanceOf(ModelBusyError);
+  });
+
+  it('fails as temporary when the start has no id to check', async () => {
+    google({ status: 'in_progress' });
+    await expect(background()).rejects.toMatchObject({ code: 'llm_error', retryable: true });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits longer between checks, up to six times the first wait', async () => {
+    const waits = [];
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation((fn, ms) => {
+      waits.push(ms);
+      fn();
+      return 0;
+    });
+    google(running, running, running, running, running, running, running, running, interaction('{"status":"none"}'));
+    await background({ pollMs: 10 });
+    expect(waits.filter((ms) => ms <= 60)).toEqual([10, 20, 30, 40, 50, 60, 60, 60]);
   });
 });
