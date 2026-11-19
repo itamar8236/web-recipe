@@ -174,18 +174,17 @@ function failureFrom(status, text, { model, media }) {
 // ModelBusyError, ModelUnusableError, VideoRefusedError, or ImportError (llm_error for other temporary
 // problems, bad_result for an answer that can't be read). `videoUrl` is a YouTube link or
 // an uploaded file's uri (then with `videoType`); `imageUrl` is an uploaded photo's uri,
-// with `imageType`. `logPrompt: false` keeps a prompt that holds the user's own text (a
-// translation) out of the logs.
-export async function callModel({ env, model, prompt, schema, videoUrl, videoType, imageUrl, imageType, logPrompt = true }) {
+// with `imageType`.
+export async function callModel({ env, model, prompt, schema, videoUrl, videoType, imageUrl, imageType }) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
   if (!env.GEMINI_API_KEY) throw new ImportError('llm_error', { detail: 'GEMINI_API_KEY is not set' });
 
   // One line per real request, so a bad result can be traced to what the model was sent.
-  // Never add the key or the headers. Import prompts hold only our instructions and a public
-  // video description; a translation's holds the user's recipe, so it is never logged.
-  // A user's photo is private too, so only its type is logged, never its uri.
+  // Never add the key or the headers. Every prompt is logged, the AI tools' too, which hold
+  // the user's own recipe (the owner's choice, for debugging); logs are kept 3 days. A
+  // user's photo is only logged by its type, never its uri.
   const media = imageUrl ? `image=${imageType}` : `video=${videoUrl ?? 'none'}`;
-  console.log(`LLM call: model=${model} ${media}\n${logPrompt ? prompt : '(prompt not logged: user text)'}`);
+  console.log(`LLM call: model=${model} ${media}\n${prompt}`);
   const startedAt = Date.now();
 
   let response;

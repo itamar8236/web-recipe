@@ -24,7 +24,7 @@ locally with `npm run dev` (port 8787, after `npm run build` in `frontend/`). Ne
 
 Code: `src/index.js` (routes and auth), `src/data.js` (tags and recipes), `src/browse.js`
 (other users' public recipes),
-`src/imports.js` (import endpoints), `src/translate.js` (translation), `src/nutrition.js` (calories estimate), `src/http.js` (JSON helpers), `src/session.js`
+`src/imports.js` (import endpoints), `src/translate.js` (translation), `src/nutrition.js` (calories estimate), `src/substitute.js` (ingredient substitutes), `src/http.js` (JSON helpers), `src/session.js`
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
 `workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
 choice, usage counting, reset time), `llm.js` (the only file that knows
@@ -157,7 +157,7 @@ except a photo's, which is the picture itself.
   `recipeName` is `{ en, he }`, or `null` until there is a recipe. `error` is set only when
   `status` is `failed`.
 - `GET` returns `running`, `failed` and `done` import rows, newest first, never `dismissed`
-  or translations and estimates, and never reads `state`. It also marks `running` rows with no update for 30 minutes as failed
+  or the AI tools' rows, and never reads `state`. It also marks `running` rows with no update for 30 minutes as failed
   with `timed_out`.
 - `models` is `{ bestAvailable, bestLeftToday, bestLeftForUser, bestAvailableAt, resetsAt }`,
   times in epoch ms, about the best model only. `bestAvailable` is false when its shared
@@ -173,7 +173,7 @@ except a photo's, which is the picture itself.
   and start.
 - Caps, counted from today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running) and
   `IMPORT_DAILY_LIMIT` (10 a day) count import rows, so every Retry and re-scan too, but not
-  translations. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`, and
+  the AI tools' requests. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`, and
   is the only per-user limit on a model.
 - A Retry is a **new row**: it copies the failed row's link, title and model choice, starts
   over from the first stage in its own Workflow, and the failed row becomes `dismissed`.
@@ -189,7 +189,7 @@ except a photo's, which is the picture itself.
 
 Needs a session like the rest. `from` is `'en'` or `'he'`, `content` is
 `{ name, ingredients, steps }` (same checks and limits as a recipe), `recipeId` is the
-recipe being edited (omit for one not saved yet). There is no model choice; a `model`
+recipe it belongs to (omit for one not saved yet; the app now always sends it). There is no model choice; a `model`
 field from an older page is ignored. See [Translation](#translation).
 
 ## Nutrition API
@@ -198,8 +198,18 @@ field from an older page is ignored. See [Translation](#translation).
 |---|---|---|---|
 | `POST /api/nutrition` `{content, recipeId?}` | Estimate calories and protein per serving | 200 `{calories, protein}` | 400 `invalid_request`, `too_long`, `no_ingredients`; 404 (another user's recipe); 429 `quota`; 502 `bad_result`, `llm_error`; 503 `model_busy` |
 
-Needs a session. `content` and `recipeId` are as for translate (the language being
-written). Stores nothing but its request row. See [Calories estimate](#calories-estimate).
+Needs a session. `content` and `recipeId` are as for translate (the language shown on
+the recipe page). Stores nothing but its request row. See [Calories estimate](#calories-estimate).
+
+## Substitute API
+
+| Endpoint | Purpose | Success | Errors |
+|---|---|---|---|
+| `POST /api/substitute` `{recipeId, from, index, lang}` | Suggest substitutes for one ingredient | 200 `{substitutes: [{name, amount, note}]}` | 400 `invalid_request` (also an `index` past the list); 404 (not the user's recipe); 429 `quota`; 502 `bad_result`, `llm_error`; 503 `model_busy` |
+
+Needs a session. The recipe is read from the database, so only the user's own saved recipe
+works. `from` (`'en'` or `'he'`) is which language's ingredient list `index` (from 0) points
+into, and `lang` the language to answer in. See [Ingredient substitutes](#ingredient-substitutes).
 
 ## Data
 
@@ -215,7 +225,7 @@ written). Stores nothing but its request row. See [Calories estimate](#calories-
   and Hebrew** so either version can be edited. Its tags are set on their own
   (see the API above), never with its text. A favorite is a flag on the recipe, since it is the owner's own mark and is never shown to others.
 - **Model requests** live in the `llm_requests` table: **one row per request** a user
-  makes, with a `purpose`: `import` (a new import, each Retry, each re-scan), `translation` or `nutrition` (a calories estimate; both linked to the recipe being edited by `recipe_id`). So an
+  makes, with a `purpose`: `import` (a new import, each Retry, each re-scan), `translation`, `nutrition` (a calories estimate) or `substitution` (ingredient substitutes); the last three are linked to their recipe by `recipe_id`. So an
   unfinished import never appears as a recipe, and the rows are the record of who used the
   models: `model` is the model whose answer the request ended with (also for a failed
   one, when a model did answer), and a user's daily best-model uses are their rows with
@@ -469,13 +479,14 @@ needs no code change:
 | Setting | Value | Used for |
 |---|---|---|
 | `LLM_IMPORT_MODELS` | `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite` | Imports, Retries and re-scans, in this order |
-| `LLM_TRANSLATE_MODELS` | `gemini-3.5-flash-lite` | Translations: text work for the small model, which leaves the stronger models' few requests for videos |
+| `LLM_TRANSLATE_MODELS` | `gemini-3.5-flash-lite` | The AI tools (translate, calories, substitute): text work for the small model, which leaves the stronger models' few requests for videos |
 | `LLM_FALLBACK_MODEL` | `openai/gpt-oss-120b` (Groq) | After either list, for a request with **no video** |
 | `LLM_BEST_MODEL` | `gemini-4-hydrogen` | When the user asks for it, and first for every photo |
 | `LLM_DAILY_LIMITS` | 20, 20, 500, 20 and 200 a day | Every model's requests a day. A model missing from it is never called |
+| `LLM_BUSY_RETRY_MS` | `1500,3000` | The AI tools only: when every model they could use is busy, wait this long and try them all again, once per number |
 
-- **The best model** is the one choice a user has ("Use the best model" on the edit form's
-  scan; `model: 'best'` in the API), and every photo import uses it by default, with no
+- **The best model** is the one choice a user has ("Use the best model" in the recipe
+  page's "Scan the link again" confirmation; `model: 'best'` in the API), and every photo import uses it by default, with no
   checkbox. It is slower and more detailed. It is tried first,
   once; if it is busy, out for the day, or the user has used their 5, the import goes on
   with the import models by itself, and nobody is told or asked. Photos share its 20 a day
@@ -593,9 +604,9 @@ would let any preview spend the production quota. Test photo imports locally.
 **Logging.** `llm.js` logs each Gemini request (the model, the video link, or only the
 type of a user's photo, and the full prompt), each answer (how long it took and the tokens
 Google counted, the image's among them), each upload (file name, type, size and time) and
-each failure (the status and Google's error text), never the key. Import prompts
-hold only our instructions and a public video description. A translation's prompt holds the
-user's own recipe, so it is never logged (`logPrompt: false`). Production keeps the logs for 3
+each failure (the status and Google's error text), never the key. Every prompt is logged
+in full, the AI tools' too, which hold the user's own recipe (the owner's choice, for
+debugging); `groq.js` logs the fallback model's the same way. Production keeps the logs for 3
 days (Workers Logs, `observability` in `wrangler.jsonc`), and `npx wrangler tail` shows
 them live. A failed import also keeps the reason in `llm_requests.error_detail`.
 
@@ -627,32 +638,35 @@ All rare and harmless:
 
 ## Translation
 
-The edit form's "Translate" sends the language being written to `POST /api/translate`,
-which answers with the other language and stores nothing. The form then fills it in and
-saves the recipe at once with a normal `POST`/`PUT /api/recipes` (the frontend's job; this
+The recipe page's AI tools "Translate" sends the language shown to `POST /api/translate`,
+which answers with the other language and stores nothing. The page then saves the recipe
+at once with a normal `POST`/`PUT /api/recipes` (the frontend's job; this
 endpoint never writes a recipe). It works for any recipe, manual ones too, but needs an account.
 
 - One plain request, not a Workflow: the user waits for it, and a text-only call takes
   seconds. No video and no link are sent.
 - Each translation is an `llm_requests` row with `purpose = 'translation'`, inserted before the
   call (status `running`, then `done` or `failed` with its `error`), with `recipe_id` set to
-  the recipe being edited (`NULL` for one not saved yet) and the answering model in `model`.
+  its recipe (`NULL` for one not saved yet, from an older page) and the answering model in `model`.
   The recipe text itself is never stored there. Translations never show as cards and don't
   count toward the import caps.
 - There is no model choice and no per-user limit. A translation takes one request from
   the shared daily count (`llm_usage`) of the model that answers: the translation models
   in order (`LLM_TRANSLATE_MODELS`), then the fallback model.
-- Nothing waits, since the user is waiting: a busy, used-up or unusable model is skipped
-  at once. Only every model being busy (`model_busy`), out (`quota`), or unable to run
-  (`llm_error`) fails.
+- A busy, used-up or unusable model is skipped at once. When every model it could use
+  was only busy (Google's "high demand" 503 usually passes in seconds), the whole list,
+  fallback included, is tried again after each delay in `LLM_BUSY_RETRY_MS` (1.5 s, then
+  3 s), so the user waits a few seconds instead of getting an error at once. Calories and
+  substitutes do the same. Only every model staying busy (`model_busy`), out (`quota`), or
+  unable to run (`llm_error`) fails.
 - The answer is untrusted: it must pass the same checks as a recipe's text, and must keep
   each part (name, ingredients, steps) the original had, or it's `bad_result`.
 
 ## Calories estimate
 
-The edit form's "Calculate calories and protein" sends the language being written to
+The recipe page's "Calculate calories and protein" sends the language shown to
 `POST /api/nutrition`, which answers `{ calories, protein }` per serving and stores
-nothing; the form fills them in and saves the recipe, like a translation. It works the same
+nothing; the page saves them with the recipe, like a translation. It works the same
 way as [Translation](#translation) in every other respect: one plain request on the
 translation models then the fallback, no model choice, no per-user limit, never a card.
 
@@ -668,6 +682,27 @@ translation models then the fallback, no model choice, no per-user limit, never 
   protein up to 1000), or it's `bad_result`.
 - The servings are the weak spot: when a recipe doesn't say, the model guesses, and a wrong
   guess changes both numbers in proportion.
+
+## Ingredient substitutes
+
+The recipe page's "Substitute an ingredient" lets the user tap one ingredient and sends
+`POST /api/substitute`, which answers up to 4 substitutes (`name`, `amount`, `note`), the
+best first, written in the app's language. Nothing is stored but the request row: the page
+shows the answer in a popup and forgets it when the popup closes. It works the same way as
+[Translation](#translation) otherwise: one plain request, no model choice, no per-user
+limit, never a card.
+
+- **Model**: the translation models (`LLM_TRANSLATE_MODELS`, the small flash-lite model,
+  500 requests a day), then the text-only fallback. A substitution is short text reasoning
+  that the small model handles well, the user waits for it, and the stronger models' 20 a
+  day are kept for videos and photos.
+- The prompt holds the whole recipe (the language the ingredient is in), so the model
+  knows what the ingredient does in the dish, and the chosen ingredient's text.
+- Each request is an `llm_requests` row with `purpose = 'substitution'` (stage
+  `substitution`) and `recipe_id`, recorded like a translation's.
+- The answer is untrusted: it must hold a `substitutes` list (else `bad_result`); each
+  field is trimmed and cut to 300 characters, entries with no name are dropped, and at most
+  4 are kept. An empty list is a valid answer ("nothing would work").
 
 ## Secrets
 

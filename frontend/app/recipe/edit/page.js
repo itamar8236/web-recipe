@@ -1,14 +1,13 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
-import RecipeAiTools from '@/components/RecipeAiTools';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
-import { blankText, toContent, toNumber, toNumberText, toText, withNutrition, withTranslation } from '@/lib/recipeForm';
+import { blankText, toContent, toNumber, toNumberText, toText } from '@/lib/recipeForm';
 import styles from '../recipe.module.css';
 
 function RecipeForm() {
@@ -22,20 +21,11 @@ function RecipeForm() {
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [link, setLink] = useState('');
-  const [aiBusy, setAiBusy] = useState(false);
-  // Translating and scanning need an account, like importing. So does public or private:
-  // a guest's recipes are never sent anywhere.
+  // Public or private needs an account: a guest's recipes are never sent anywhere.
   const auth = useAuth();
   const loggedIn = auth.status === 'user';
   // Saved with the form, so Cancel leaves it as it was. A new recipe starts with the default.
   const [isPublic, setIsPublic] = useState(auth.user?.defaultPublic ?? true);
-  // A translation or an estimate saves when it arrives, so it needs what the user has typed by then,
-  // not what the form held when they tapped the button.
-  const latest = useRef(form);
-  useEffect(() => {
-    latest.current = form;
-  }, [form]);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +35,6 @@ function RecipeForm() {
         if (cancelled) return;
         if (id !== null && !recipe) return setStatus('missing');
         if (recipe) {
-          setLink(recipe.link);
           setIsPublic(recipe.public);
           setForm({
             en: toText(recipe.en),
@@ -135,24 +124,9 @@ function RecipeForm() {
     save(form);
   }
 
-  // A finished translation is saved at once, with the user's unsaved edits.
-  async function saveTranslation(into, content) {
-    const next = withTranslation(latest.current, into, content);
-    setForm(next);
-    await save(next);
-  }
-
-  // A finished estimate is saved at once too, with the user's unsaved edits.
-  async function saveNutrition(nutrition) {
-    const next = withNutrition(latest.current, nutrition);
-    setForm(next);
-    await save(next);
-  }
-
-  // The form edits only the app's current language; the other language is kept as is,
-  // unless the user translates into it.
+  // The form edits only the app's current language; the other language is kept as is.
+  // Translating, like the other AI tools, is on the recipe's own page.
   const current = form[lang];
-  const other = lang === 'en' ? 'he' : 'en';
 
   return (
     <form className={`${styles.recipe} ${styles.form}`} onSubmit={submit}>
@@ -209,30 +183,16 @@ function RecipeForm() {
             <strong>{isPublic ? t.publicLabel : `🔒 ${t.privateLabel}`}</strong>
             <span className="hint">{isPublic ? t.publicHint : t.privateHint}</span>
           </p>
-          <button type="button" className={`button secondary ${styles.visibilityButton}`} disabled={saving || aiBusy} onClick={() => setIsPublic(!isPublic)}>
+          <button type="button" className={`button secondary ${styles.visibilityButton}`} disabled={saving} onClick={() => setIsPublic(!isPublic)}>
             {isPublic ? t.makePrivate : t.makePublic}
           </button>
         </div>
       )}
 
-      {loggedIn && (
-        <RecipeAiTools
-          from={lang}
-          content={toContent(current)}
-          otherHasText={Boolean(form[other].name.trim() || form[other].ingredients.trim() || form[other].steps.trim())}
-          hasNutrition={Boolean(form.calories.trim() || form.protein.trim())}
-          recipeId={id}
-          rescanId={id !== null && link ? id : null}
-          onTranslated={(content) => saveTranslation(other, content)}
-          onNutrition={saveNutrition}
-          onBusyChange={setAiBusy}
-        />
-      )}
-
       {error && <p className="error" role="alert">{error}</p>}
 
       <div className={styles.actions}>
-        <button type="submit" className="button" disabled={saving || aiBusy}>{saving ? t.saving : t.save}</button>
+        <button type="submit" className="button" disabled={saving}>{saving ? t.saving : t.save}</button>
         <Link href={id === null ? '/' : `/recipe?id=${id}`} className="button secondary">{t.cancel}</Link>
       </div>
     </form>

@@ -71,8 +71,7 @@ async function estimate(request, env, userId, llm) {
   if (!source.value.ingredients.length) return fail(400, 'no_ingredients');
   if (recipeId !== null && !(await recipeBelongsToUser(env, userId, recipeId))) return fail(404, 'not_found');
 
-  // The prompt holds the user's own text, so llm.js must not log it.
-  const llmRequest = { prompt: buildPrompt(source.value), schema: SCHEMA, logPrompt: false };
+  const llmRequest = { prompt: buildPrompt(source.value), schema: SCHEMA };
   const job = await insertRow(env, userId, recipeId, Date.now(), 'nutrition');
   let model = null;
   try {

@@ -31,6 +31,8 @@
   // LLM_TRANSLATE_MODELS, then the fallback model (Groq, text only, unused until
   // GROQ_API_KEY exists). LLM_BEST_MODEL is the one a user can ask for. LLM_DAILY_LIMITS
   // holds every model's requests a day; a model missing from it is never called.
+  // LLM_BUSY_RETRY_MS: when every model an AI tool (translate, calories, substitute) could
+  // use is busy, it waits this many ms and tries them all again, once per number.
   // GEMINI_API_KEY, YOUTUBE_API_KEY and GROQ_API_KEY are Worker secrets, never set here.
   "vars": {
     "LLM_IMPORT_MODELS": "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite",
@@ -38,6 +40,7 @@
     "LLM_BEST_MODEL": "gemini-4-hydrogen",
     "LLM_FALLBACK_MODEL": "openai/gpt-oss-120b",
     "LLM_DAILY_LIMITS": "gemini-3.8-flash:20,gemini-3.6-flash:20,gemini-3.5-flash-lite:500,gemini-4-hydrogen:20,openai/gpt-oss-120b:200",
+    "LLM_BUSY_RETRY_MS": "1500,3000",
     "IMPORT_MAX_VIDEO_MINUTES": 3,
     "IMPORT_MAX_VIDEO_MB": 100,
     "IMPORT_MAX_RUNNING": 3,
@@ -64,6 +67,7 @@
       "LLM_BEST_MODEL": "gemini-4-hydrogen",
       "LLM_FALLBACK_MODEL": "openai/gpt-oss-120b",
       "LLM_DAILY_LIMITS": "gemini-3.8-flash:20,gemini-3.6-flash:20,gemini-3.5-flash-lite:500,gemini-4-hydrogen:20,openai/gpt-oss-120b:200",
+      "LLM_BUSY_RETRY_MS": "1500,3000",
       "IMPORT_MAX_VIDEO_MINUTES": 3,
       "IMPORT_MAX_VIDEO_MB": 100,
       "IMPORT_MAX_RUNNING": 3,

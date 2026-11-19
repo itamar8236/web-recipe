@@ -14,8 +14,9 @@ log-out with remembered sessions plus a guest mode, editing your own username,
 password and defaults, the admin logging in as any user, browsing and copying other users' public recipes, sorting both lists, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
 a recipe from a YouTube, Facebook or Instagram link, from any public recipe web page, or
-from a photo of a written recipe, in the background with a Cloudflare Workflow, plus three AI tools on the edit form (translate a
-recipe, calculate its calories and protein, scan its link again), and importing a link
+from a photo of a written recipe, in the background with a Cloudflare Workflow, plus four AI tools in a box at the
+bottom of each recipe's page (substitute an ingredient, translate a recipe, calculate its
+calories and protein, scan its link again), and importing a link
 from Android's Share menu into the installed app. The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
@@ -84,9 +85,9 @@ resolved. One short line each, linking to the README section with the details.
 - **Users don't choose a model.** An import tries a fixed list of free models in order
   and moves on at once from one that is busy, out for the day, or can't run (retired, or
   its key refused); a request with no video
-  (a translation, a calories estimate, a caption-only import) ends on a **fallback** text
-  model from another free provider, if its key is set. A translation or a calories estimate
-  goes to the small model first. Which
+  (a translation, a calories estimate, a substitution, a caption-only import) ends on a
+  **fallback** text model from another free provider, if its key is set. A translation, a
+  calories estimate or a substitution goes to the small model first. Which
   model wrote a recipe is stored with it.
 - The one choice is the **best model**: slower and more detailed, up to 5 a day per user,
   offered only on "Scan the link again", and used by default, with no choice, for every
@@ -96,18 +97,20 @@ resolved. One short line each, linking to the README section with the details.
 - **Share to the app**: on Android, the installed app is in the Share menu. Sharing a
   post or page to it starts the import on the logged-in account at once and then closes
   the app, back to the app the user shared from.
-- The **edit form** holds the AI tools: **translate** the language being written into the
-  other one (any recipe, manual ones too); when it works, the recipe is saved with the form's
-  current text and the edit form closes. **Calculate calories and protein** per serving from
-  the ingredients (any recipe), saved the same way. For an
-  imported recipe, **scan its link again**, which runs like a new import and replaces
-  the recipe's text.
+- The **AI tools** box at the bottom of a recipe's page holds the AI tools, all shown at
+  once: **substitute an ingredient**: the user taps one of the recipe's ingredients and the
+  model suggests a few replacements, shown in a popup and never saved (gone when it closes).
+  **Translate** the shown language into the other one (any recipe, manual ones too); when it
+  works, the recipe is saved at once. **Calculate calories and protein** per serving from
+  the ingredients (any recipe), saved the same way. For an imported recipe, **scan its link
+  again**, which runs like a new import and replaces the recipe's text. The edit form has
+  no AI tools.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - A recipe may also have **calories and protein per serving** (optional, the same in both
   languages), shown only on the recipe's own page. They are typed in the edit form, and an
   import from a link gets them from the model in the same request as the recipe; any
-  recipe can ask the model for them from the edit form.
+  recipe can ask the model for them from its AI tools.
 - **Up to 50 users**, each with their **own tags, recipes, and favorites**. Nobody can
   change another user's data. Each recipe is **public or private**: other users can see a
   public one in Browse and copy it, and a private one is seen only by its owner. Anyone can **sign up** with a username and password

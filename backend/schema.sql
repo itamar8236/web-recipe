@@ -195,14 +195,14 @@ CREATE INDEX IF NOT EXISTS recipe_tags_tag_id ON recipe_tags (tag_id);
 
 -- One row per request for model work: every import from a link, every Retry (a new row,
 -- not the old one restarted), every re-scan of a recipe's video, every translation and every
--- calories estimate.
+-- calories estimate and every ingredient-substitutes request.
 -- It is the record of who used the models: a user's daily best-model uses are the rows with used_best = 1, whatever their
 -- purpose. A separate table rather than unfinished rows in recipes: recipes requires a real
 -- name, and every list and search would otherwise need a "ready?" filter.
--- purpose: 'import' (a link: new, Retry or re-scan; shown as a card), 'translation' or
--- 'nutrition' (a calories-and-protein estimate). The last two come from the edit form: text
--- only, no link, never a card; recipe_id is the recipe being edited, or NULL for one not
--- saved yet.
+-- purpose: 'import' (a link: new, Retry or re-scan; shown as a card), 'translation',
+-- 'nutrition' (a calories-and-protein estimate) or 'substitution' (substitutes for one
+-- ingredient). The last three come from the recipe page's AI tools: text only, no link,
+-- never a card; recipe_id is their recipe.
 -- Rows stay after finishing (dismissing only sets the status), because the caps count them.
 -- platform, source_id and source_url are the link, so only an import has them. platform has
 -- no CHECK, so adding a source needs no table rebuild.
@@ -225,7 +225,7 @@ CREATE INDEX IF NOT EXISTS recipe_tags_tag_id ON recipe_tags (tag_id);
 CREATE TABLE IF NOT EXISTS llm_requests (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  purpose    TEXT    NOT NULL DEFAULT 'import' CHECK (purpose IN ('import', 'translation', 'nutrition')),
+  purpose    TEXT    NOT NULL DEFAULT 'import' CHECK (purpose IN ('import', 'translation', 'nutrition', 'substitution')),
   platform   TEXT,
   source_id  TEXT,
   source_url TEXT,

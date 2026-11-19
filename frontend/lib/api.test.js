@@ -364,6 +364,7 @@ describe('guest: imports need an account', () => {
     ['rerunRecipe', () => api.rerunRecipe(1)],
     ['translateRecipe', () => api.translateRecipe('en', { name: 'Tea', ingredients: [], steps: [] })],
     ['estimateNutrition', () => api.estimateNutrition({ name: 'Tea', ingredients: [], steps: [] })],
+    ['suggestSubstitutes', () => api.suggestSubstitutes(1, 'en', 0, 'en')],
     ['startPhotoImport', () => api.startPhotoImport(new Blob(['x'], { type: 'image/jpeg' }))],
   ])('%s is refused and never calls the backend', async (_, action) => {
     vi.stubGlobal('fetch', vi.fn());
@@ -447,6 +448,13 @@ describe('logged in: imports', () => {
     expect(lastCall()).toEqual({ path: '/api/nutrition', method: 'POST', body: { content } });
     await api.estimateNutrition(content, 12);
     expect(lastCall().body).toEqual({ content, recipeId: 12 });
+  });
+
+  it('asks for substitutes, saving nothing', async () => {
+    const substitutes = [{ name: 'Oil', amount: '1 tbsp', note: 'Less rich.' }];
+    mockFetch(200, { substitutes });
+    expect(await api.suggestSubstitutes(12, 'he', 1, 'en')).toEqual(substitutes);
+    expect(lastCall()).toEqual({ path: '/api/substitute', method: 'POST', body: { recipeId: 12, from: 'he', index: 1, lang: 'en' } });
   });
 
   it('passes on the backend error codes', async () => {

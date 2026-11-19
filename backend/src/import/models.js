@@ -286,10 +286,24 @@ export async function callChosenModel(job, deps, request) {
   return callInOrder(deps, importModels(deps.env), request);
 }
 
-// A translation's request: text only, so it goes to the small models (LLM_TRANSLATE_MODELS)
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A translation's request, and every other short text-only request from the AI tools (a
+// calories estimate, ingredient substitutes): it goes to the small models (LLM_TRANSLATE_MODELS)
 // and then the fallback model, leaving the stronger models' few requests for videos.
-// Returns { output, model }. Throws ImportError quota when no model can run, and
-// ModelBusyError when one was only busy (the user waits, so nothing waits here).
-export function callTranslationModel(deps, request) {
-  return callInOrder(deps, list(deps.env.LLM_TRANSLATE_MODELS), request);
+// A busy model (Google's "high demand" 503) usually answers a moment later, so when every
+// model was busy the whole list is tried again after each delay in LLM_BUSY_RETRY_MS: a few
+// seconds the user waits instead of an error at once. Returns { output, model }. Throws
+// ImportError quota when no model can run, and ModelBusyError when they stayed busy.
+export async function callTranslationModel(deps, request) {
+  const delays = list(deps.env.LLM_BUSY_RETRY_MS).map(Number);
+  for (let retry = 0; ; retry += 1) {
+    try {
+      return await callInOrder(deps, list(deps.env.LLM_TRANSLATE_MODELS), request);
+    } catch (error) {
+      if (!(error instanceof ModelBusyError) || retry >= delays.length) throw error;
+      console.log(`Every text model is busy, trying again in ${delays[retry]} ms`);
+      await wait(delays[retry]);
+    }
+  }
 }

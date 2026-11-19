@@ -352,3 +352,11 @@ export async function estimateNutrition(content, recipeId = null) {
   if (recipeId !== null) body.recipeId = recipeId;
   return dataRequest('/api/nutrition', 'POST', body);
 }
+
+// Asks for substitutes for the ingredient at `index` in a saved recipe's `from` text
+// ('en' or 'he'), written in `lang`. Nothing is saved: returns [{ name, amount, note }],
+// empty when nothing would work.
+export async function suggestSubstitutes(recipeId, from, index, lang) {
+  refuseGuest();
+  return (await dataRequest('/api/substitute', 'POST', { recipeId, from, index, lang })).substitutes;
+}

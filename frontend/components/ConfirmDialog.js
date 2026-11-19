@@ -6,8 +6,9 @@ import styles from './ConfirmDialog.module.css';
 
 // An in-page "are you sure?" box. window.confirm() is not used because some browsers
 // and in-app web views block it, which made it silently return false.
-// `danger` (the default) shows the confirm button in red, for deleting.
-export default function ConfirmDialog({ message, confirmLabel, onConfirm, onCancel, danger = true }) {
+// `danger` (the default) shows the confirm button in red, for deleting. `children`, if any,
+// show under the message (a choice that belongs to this action only).
+export default function ConfirmDialog({ message, confirmLabel, onConfirm, onCancel, danger = true, children }) {
   const { t } = useLanguage();
   const ref = useRef(null);
 
@@ -25,6 +26,7 @@ export default function ConfirmDialog({ message, confirmLabel, onConfirm, onCanc
       }}
     >
       <p className={styles.message}>{message}</p>
+      {children && <div className={styles.extra}>{children}</div>}
       <div className={styles.actions}>
         <button type="button" className={danger ? `button danger ${styles.confirm}` : 'button'} onClick={onConfirm}>{confirmLabel}</button>
         <button type="button" className="button secondary" onClick={onCancel} autoFocus>{t.cancel}</button>
