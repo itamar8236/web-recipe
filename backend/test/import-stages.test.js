@@ -842,6 +842,19 @@ describe('the Workflow, end to end', () => {
     expect(await totalCounted()).toBe(1);
   });
 
+  // What failed in production: a slow model on a video, cut off by Cloudflare after ~100 s.
+  it('moves on at once from a model Cloudflare cut off (524), and saves the next one’s recipe', async () => {
+    let tries = 0;
+    fakeGoogle({ gemini: () => (++tries === 1 ? new Response('error code: 524', { status: 524 }) : jsonResponse(geminiReply(ONE))) });
+    const row = await newImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, model: SECOND });
+    expect(sentModels()).toEqual([FIRST, SECOND]);
+    expect(await savedModel(row)).toBe(SECOND);
+    // Google ran the cut-off request, so both stay counted.
+    expect(await totalCounted()).toBe(2);
+  });
+
   it('waits and starts again from the first model when every model was busy', async () => {
     fakeGoogle({ gemini: busyFor(3) });
     const row = await newImport();

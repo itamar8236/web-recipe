@@ -180,7 +180,7 @@ async function callUnlessOut({ env, llm, model, request }) {
     // Google says a 503 is unrelated to quota, and a rejected request is never served, so
     // the request is given back to the shared count. If Google counted it after all, its
     // per-day 429 sets the count right.
-    if (error instanceof ModelBusyError || error instanceof ModelUnusableError) await releaseCall(env, model, day);
+    if ((error instanceof ModelBusyError && !error.counted) || error instanceof ModelUnusableError) await releaseCall(env, model, day);
     if (!(error instanceof QuotaError)) throw error;
     if (error.daily) {
       await markModelOutForTheDay(env, model, limit, Date.now());
@@ -213,7 +213,9 @@ async function callBest(job, deps, request) {
     job.used_best = 1;
     job.quota_day = day;
   }
-  const result = await callUnlessOut({ env, llm, model: env.LLM_BEST_MODEL, request });
+  // The best model can take several minutes on a video, so it runs in Google's background
+  // mode (llm.js), which no Cloudflare timeout cuts.
+  const result = await callUnlessOut({ env, llm, model: env.LLM_BEST_MODEL, request: { ...request, background: true } });
   if (result.out && !result.sent && !alreadyCounted) await giveBackBestUse(env, job);
   return result;
 }
