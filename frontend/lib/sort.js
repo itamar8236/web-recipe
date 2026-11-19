@@ -1,5 +1,5 @@
 // The orders the recipe lists can be sorted in. The same names go to the Browse API.
-// Home starts with 'oldest' (how the recipes always came) and Browse with 'random'.
+// Home starts with 'newest' and Browse with 'random'.
 export const SORTS = ['newest', 'oldest', 'protein', 'kcal_high', 'kcal_low'];
 
 // A recipe with no calories or protein comes after every one that has them.

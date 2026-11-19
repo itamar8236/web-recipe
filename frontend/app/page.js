@@ -27,7 +27,7 @@ export default function HomePage() {
   const [selected, setSelected] = useState('all');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState('oldest'); // the order the backend sends
+  const [sort, setSort] = useState('newest');
   const [importOpen, setImportOpen] = useState(false);
   // Importing needs an account, so a guest goes straight to the manual form.
   const canImport = useAuth().status === 'user';

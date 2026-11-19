@@ -119,7 +119,7 @@ resolved. One short line each, linking to the README section with the details.
   recipes. They show in a **random order**, a few at a time, with more loading as the
   user scrolls. Each shows **who saved it and its tags**, and one tap saves an **identical
   copy** as the user's own recipe (then theirs to edit; the original never changes).
-- **Sorting**: both lists keep their usual order (My recipes oldest first, Browse random)
+- **Sorting**: both lists keep their usual order (My recipes newest first, Browse random)
   until the user picks another in a small dropdown beside Search: newest or oldest first,
   most protein, most calories or fewest calories per serving.
 - **Two defaults per user**, in "My account", both on for every old and new user: **new

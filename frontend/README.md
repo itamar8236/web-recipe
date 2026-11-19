@@ -109,7 +109,7 @@ frontend/
    combined with the selected tag and "Favorites". It runs in the browser on the loaded
    recipes.
    Beside Search, a small **sort** dropdown (`components/SortMenu`, a native `<select>`)
-   shows "Oldest first", the usual order; it can switch to newest first, most protein,
+   shows "Newest first", the usual order; it can switch to oldest first, most protein,
    most calories or fewest calories (`lib/sort.js`, in the browser; a recipe with no
    calories or protein goes last). The choice is not remembered.
 3. **Add recipe** (`components/ImportDialog`, a popup, no route): "+ Add recipe" opens it
@@ -141,7 +141,7 @@ frontend/
      A photo's card is titled "A photo" until the recipe has a name, and says "Reading the
      photo..." at every stage.
    - Ready: "Recipe ready: <name>" with Open (which also dismisses) and ×. Needed because
-     the recipe list is oldest-first.
+     the list may be sorted so the new recipe isn't on top.
    - Failed: red, the message, Retry when it can help, ×. Retry starts a new import (a new
      card id) and the failed card is replaced by it.
    - `useImports` polls every 4 s only while something is running and the page is visible,
