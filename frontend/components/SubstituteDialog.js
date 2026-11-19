@@ -76,7 +76,7 @@ export default function SubstituteDialog({ recipeId, from, ingredients, onClose 
 
       {chosen !== null && (
         <div role="status">
-          <p className={styles.question}>{waiting ? t.substituteFinding : t.substituteResults}</p>
+          {!error && <p className={styles.question}>{waiting ? t.substituteFinding : t.substituteResults}</p>}
           <p className={styles.item} lang={from} dir={dir(from)}>{ingredients[chosen]}</p>
         </div>
       )}
