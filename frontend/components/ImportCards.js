@@ -89,6 +89,9 @@ export function useImports(enabled, onRecipeReady) {
   return { imports, backAt, refresh, addImport, dismissImport };
 }
 
+// A photo has no link to show until the recipe has a name.
+const cardTitle = (t, item) => item.title || (item.fromPhoto ? t.photoTitle : item.link);
+
 function recipeNameIn(lang, recipeName) {
   return recipeName[lang] || recipeName[lang === 'en' ? 'he' : 'en'];
 }
@@ -109,8 +112,8 @@ function ImportCard({ item, backAt, busy, onDismiss, onRetry }) {
     return (
       <li className={`${styles.card} ${styles.running}`}>
         <div className={styles.body}>
-          <p className={styles.title} dir="auto">{item.title || item.link}</p>
-          <p className={styles.text}>{stageMessage(t, item.stage)}</p>
+          <p className={styles.title} dir="auto">{cardTitle(t, item)}</p>
+          <p className={styles.text}>{stageMessage(t, item.stage, item.fromPhoto)}</p>
         </div>
       </li>
     );
@@ -136,7 +139,7 @@ function ImportCard({ item, backAt, busy, onDismiss, onRetry }) {
   return (
     <li className={`${styles.card} ${styles.failed}`}>
       <div className={styles.body}>
-        <p className={styles.title} dir="auto">{item.title || item.link}</p>
+        <p className={styles.title} dir="auto">{cardTitle(t, item)}</p>
         <p className={styles.text}>{errorMessage(t, { code: item.error, retryAt: backAt })}</p>
         {item.retryable && (
           <div className={styles.actions}>

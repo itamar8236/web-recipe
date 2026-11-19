@@ -5,8 +5,10 @@
 // with purpose 'translation' (translate.js) or 'nutrition' (nutrition.js), and never show as cards.
 
 import { fail, json, readJson } from './http.js';
+import { geminiFiles } from './import/llm.js';
 import { quotaDay, readModelState, startRefusal } from './import/models.js';
 import { readLink } from './import/sources/index.js';
+import { isPhotoSource, PHOTO_PREFIX, photo as photoSource } from './import/sources/photo.js';
 import { markFailed } from './import/stages.js';
 
 const STUCK_AFTER_MS = 30 * 60 * 1000;
@@ -37,11 +39,13 @@ const IS_IMPORT = `i.purpose = 'import'`;
 
 function toImport(row) {
   const failed = row.status === 'failed';
+  const fromPhoto = isPhotoSource(row.source_url);
   return {
     id: row.id,
     status: row.status,
     stage: row.stage,
-    link: row.source_url,
+    link: fromPhoto ? '' : row.source_url,
+    fromPhoto,
     title: row.title,
     // A running import may hold an error from a try that is about to be repeated.
     error: failed ? row.error : null,
@@ -101,17 +105,21 @@ function readModelChoice(body) {
   return { bestChosen: body.model === 'best' };
 }
 
-// Checks the caps and the model, then inserts the row and starts it. `replaceRecipeId` is
-// set when an existing recipe's video is scanned again. Returns null when the same video
-// started a moment ago (another tap or device), for the caller to answer.
-async function startNew(env, userId, link, { bestChosen }, replaceRecipeId = null) {
+// Why a new import can't start now (the response to send), or null when it can: the caps,
+// then the models.
+async function startRefusalResponse(env, userId, { bestChosen }) {
+  const now = Date.now();
+  if (!(await isUnderCaps(env, userId, quotaDay(now)))) return fail(429, 'too_many_imports');
+  const refusal = startRefusal(await readModelState(env, userId, now), { bestChosen });
+  return refusal ? fail(429, refusal) : null;
+}
+
+// Inserts the row and starts it. `source` is { platform, sourceId, sourceUrl } and `state`
+// the row's first state. Returns null when the same source started a moment ago (another
+// tap or device), for the caller to answer. The caps are checked again inside the INSERT.
+async function insertAndStart(env, userId, source, state, replaceRecipeId = null) {
   const now = Date.now();
   const day = quotaDay(now);
-  if (!(await isUnderCaps(env, userId, day))) return fail(429, 'too_many_imports');
-
-  const refusal = startRefusal(await readModelState(env, userId, now), { bestChosen });
-  if (refusal) return fail(429, refusal);
-
   let row;
   try {
     row = await env.DB.prepare(
@@ -119,15 +127,7 @@ async function startNew(env, userId, link, { bestChosen }, replaceRecipeId = nul
        SELECT ?1, ?5, ?6, ?7, ?9, ?10, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
-      .bind(
-        ...capValues(env, userId, day),
-        link.source.platform,
-        link.sourceId,
-        link.sourceUrl,
-        now,
-        JSON.stringify(bestChosen ? { bestChosen: true } : {}),
-        replaceRecipeId,
-      )
+      .bind(...capValues(env, userId, day), source.platform, source.sourceId, source.sourceUrl, now, JSON.stringify(state), replaceRecipeId)
       .first();
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
@@ -135,6 +135,16 @@ async function startNew(env, userId, link, { bestChosen }, replaceRecipeId = nul
   }
   if (!row) return fail(429, 'too_many_imports');
   return startAndRespond(env, userId, row.id, row.attempt);
+}
+
+// Checks the caps and the model, then inserts the row and starts it. `replaceRecipeId` is
+// set when an existing recipe's video is scanned again. Returns null when the same video
+// started a moment ago (another tap or device), for the caller to answer.
+async function startNew(env, userId, link, { bestChosen }, replaceRecipeId = null) {
+  const refusal = await startRefusalResponse(env, userId, { bestChosen });
+  if (refusal) return refusal;
+  const source = { platform: link.source.platform, sourceId: link.sourceId, sourceUrl: link.sourceUrl };
+  return insertAndStart(env, userId, source, bestChosen ? { bestChosen: true } : {}, replaceRecipeId);
 }
 
 async function createImport(request, env, userId) {
@@ -154,6 +164,50 @@ async function createImport(request, env, userId) {
   // If the other start has already finished by now, there is a recipe for this video.
   const other = await findRunning(env, userId, link);
   return other ? json({ import: toImport(other) }) : fail(409, 'already_imported');
+}
+
+// ---- Starting from a photo ----
+
+// What Gemini reads as an image and phones hand a browser (iPhones usually convert HEIC
+// to JPEG themselves). The app's own frontend shrinks anything bigger than the limit first.
+const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+const PHOTO_MAX_BYTES = 20 * 1024 * 1024;
+
+const randomId = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
+
+// The body is the picture itself, with its type as the Content-Type. Requiring an image
+// type is as safe as the JSON rule (readJson): another site's form can't send one without
+// a CORS preflight, which fails. The same picture twice is allowed: each upload is a new
+// import with its own random id, and a new recipe. The picture goes straight to Gemini's
+// file store, never to the database, and is deleted when the import ends (stages.js).
+// This is the one place that handles the uploaded bytes.
+async function createPhotoImport(request, env, userId, files = geminiFiles) {
+  const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
+  if (!PHOTO_TYPES.has(type) || !request.body) return fail(400, 'photo_invalid');
+  // Google's upload needs the size up front; a browser always sends it for a file.
+  const bytes = Number(request.headers.get('Content-Length'));
+  if (!Number.isInteger(bytes) || bytes <= 0) return fail(400, 'photo_invalid');
+  if (bytes > PHOTO_MAX_BYTES) return fail(413, 'photo_too_big');
+
+  // Photos always ask for the best model first, and go on with the usual ones without it.
+  const choice = { bestChosen: true };
+  const refusal = await startRefusalResponse(env, userId, choice);
+  if (refusal) return refusal;
+
+  let file;
+  try {
+    file = await files.upload({ env, body: request.body, bytes, mimeType: type });
+  } catch (error) {
+    console.log(`Photo upload failed: ${error.detail ?? error.message}`);
+    return fail(502, 'photo_upload_failed');
+  }
+
+  const id = randomId();
+  const source = { platform: photoSource.platform, sourceId: id, sourceUrl: `${PHOTO_PREFIX}${id}` };
+  const response = await insertAndStart(env, userId, source, { photo: file, ...choice });
+  // Only the caps (another import took the last slot meanwhile) can stop it now.
+  if (response?.status !== 202) await files.remove({ env, file });
+  return response ?? fail(429, 'too_many_imports');
 }
 
 // ---- Listing ----
@@ -196,10 +250,13 @@ async function retryRefusal(env, userId, row, now) {
 // the caps and, if it calls the best model, toward the user's 5, like any other try.
 // It starts over from the first stage, keeping only the model choice: what the earlier
 // stages left (a site's signed video link, an uploaded video file) expires, and getting it
-// again costs no model request. Only a failed save keeps its state, because it holds the
-// recipe the model already wrote.
+// again costs no model request. A failed save keeps its state, because it holds the
+// recipe the model already wrote, and a photo keeps its uploaded file, because the picture
+// itself is no longer here (after Google's 48 hours it fails with photo_expired).
 const RETRY_STAGE = `CASE WHEN json_extract(state, '$.model') IS NOT NULL THEN stage ELSE 'meta' END`;
 const RETRY_STATE = `CASE WHEN json_extract(state, '$.model') IS NOT NULL THEN state
+  WHEN json_extract(state, '$.photo') IS NOT NULL
+    THEN json_object('photo', json(json_extract(state, '$.photo')), 'bestChosen', json('true'))
   WHEN json_extract(state, '$.bestChosen') THEN '{"bestChosen":true}' ELSE '{}' END`;
 
 async function retryImport(request, env, userId, id) {
@@ -240,15 +297,27 @@ async function retryImport(request, env, userId, id) {
     return fail(409, 'not_retryable');
   }
   if (!added) return fail(409, 'not_retryable');
-  await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', updated_at = ? WHERE id = ? AND status = 'failed'`).bind(now, id).run();
+  // The new row holds the photo now, so dismissing the old one must not delete it.
+  await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', state = json_remove(state, '$.photo'), updated_at = ? WHERE id = ? AND status = 'failed'`)
+    .bind(now, id)
+    .run();
   return startAndRespond(env, userId, added.id, added.attempt);
 }
 
-async function dismissImport(env, userId, id) {
-  const row = await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', updated_at = ? WHERE id = ? AND user_id = ? AND purpose = 'import' RETURNING id`)
-    .bind(Date.now(), id, userId)
+// A dismissed photo import won't need its picture again, so it is deleted from Gemini's
+// store now rather than after Google's 48 hours.
+async function dismissImport(env, userId, id, files = geminiFiles) {
+  const row = await env.DB.prepare(
+    `SELECT json_extract(state, '$.photo') AS photo FROM llm_requests WHERE id = ? AND user_id = ? AND purpose = 'import'`,
+  )
+    .bind(id, userId)
     .first();
-  return row ? json({ ok: true }) : fail(404, 'not_found');
+  if (!row) return fail(404, 'not_found');
+  await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', state = json_remove(state, '$.photo'), updated_at = ? WHERE id = ?`)
+    .bind(Date.now(), id)
+    .run();
+  if (row.photo) await files.remove({ env, file: JSON.parse(row.photo) });
+  return json({ ok: true });
 }
 
 // ---- Scanning a recipe's video again ----
@@ -270,12 +339,14 @@ async function rerunRecipe(request, env, userId, recipeId) {
   return (await startNew(env, userId, link, choice, recipeId)) ?? fail(409, 'not_rerunnable');
 }
 
-// Routes /api/imports[/:id[/retry]] and /api/recipes/:id/rerun. Returns null for any
+// Routes /api/imports[/:id[/retry]], /api/imports/photo and /api/recipes/:id/rerun. Returns null for any
 // other path.
 export function handleImports(request, env, path, userId) {
   const method = request.method;
   const rerun = path.match(/^\/api\/recipes\/(\d+)\/rerun$/);
   if (rerun) return method === 'POST' ? rerunRecipe(request, env, userId, Number(rerun[1])) : fail(405, 'method_not_allowed');
+
+  if (path === '/api/imports/photo') return method === 'POST' ? createPhotoImport(request, env, userId) : fail(405, 'method_not_allowed');
 
   const match = path.match(/^\/api\/imports(?:\/(\d+)(\/retry)?)?$/);
   if (!match) return null;

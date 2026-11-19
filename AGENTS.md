@@ -13,8 +13,8 @@ add/edit/delete, calories and protein per serving), the D1 binding + schema (`ba
 log-out with remembered sessions plus a guest mode, editing your own username,
 password and defaults, browsing and copying other users' public recipes, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
-a recipe from a YouTube, Facebook or Instagram link, or from any public recipe web page, in
-the background with a Cloudflare Workflow, plus three AI tools on the edit form (translate a
+a recipe from a YouTube, Facebook or Instagram link, from any public recipe web page, or
+from a photo of a written recipe, in the background with a Cloudflare Workflow, plus three AI tools on the edit form (translate a
 recipe, calculate its calories and protein, scan its link again), and importing a link
 from Android's Share menu into the installed app. The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
@@ -30,7 +30,8 @@ resolved. One short line each, linking to the README section with the details.
 - Builds made on Windows log harmless prefetch 404s (`frontend/README.md` → Layout).
   Accepted.
 - PR previews can't exercise the import Workflow: they use the one already deployed to
-  production (`backend/README.md` → Import from a link). Accepted.
+  production (`backend/README.md` → Import from a link). Accepted. A photo import fails on a
+  preview at once (`photo_upload_failed`): previews have no Gemini key; test photos locally.
 - The free-tier model quota is shared by all users: 20 requests a day on each stronger
   model, 500 on the small one (`backend/README.md` → Import from a link). Accepted.
 - A few rare import edge cases are left as they are (`backend/README.md` → Import from a
@@ -47,6 +48,14 @@ resolved. One short line each, linking to the README section with the details.
   otherwise the user taps Back (`frontend/README.md` → Screens → Share). Android only.
 - `ConfirmDialog` opens with focus on its confirm button, not Cancel (`frontend/README.md` →
   UX rules).
+- A photo import's Retry works only for 48 hours, while Google keeps the uploaded picture;
+  then it fails with `photo_expired` and the user chooses the photo again
+  (`backend/README.md` → Import from a photo).
+- Photos share the best model's 20 a day with re-scans, so on a busy day most photo imports
+  use the usual models (`backend/README.md` → Import from a photo).
+- Google refuses to write out a recipe it recognises as published and copyrighted (a famous
+  chef's page), so such a photo fails with `photo_copyrighted`; the user adds it manually
+  (`backend/README.md` → Import from a photo).
 
 ## The product
 
@@ -64,6 +73,14 @@ resolved. One short line each, linking to the README section with the details.
   short videos are sent to the LLM (a longer one still works when its text holds the
   recipe); if a video can't be fetched, the text alone is used. Other platforms (TikTok,
   ...) may come later; don't build for them until asked.
+- Or **from a photo**: in the Add recipe dialog, under the link, a logged-in user picks
+  **one** picture (gallery, camera or a file) of a **written** recipe: a cookbook page, a
+  screenshot or a handwritten card. It is read the same way in the background, with the
+  **best model first**, and saved by itself. A photo of food with no recipe text gives no
+  recipe; the model never guesses one. **The picture is never kept**: it waits only in
+  Gemini's free file store and is deleted when the import ends. The same picture twice is
+  allowed (a second recipe, for a better read). Several photos at once and sharing a
+  picture from the gallery into the app may come later; don't build for them until asked.
 - **Users don't choose a model.** An import tries a fixed list of free models in order
   and moves on at once from one that is busy, out for the day, or can't run (retired, or
   its key refused); a request with no video
@@ -72,8 +89,10 @@ resolved. One short line each, linking to the README section with the details.
   goes to the small model first. Which
   model wrote a recipe is stored with it.
 - The one choice is the **best model**: slower and more detailed, up to 5 a day per user,
-  offered only on "Scan the link again". Every try that calls it counts toward the 5.
-  When it can't be used, the scan goes on with the usual models by itself, with no question.
+  offered only on "Scan the link again", and used by default, with no choice, for every
+  photo import. Every try that calls it counts toward the 5.
+  When it can't be used, the scan or photo import goes on with the usual models by itself,
+  with no question.
 - **Share to the app**: on Android, the installed app is in the Share menu. Sharing a
   post or page to it starts the import on the logged-in account at once and then closes
   the app, back to the app the user shared from.
@@ -105,7 +124,7 @@ resolved. One short line each, linking to the README section with the details.
   user's own tags).
 - **Guest mode**: the login screen has "Continue as guest". The app is fully usable, but
   nothing is read from or written to the database; the guest starts empty and loses
-  everything on reload. Importing from a link, the AI tools and Browse need an account.
+  everything on reload. Importing from a link or a photo, the AI tools and Browse need an account.
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not
@@ -154,11 +173,12 @@ Browser
    ▼
 One Cloudflare Worker  (backend/)
 ├── /api/*   → JSON API (login required) ──► D1 (users, tags, recipes, imports)
+│                                        ├──► Gemini file store (an uploaded photo, until its import ends)
 │                                        └──► Workflow (import, in the background)
 │                                               ├──► YouTube Data API (video details)
 │                                               ├──► Facebook / Instagram (public post page, video file)
 │                                               ├──► Any other public web page (its text)
-│                                               ├──► Google LLMs (text + video → recipe)
+│                                               ├──► Google LLMs (text + video or photo → recipe)
 │                                               └──► Groq (text-only fallback)
 └── /*       → static files built from frontend/ (frontend/out)
 ```

@@ -128,7 +128,7 @@ function RecipeView() {
                 {new URL(recipe.link).hostname} ↗
               </a>
             ) : (
-              <span>{t.manualSource}</span>
+              <span>{recipe.fromPhoto ? t.photoSource : t.manualSource}</span>
             )}
           </p>
           {canShare && (

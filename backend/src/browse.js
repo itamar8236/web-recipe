@@ -25,8 +25,8 @@ const TAG_NAMES = `(SELECT json_group_array(tags.name) FROM recipe_tags
 // A recipe as Browse shows it: who saved it and its tags by name (tag ids mean nothing to
 // another user), and none of the owner's own marks.
 function toBrowseRecipe(row) {
-  const { id, link, en, he } = toRecipe({ ...row, tag_ids: '[]' });
-  return { id, owner: row.owner, tags: JSON.parse(row.tag_names), link, en, he };
+  const { id, link, fromPhoto, en, he } = toRecipe({ ...row, tag_ids: '[]' });
+  return { id, owner: row.owner, tags: JSON.parse(row.tag_names), link, fromPhoto, en, he };
 }
 
 // A whole number from the query string, or null.

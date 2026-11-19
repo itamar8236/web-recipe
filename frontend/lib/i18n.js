@@ -41,6 +41,7 @@ export const strings = {
     language: 'Language',
     sourceLink: 'Source',
     manualSource: 'Added manually',
+    photoSource: 'From a photo',
     addFavorite: 'Add to favorites',
     removeFavorite: 'Remove from favorites',
     favoritesOnly: 'Favorites',
@@ -93,12 +94,15 @@ export const strings = {
     saving: 'Saving...',
     deleting: 'Deleting...',
     locale: 'en',
-    addFromLink: 'Add a recipe from a link',
+    addRecipeTitle: 'Add a recipe',
     importLink: 'Link',
     importLinkPlaceholder: 'A video, a post or a recipe page',
     importButton: 'Import',
     importStarting: 'Starting...',
     writeManually: 'Write it manually',
+    choosePhoto: '📷 Choose a photo',
+    uploadingPhoto: 'Uploading the photo...',
+    photoTitle: 'A photo',
     shareTitle: 'Add a shared recipe',
     shareStarting: 'Sending the link...',
     shareStarted: 'Importing the recipe. It will be in your recipes in a few minutes.',
@@ -110,6 +114,7 @@ export const strings = {
     importStageMeta: 'Getting the details...',
     importStageVideo: 'Getting the video...',
     importStageExtract: 'Reading the recipe...',
+    importStagePhoto: 'Reading the photo...',
     recipeReady: (name) => `Recipe ready: ${name}`,
     openRecipe: 'Open',
     dismissImport: 'Dismiss',
@@ -148,6 +153,12 @@ export const strings = {
     errNothingToTranslate: 'Write the recipe first, then translate it.',
     errNoIngredients: 'Write the ingredients first, then calculate.',
     errImportNeedsLogin: 'Log in to add a recipe from a link',
+    errPhotoInvalid: "That file isn't a photo the app can read. Choose a JPEG, PNG, WebP or HEIC picture.",
+    errPhotoTooBig: 'The photo is too big',
+    errPhotoUnreadable: "Couldn't read this photo. Try a clearer one.",
+    errPhotoExpired: 'Choose the photo again',
+    errPhotoCopyrighted: "Google's models won't copy this published recipe. Add it manually.",
+    errPhotoUploadFailed: "Couldn't send the photo. Try again.",
     myRecipesTab: 'My recipes',
     browseTab: 'From others',
     recipesNav: 'Whose recipes to show',
@@ -214,6 +225,7 @@ export const strings = {
     language: 'שפה',
     sourceLink: 'מקור',
     manualSource: 'נוסף ידנית',
+    photoSource: 'מתמונה',
     addFavorite: 'הוספה למועדפים',
     removeFavorite: 'הסרה מהמועדפים',
     favoritesOnly: 'מועדפים',
@@ -266,12 +278,15 @@ export const strings = {
     saving: 'שומר...',
     deleting: 'מוחק...',
     locale: 'he',
-    addFromLink: 'הוספת מתכון מקישור',
+    addRecipeTitle: 'הוספת מתכון',
     importLink: 'קישור',
     importLinkPlaceholder: 'סרטון, פוסט או דף מתכון',
     importButton: 'ייבוא',
     importStarting: 'מתחיל...',
     writeManually: 'כתיבה ידנית',
+    choosePhoto: '📷 בחירת תמונה',
+    uploadingPhoto: 'מעלים את התמונה...',
+    photoTitle: 'תמונה',
     shareTitle: 'הוספת מתכון ששותף',
     shareStarting: 'שולח את הקישור...',
     shareStarted: 'המתכון בייבוא. בעוד כמה דקות הוא יופיע במתכונים שלך.',
@@ -283,6 +298,7 @@ export const strings = {
     importStageMeta: 'מביאים את הפרטים...',
     importStageVideo: 'מביאים את הסרטון...',
     importStageExtract: 'קוראים את המתכון...',
+    importStagePhoto: 'קוראים את התמונה...',
     recipeReady: (name) => `המתכון מוכן: ${name}`,
     openRecipe: 'פתיחה',
     dismissImport: 'הסרה',
@@ -321,6 +337,12 @@ export const strings = {
     errNothingToTranslate: 'קודם כותבים את המתכון, ואז מתרגמים.',
     errNoIngredients: 'קודם כותבים את המצרכים, ואז מחשבים.',
     errImportNeedsLogin: 'כדי להוסיף מתכון מקישור צריך להתחבר',
+    errPhotoInvalid: 'אי אפשר לקרוא את הקובץ הזה. בחרו תמונה מסוג JPEG, PNG, WebP או HEIC.',
+    errPhotoTooBig: 'התמונה גדולה מדי',
+    errPhotoUnreadable: 'לא הצלחנו לקרוא את התמונה. נסו תמונה ברורה יותר.',
+    errPhotoExpired: 'בחרו את התמונה שוב',
+    errPhotoCopyrighted: 'המודלים של Google לא מעתיקים מתכון שפורסם. הוסיפו אותו ידנית.',
+    errPhotoUploadFailed: 'לא הצלחנו לשלוח את התמונה. נסו שוב.',
     myRecipesTab: 'המתכונים שלי',
     browseTab: 'של אחרים',
     recipesNav: 'של מי המתכונים המוצגים',
@@ -356,8 +378,10 @@ export function formatTime(t, ms) {
 }
 
 // What a running import's card says for each backend stage. Reading the recipe covers
-// every stage after the video is in hand.
-export function stageMessage(t, stage) {
+// every stage after the video is in hand. A photo has nothing to get first, so all its
+// stages are reading it.
+export function stageMessage(t, stage, fromPhoto = false) {
+  if (fromPhoto) return t.importStagePhoto;
   if (stage === 'meta') return t.importStageMeta;
   if (stage === 'video') return t.importStageVideo;
   return t.importStageExtract;
@@ -401,6 +425,12 @@ export function errorMessage(t, error, nameRequired = t.nameRequired) {
     nothing_to_translate: t.errNothingToTranslate,
     no_ingredients: t.errNoIngredients,
     import_needs_login: t.errImportNeedsLogin,
+    photo_invalid: t.errPhotoInvalid,
+    photo_too_big: t.errPhotoTooBig,
+    photo_unreadable: t.errPhotoUnreadable,
+    photo_expired: t.errPhotoExpired,
+    photo_copyrighted: t.errPhotoCopyrighted,
+    photo_upload_failed: t.errPhotoUploadFailed,
     browse_needs_login: t.errBrowseNeedsLogin,
   };
   return byCode[error?.code] ?? t.errGeneric;

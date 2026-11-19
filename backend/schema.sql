@@ -121,8 +121,12 @@ END;
 -- ('' and '[]') until it is written or translated, but at least one name is set.
 -- source_url NULL means added manually. Its tags are in recipe_tags.
 -- platform is 'manual' or the source an import came from ('youtube', 'facebook',
--- 'instagram', or 'web' for any other web page). It has no list CHECK, so adding a site needs no table rebuild; the backend
--- only ever writes the name of one of its own adapters.
+-- 'instagram', or 'web' for any other web page), or 'photo' for a recipe read from a picture
+-- the user uploaded. It has no list CHECK, so adding a site needs no table rebuild; the backend
+-- only ever writes the name of one of its own adapters. A photo recipe's source_url is
+-- 'photo:<random id>', not a link: it satisfies the CHECK below (only a manual recipe has
+-- none), the API answers it as link '' and fromPhoto true, and the id is the key a later
+-- feature may keep the picture under. The picture itself is never stored.
 -- is_favorite is a plain column because a favorite is the owner's own mark: other users
 -- who browse a public recipe never see or change it.
 -- is_public says other users may see the recipe in Browse and copy it. Only the owner can
