@@ -11,7 +11,7 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 Built so far: the recipe browsing UI (tags, recipes, favorites, English/Hebrew, manual
 add/edit/delete, calories and protein per serving), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, editing your own username,
-password and defaults, browsing and copying other users' public recipes, the tags/recipes API, so a
+password and defaults, browsing and copying other users' public recipes, sorting both lists, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
 a recipe from a YouTube, Facebook or Instagram link, from any public recipe web page, or
 from a photo of a written recipe, in the background with a Cloudflare Workflow, plus three AI tools on the edit form (translate a
@@ -119,6 +119,9 @@ resolved. One short line each, linking to the README section with the details.
   recipes. They show in a **random order**, a few at a time, with more loading as the
   user scrolls. Each shows **who saved it and its tags**, and one tap saves an **identical
   copy** as the user's own recipe (then theirs to edit; the original never changes).
+- **Sorting**: both lists keep their usual order (My recipes oldest first, Browse random)
+  until the user picks another in a small dropdown beside Search: newest or oldest first,
+  most protein, most calories or fewest calories per serving.
 - **Two defaults per user**, in "My account", both on for every old and new user: **new
   recipes are public**, and **a copy from Browse brings the recipe's tags** (as the
   user's own tags).

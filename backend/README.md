@@ -98,7 +98,7 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
 
 | Endpoint | Purpose | Success | Errors |
 |---|---|---|---|
-| `GET /api/browse?seed=<n>[&after=<next>]` | One page (10) of other users' public recipes | 200 `{recipes, next}` | 400 `invalid_request` (`seed` not a whole number from 1 to 1000002, or a bad `after`) |
+| `GET /api/browse?seed=<n>[&after=<next>]` or `?sort=<order>[&after=<next>]` | One page (10) of other users' public recipes | 200 `{recipes, next}` | 400 `invalid_request` (an unknown `sort`, `seed` not a whole number from 1 to 1000002, or a bad `after`) |
 | `POST /api/browse/:id/copy` `{}` | Save your own copy of that recipe | 201 `{recipe}` (the new one, as in the recipes API) | 404 `not_found` (missing, private, or your own) |
 
 - A browsed recipe is `{ id, owner, tags, link, fromPhoto, en, he }`: `owner` is the username of who
@@ -114,6 +114,12 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
   (`null` on the last page) and comes back as `after`; continuing from the last recipe
   rather than from a count means a recipe deleted or made private meanwhile never makes a page
   skip or repeat one.
+- **Sorted**: `sort` is `newest` or `oldest` (by id, which grows with time; a copy gets a
+  new one), `protein` (most first), `kcal_high` or `kcal_low`; a recipe with no calories or
+  protein comes after all that have them, and ties go oldest first. Every order, random
+  included, is "a key, smallest first, then the id" (a "most first" key is the value turned
+  negative), so they share the query and `next`. Leaving `sort` out (or `sort=random`)
+  is the random order, and only it needs `seed`.
 - **Copy**: the new recipe has the same text, link, platform and model, no favorite, and
   is public or private by the user's `defaultPublic`. With
   `copyTags` on, each of the original's tags is found by name among the user's own tags or

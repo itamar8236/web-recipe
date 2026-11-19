@@ -69,3 +69,8 @@
 .close:hover {
   color: var(--ink);
 }
+
+/* Beside the sort menu, the open box takes the rest of the row. */
+.box {
+  flex: 1 1 200px;
+}
