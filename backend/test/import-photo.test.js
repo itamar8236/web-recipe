@@ -402,9 +402,9 @@ describe('import endpoints for a photo', () => {
     expect((await sendPhoto(cookie, { method: 'GET' })).status).toBe(405);
   });
 
-  it('keeps to the daily cap, uploading nothing past it', async () => {
+  it('keeps to the running cap, uploading nothing past it', async () => {
     const { cookie } = await signUp();
-    testEnv.IMPORT_DAILY_LIMIT = 1;
+    testEnv.IMPORT_MAX_RUNNING = 1;
     expect((await sendPhoto(cookie)).status).toBe(202);
     const response = await sendPhoto(cookie);
     expect(response.status).toBe(429);

@@ -82,13 +82,13 @@ async function startAndRespond(env, userId, id, attempt) {
 
 // ---- Starting ----
 
-// Both caps, as one SQL condition: checked first so the answer comes before the model
-// checks, and again inside the INSERT so two requests at once can't both take the last slot.
-// Every try counts (a Retry is a row too); translations don't.
-const UNDER_CAPS = `(SELECT COUNT(*) FROM llm_requests WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import') < ?3
-  AND (SELECT COUNT(*) FROM llm_requests WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import' AND status = 'running') < ?4`;
+// The cap on imports running at once, as one SQL condition: checked first so the answer
+// comes before the model checks, and again inside the INSERT so two requests at once can't
+// both take the last slot. Every try counts (a Retry is a row too); translations don't.
+// There is no daily count of imports: the models' own daily limits are what stop them.
+const UNDER_CAPS = `(SELECT COUNT(*) FROM llm_requests WHERE user_id = ?1 AND quota_day = ?2 AND purpose = 'import' AND status = 'running') < ?3`;
 
-const capValues = (env, userId, day) => [userId, day, Number(env.IMPORT_DAILY_LIMIT), Number(env.IMPORT_MAX_RUNNING)];
+const capValues = (env, userId, day) => [userId, day, Number(env.IMPORT_MAX_RUNNING)];
 
 async function isUnderCaps(env, userId, day) {
   const row = await env.DB.prepare(`SELECT ${UNDER_CAPS} AS ok`).bind(...capValues(env, userId, day)).first();
@@ -124,7 +124,7 @@ async function insertAndStart(env, userId, source, state, replaceRecipeId = null
   try {
     row = await env.DB.prepare(
       `INSERT INTO llm_requests (user_id, platform, source_id, source_url, state, replace_recipe_id, quota_day, created_at, updated_at)
-       SELECT ?1, ?5, ?6, ?7, ?9, ?10, ?2, ?8, ?8 WHERE ${UNDER_CAPS}
+       SELECT ?1, ?4, ?5, ?6, ?8, ?9, ?2, ?7, ?7 WHERE ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
       .bind(...capValues(env, userId, day), source.platform, source.sourceId, source.sourceUrl, now, JSON.stringify(state), replaceRecipeId)
@@ -147,10 +147,15 @@ async function startNew(env, userId, link, { bestChosen }, replaceRecipeId = nul
   return insertAndStart(env, userId, source, bestChosen ? { bestChosen: true } : {}, replaceRecipeId);
 }
 
+const isAdmin = async (env, userId) =>
+  (await env.DB.prepare('SELECT is_admin FROM users WHERE id = ?').bind(userId).first())?.is_admin === 1;
+
 async function createImport(request, env, userId) {
   const body = await readJson(request);
   const choice = readModelChoice(body);
   if (typeof body?.url !== 'string' || !choice) return fail(400, 'invalid_request');
+  // The admin has no daily limit on the best model, so every link they import asks for it.
+  if (await isAdmin(env, userId)) choice.bestChosen = true;
 
   const link = readLink(body.url);
   if (link.error) return fail(400, link.error);
@@ -286,8 +291,8 @@ async function retryImport(request, env, userId, id) {
   try {
     added = await env.DB.prepare(
       `INSERT INTO llm_requests (user_id, platform, source_id, source_url, title, stage, state, replace_recipe_id, quota_day, created_at, updated_at)
-       SELECT user_id, platform, source_id, source_url, title, ${RETRY_STAGE}, ${RETRY_STATE}, replace_recipe_id, ?2, ?5, ?5
-         FROM llm_requests WHERE id = ?6 AND status = 'failed' AND ${UNDER_CAPS}
+       SELECT user_id, platform, source_id, source_url, title, ${RETRY_STAGE}, ${RETRY_STATE}, replace_recipe_id, ?2, ?4, ?4
+         FROM llm_requests WHERE id = ?5 AND status = 'failed' AND ${UNDER_CAPS}
        RETURNING id, attempt`,
     )
       .bind(...capValues(env, userId, day), now, id)

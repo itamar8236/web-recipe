@@ -44,7 +44,6 @@
     "IMPORT_MAX_VIDEO_MINUTES": 3,
     "IMPORT_MAX_VIDEO_MB": 100,
     "IMPORT_MAX_RUNNING": 3,
-    "IMPORT_DAILY_LIMIT": 10,
     "IMPORT_BEST_DAILY_PER_USER": 5
   },
   // Required by `wrangler preview`, which Workers Builds runs for non-main branches.
@@ -71,7 +70,6 @@
       "IMPORT_MAX_VIDEO_MINUTES": 3,
       "IMPORT_MAX_VIDEO_MB": 100,
       "IMPORT_MAX_RUNNING": 3,
-      "IMPORT_DAILY_LIMIT": 10,
       "IMPORT_BEST_DAILY_PER_USER": 5
     }
   }

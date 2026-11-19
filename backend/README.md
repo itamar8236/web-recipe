@@ -162,7 +162,8 @@ except a photo's, which is the picture itself.
 - `models` is `{ bestAvailable, bestLeftToday, bestLeftForUser, bestAvailableAt, resetsAt }`,
   times in epoch ms, about the best model only. `bestAvailable` is false when its shared
   count is used up or this user has used their 5; both are daily, so `bestAvailableAt` is
-  then the reset, and `null` while it is available. `resetsAt` is when every daily limit resets.
+  then the reset, and `null` while it is available. For the admin `bestLeftForUser` is
+  `null`: they have no 5, only the shared count. `resetsAt` is when every daily limit resets.
 - `model` is normally left out: the backend picks the models (see Models). `'best'` asks
   for the best model first; the import still goes on by itself when that one can't be
   used. A Retry keeps the choice. A re-scan (`rerun`) takes the same `model` and follows
@@ -171,9 +172,9 @@ except a photo's, which is the picture itself.
 - POST checks in this order: body, link, a running duplicate, `already_imported`
   (`recipes.source_url`), caps, model state (only every import model being out stops it), then insert
   and start.
-- Caps, counted from today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running) and
-  `IMPORT_DAILY_LIMIT` (10 a day) count import rows, so every Retry and re-scan too, but not
-  the AI tools' requests. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`, and
+- Cap, counted from today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running at once) counts
+  import rows, so every Retry and re-scan too, but not the AI tools' requests. There is no
+  daily count of imports: only the models' daily limits stop them. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`, and
   is the only per-user limit on a model.
 - A Retry is a **new row**: it copies the failed row's link, title and model choice, starts
   over from the first stage in its own Workflow, and the failed row becomes `dismissed`.
@@ -532,6 +533,9 @@ the recipe: trying the best model is what the 5 count. A row calls the model mor
 (Workflow retries, busy waits, a second ask without the video) but takes the use only once.
 It is given back only when nothing was sent (the shared count was already used up). The
 choice (`state.bestChosen`) holds through Workflow retries, busy waits and a Retry.
+The admin (`users.is_admin = 1`, not while they act as another user) has no 5: their rows
+are still marked `used_best`, but only the shared count stops them using the best model.
+So every link the admin imports (`POST /api/imports`) asks for it too, as if `model: 'best'`.
 
 **Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
 way to ask how many requests are left, so `llm_usage` counts them: every real call first

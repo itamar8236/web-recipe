@@ -111,20 +111,25 @@ async function markModelOutForTheDay(env, model, limit, now) {
 
 // The `models` object the API returns, plus whether an import can run at all: the frontend
 // needs only the first, the checks before starting need both. A user's daily best-model
-// uses are the llm_requests rows that called the best model.
+// uses are the llm_requests rows that called the best model. The admin has no per-user
+// limit (bestLeftForUser is null): only the shared count stops them.
 export async function readModelState(env, userId, now = Date.now()) {
   const best = env.LLM_BEST_MODEL;
   const day = quotaDay(now);
   const [usage, used] = await env.DB.batch([
     env.DB.prepare('SELECT model, calls FROM llm_usage WHERE day = ?').bind(day),
-    env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, day),
+    env.DB.prepare(
+      `SELECT COUNT(*) AS n, (SELECT is_admin FROM users WHERE id = ?1) AS is_admin
+         FROM llm_requests WHERE user_id = ?1 AND quota_day = ?2 AND used_best = 1`,
+    ).bind(userId, day),
   ]);
   const callsOf = (model) => usage.results.find((row) => row.model === model)?.calls ?? 0;
 
   const resetsAt = nextQuotaReset(now);
   const bestLeftToday = Math.max(0, dailyLimit(env, best) - callsOf(best));
-  const bestLeftForUser = Math.max(0, Number(env.IMPORT_BEST_DAILY_PER_USER) - used.results[0].n);
-  const bestAvailable = bestLeftToday > 0 && bestLeftForUser > 0;
+  const { n, is_admin } = used.results[0];
+  const bestLeftForUser = is_admin === 1 ? null : Math.max(0, Number(env.IMPORT_BEST_DAILY_PER_USER) - n);
+  const bestAvailable = bestLeftToday > 0 && bestLeftForUser !== 0;
   return {
     models: {
       bestAvailable,
@@ -152,12 +157,13 @@ export function startRefusal(state, { bestChosen = false } = {}) {
 const holdsBestUse = (job, day) => job.used_best === 1 && job.quota_day === day;
 
 // One of the user's daily best-model uses, taken in one statement so requests running at
-// the same time can't go past the cap.
+// the same time can't go past the cap. The admin has no cap; their uses are still marked.
 async function claimBestUse(env, job, day) {
   const row = await env.DB.prepare(
     `UPDATE llm_requests SET used_best = 1, quota_day = ?1
       WHERE id = ?2 AND status = 'running' AND attempt = ?3
-        AND (SELECT COUNT(*) FROM llm_requests WHERE user_id = ?4 AND quota_day = ?1 AND used_best = 1) < ?5
+        AND ((SELECT is_admin FROM users WHERE id = ?4) = 1
+          OR (SELECT COUNT(*) FROM llm_requests WHERE user_id = ?4 AND quota_day = ?1 AND used_best = 1) < ?5)
       RETURNING id`,
   )
     .bind(day, job.id, job.attempt, job.user_id, Number(env.IMPORT_BEST_DAILY_PER_USER))

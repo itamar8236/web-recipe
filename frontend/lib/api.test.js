@@ -266,7 +266,7 @@ describe('errorMessage', () => {
     ['link_invalid', "That doesn't look like a link to a video or a recipe"],
     ['link_unsupported', "This link can't be imported"],
     ['already_imported', 'You already have this recipe'],
-    ['too_many_imports', 'Wait for current ones, or try tomorrow'],
+    ['too_many_imports', 'Wait for the current imports to finish'],
     ['video_unavailable', 'Page, video or post not found'],
     ['login_required', 'This page needs a login. Only public pages and posts can be imported.'],
     ['source_blocked', "Couldn't reach the site. Check the link, or try again later."],
