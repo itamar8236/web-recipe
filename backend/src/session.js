@@ -29,19 +29,30 @@ function cookie(request, name, value, maxAge) {
   return `${name}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secure}`;
 }
 
-// The logged-in user for this request, or null. `data_user_id` is whose tags and
-// recipes this session works on: the user, or the user the admin is acting as.
+// The logged-in user for this request, or null. While the admin is acting as another
+// user (sessions.acting_as_user_id), this is that user, for everything: their data, their
+// account and their defaults, exactly as if they had logged in. `real_user_id` is who
+// actually logged in on this device.
 export async function getSessionUser(request, env) {
   const token = readCookies(request).session;
   if (!token) return null;
   return env.DB.prepare(
     `SELECT users.id, users.username, users.is_admin, users.default_public, users.copy_tags,
-            COALESCE(sessions.acting_as_user_id, sessions.user_id) AS data_user_id
-       FROM sessions JOIN users ON users.id = sessions.user_id
+            sessions.user_id AS real_user_id
+       FROM sessions JOIN users ON users.id = COALESCE(sessions.acting_as_user_id, sessions.user_id)
       WHERE sessions.token_hash = ?`,
   )
     .bind(await sha256Hex(token))
     .first();
+}
+
+// Makes this device's session act as another user until it logs out. The schema's
+// triggers refuse it unless the session's own user is the admin.
+export async function actAs(request, env, userId) {
+  const token = readCookies(request).session;
+  await env.DB.prepare('UPDATE sessions SET acting_as_user_id = ? WHERE token_hash = ?')
+    .bind(userId, await sha256Hex(token))
+    .run();
 }
 
 // Logs the user in on this device, replacing the device's previous session (if any).

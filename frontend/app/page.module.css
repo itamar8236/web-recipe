@@ -11,6 +11,13 @@
   min-width: 0;
 }
 
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .content {
   display: flex;
   flex-direction: column;

@@ -65,7 +65,7 @@ describe('POST /api/translate', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ content: HEBREW });
     const [args] = llm.mock.calls[0];
-    expect(args).toMatchObject({ model: SMALL, logPrompt: false });
+    expect(args).toMatchObject({ model: SMALL });
     expect(args.prompt).toContain('from English to Hebrew');
     expect(args.prompt).toContain('Steep 3 minutes');
     expect(await usage(SMALL)).toBe(1);

@@ -74,13 +74,11 @@ describe('callModel: the request', () => {
 describe('callModel: logging', () => {
   const logged = () => log.mock.calls.map((args) => args.join(' ')).join('\n');
 
-  it('logs the model, the video and the full prompt once, and never the key', async () => {
+  it('logs the model, the video and the full prompt once, then how long the answer took, and never the key', async () => {
     respond(interaction('{"status":"none"}'));
     await call({ videoUrl: VIDEO });
-    // The request, then how long it took to answer.
     expect(log).toHaveBeenCalledTimes(2);
-    expect(log.mock.calls[0][0]).toContain('the prompt');
-    expect(log.mock.calls[1][0]).toMatch(/^LLM call answered: model=some-model after \d+s$/);
+    expect(log.mock.calls[1][0]).toMatch(/^LLM answer: model=some-model in \d+ ms, no usage reported$/);
     expect(logged()).toContain('some-model');
     expect(logged()).toContain(VIDEO);
     expect(logged()).toContain('the prompt');
@@ -293,7 +291,7 @@ describe('callModel: background mode', () => {
       expect(options.method).toBeUndefined();
       expect(options.headers['x-goog-api-key']).toBe('fake-gemini-key');
     }
-    expect(log.mock.calls.at(-1)[0]).toMatch(/^LLM call answered: model=some-model after \d+s \(background\)$/);
+    expect(log.mock.calls.at(-1)[0]).toMatch(/^LLM answer: model=some-model in \d+ ms \(background\), no usage reported$/);
   });
 
   it('reads an answer that is done at once, with no check', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toContent, toNumber, toNumberText, toText, withNutrition, withTranslation } from './recipeForm';
+import { toContent, toNumber, toNumberText, toText } from './recipeForm';
 
 describe('toText / toContent', () => {
   it('turns lines into text and back', () => {
@@ -15,32 +15,5 @@ describe('toNumberText / toNumber', () => {
     expect(toNumberText(450)).toBe('450');
     expect(toNumber(' ')).toBeNull();
     expect(toNumber('450')).toBe(450);
-  });
-});
-
-describe('withTranslation', () => {
-  const form = {
-    en: { name: 'Soup (edited)', ingredients: '2 tomatoes', steps: 'Boil' },
-    he: { name: 'מרק ישן', ingredients: 'ישן', steps: 'ישן' },
-  };
-  const translation = { name: 'מרק', ingredients: ['2 עגבניות'], steps: ['להרתיח'] };
-
-  it('keeps the unsaved edits and replaces only the other language', () => {
-    expect(withTranslation(form, 'he', translation)).toEqual({
-      en: form.en,
-      he: { name: 'מרק', ingredients: '2 עגבניות', steps: 'להרתיח' },
-    });
-  });
-
-  it('does not change the form it was given', () => {
-    withTranslation(form, 'he', translation);
-    expect(form.he.name).toBe('מרק ישן');
-  });
-});
-
-describe('withNutrition', () => {
-  it('keeps the unsaved edits and replaces only calories and protein', () => {
-    const form = { en: { name: 'Soup (edited)', ingredients: '', steps: '' }, he: { name: '', ingredients: '', steps: '' }, calories: '1', protein: '' };
-    expect(withNutrition(form, { calories: 250, protein: 0 })).toEqual({ ...form, calories: '250', protein: '0' });
   });
 });

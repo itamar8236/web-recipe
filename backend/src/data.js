@@ -1,8 +1,9 @@
-// Tags and recipes. Every query is filtered by `userId`, the user the session works
-// on (see getSessionUser), so nobody can change another user's data. Reading other users'
+// Tags and recipes. Every query is filtered by `userId`, the user the session is logged in
+// as (see getSessionUser), so nobody can change another user's data. Reading other users'
 // public recipes is only in browse.js.
 
 import { fail, json, readJson } from './http.js';
+import { isPhotoSource } from './import/sources/photo.js';
 
 const MAX_TAG_NAME = 100;
 const MAX_TAGS = 20; // per recipe
@@ -16,8 +17,10 @@ const LANGS = ['en', 'he'];
 // when nobody knows them.
 const NUTRITION_LIMITS = { calories: 10000, protein: 1000 };
 
-// A recipe as the frontend uses it: both languages side by side, `link` '' when manual.
+// A recipe as the frontend uses it: both languages side by side, `link` '' when manual or
+// from a photo (whose stored source is `photo:<id>`, not a link), and `fromPhoto` for that.
 export function toRecipe(row) {
+  const fromPhoto = isPhotoSource(row.source_url);
   const content = (lang) => ({
     name: row[`name_${lang}`],
     ingredients: JSON.parse(row[`ingredients_${lang}`]),
@@ -28,7 +31,8 @@ export function toRecipe(row) {
     tagIds: JSON.parse(row.tag_ids).sort((a, b) => a - b),
     favorite: row.is_favorite === 1,
     public: row.is_public === 1,
-    link: row.source_url ?? '',
+    link: fromPhoto ? '' : (row.source_url ?? ''),
+    fromPhoto,
     sourceModel: row.source_model,
     calories: row.calories,
     protein: row.protein,

@@ -2,10 +2,11 @@ import { handleBrowse } from './browse.js';
 import { handleData } from './data.js';
 import { handleImports } from './imports.js';
 import { handleNutrition } from './nutrition.js';
+import { handleSubstitute } from './substitute.js';
 import { handleTranslate } from './translate.js';
 import { fail, json, readJson } from './http.js';
 import { hashPassword, verifyPassword } from './password.js';
-import { endSession, getSessionUser, startSession } from './session.js';
+import { actAs, endSession, getSessionUser, startSession } from './session.js';
 
 export { ImportWorkflow } from './import/workflow.js';
 
@@ -89,8 +90,8 @@ async function register(request, env) {
 
 // Changes the logged-in user's own username, password and/or defaults. The old password is not
 // asked for, and every existing login stays (the owner chose both): the session already
-// proves who this is, and the new details are only needed for the next login. It always
-// changes the real user, never the one the admin is acting as.
+// proves who this is, and the new details are only needed for the next login. While the
+// admin acts as another user, this changes that user, as if they had done it themselves.
 async function updateMe(request, env, user) {
   const body = await readJson(request);
   if (!body) return fail(400, 'invalid_request');
@@ -130,6 +131,32 @@ async function updateMe(request, env, user) {
   return json({ user: publicUser(row) });
 }
 
+// Admin only: the usernames the admin can log in as (everyone but the admin), A to Z.
+// usernames are unique (NOCASE), so no two look the same.
+async function listUsers(env, user) {
+  if (user.is_admin !== 1) return fail(403, 'not_admin');
+  const { results } = await env.DB.prepare(
+    'SELECT id, username FROM users WHERE is_admin = 0 ORDER BY username COLLATE NOCASE',
+  ).all();
+  return json({ users: results });
+}
+
+// Admin only: from now on this device is logged in as that user, with no password, for
+// everything, until it logs out (logging in again as the admin starts a clean session).
+// While acting as someone, `user` is that user, who is never the admin, so an admin can't
+// hop from one user to the next without logging out first.
+async function impersonate(request, env, user) {
+  if (user.is_admin !== 1) return fail(403, 'not_admin');
+  const body = await readJson(request);
+  if (!Number.isInteger(body?.userId)) return fail(400, 'invalid_request');
+  const target = await env.DB.prepare(`SELECT ${USER_COLUMNS} FROM users WHERE id = ? AND is_admin = 0`)
+    .bind(body.userId)
+    .first();
+  if (!target) return fail(404, 'not_found');
+  await actAs(request, env, target.id);
+  return json({ user: publicUser(target) });
+}
+
 async function logout(request, env) {
   return json({ ok: true }, 200, await endSession(request, env));
 }
@@ -147,13 +174,16 @@ async function handleApi(request, env, path) {
 
   if (method === 'GET' && path === '/api/auth/me') return json({ user: publicUser(user) });
   if (method === 'PUT' && path === '/api/auth/me') return updateMe(request, env, user);
+  if (method === 'GET' && path === '/api/admin/users') return listUsers(env, user);
+  if (method === 'POST' && path === '/api/admin/impersonate') return impersonate(request, env, user);
 
   return (
-    handleImports(request, env, path, user.data_user_id) ??
-    handleTranslate(request, env, path, user.data_user_id) ??
-    handleNutrition(request, env, path, user.data_user_id) ??
-    handleData(request, env, path, user.data_user_id) ??
-    handleBrowse(request, env, path, user.data_user_id) ??
+    handleImports(request, env, path, user.id) ??
+    handleTranslate(request, env, path, user.id) ??
+    handleNutrition(request, env, path, user.id) ??
+    handleSubstitute(request, env, path, user.id) ??
+    handleData(request, env, path, user.id) ??
+    handleBrowse(request, env, path, user.id) ??
     fail(404, 'not_found')
   );
 }

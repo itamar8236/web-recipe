@@ -18,13 +18,18 @@ export function setLoggedOutHandler(handler) {
   onLoggedOut = handler;
 }
 
+// `body` is sent as JSON, except a Blob (a photo), which is sent as it is, with its type.
 async function request(path, method = 'GET', body) {
+  const isFile = body instanceof Blob;
+  let headers = {};
+  if (isFile) headers = { 'Content-Type': body.type };
+  else if (body !== undefined) headers = { 'Content-Type': 'application/json' };
   let response;
   try {
     response = await fetch(path, {
       method,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers,
+      body: isFile || body === undefined ? body : JSON.stringify(body),
     });
   } catch {
     throw new ApiError(0, 'network');
@@ -68,6 +73,16 @@ export async function register(username, password) {
 // `changes` holds only what changes. Returns the updated user.
 export async function updateAccount(changes) {
   return (await dataRequest('/api/auth/me', 'PUT', changes)).user;
+}
+
+// Admin only: everyone the admin can log in as, `[{ id, username }]`, A to Z.
+export async function getUsers() {
+  return (await dataRequest('/api/admin/users')).users;
+}
+
+// Admin only: this device is logged in as that user, with no password, until it logs out.
+export async function impersonate(userId) {
+  return (await dataRequest('/api/admin/impersonate', 'POST', { userId })).user;
 }
 
 export async function logout() {
@@ -174,7 +189,8 @@ export async function setRecipeTags(id, names) {
 }
 
 // ---- Recipes ----
-// A recipe is { id, tagIds, favorite, public, link, calories, protein, en: {name, ingredients[], steps[]}, he: {...} }.
+// A recipe is { id, tagIds, favorite, public, link, fromPhoto, calories, protein, en: {name, ingredients[], steps[]}, he: {...} }.
+// `link` is '' for a manual recipe and for one read from a photo (then `fromPhoto` is true).
 // calories (kcal) and protein (grams) are per serving, null when not known.
 // `public` means other users can see and copy it; a guest's recipes are never sent anywhere,
 // so theirs is always true and means nothing.
@@ -207,7 +223,7 @@ export async function saveRecipe(id, data) {
     const existing = findRecipe(id);
     Object.assign(fields, cleanNutrition(data, existing));
     if (existing) Object.assign(existing, fields);
-    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', favorite: false, public: true, ...fields });
+    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', fromPhoto: false, favorite: false, public: true, ...fields });
     return copy(existing ?? memory.recipes.at(-1));
   }
   const body = { en: data.en, he: data.he, calories: data.calories, protein: data.protein };
@@ -254,11 +270,13 @@ export async function deleteRecipe(id) {
 // A number for a new random order of the feed (the backend's order depends on it).
 export const newBrowseSeed = () => 1 + Math.floor(Math.random() * 1000000);
 
-// One page of the feed, in the order `seed` gives. `after` is the `next` of the page
-// before (null for the first). Returns { recipes, next }, `next` null on the last page.
-export async function getBrowse(seed, after = null) {
+// One page of the feed, in the order `sort` gives (one of SORTS in lib/sort.js, or
+// 'random': the order `seed` gives). `after` is the `next` of the page before (null for
+// the first). Returns { recipes, next }, `next` null on the last page.
+export async function getBrowse(seed, after = null, sort = 'random') {
   if (guest) throw new ApiError(403, 'browse_needs_login');
-  return dataRequest(`/api/browse?seed=${seed}${after ? `&after=${after}` : ''}`);
+  const order = sort === 'random' ? `seed=${seed}` : `sort=${sort}`;
+  return dataRequest(`/api/browse?${order}${after ? `&after=${after}` : ''}`);
 }
 
 // Saves the user's own copy of a browsed recipe. Returns the new recipe.
@@ -268,7 +286,8 @@ export async function copyRecipe(id) {
 }
 
 // ---- Imports from a video link ----
-// An import is { id, status, stage, link, title, error, retryable, recipeId, recipeName }.
+// An import is { id, status, stage, link, fromPhoto, title, error, retryable, recipeId, recipeName };
+// a photo's has link '' and fromPhoto true.
 // Importing needs an account, so a guest is refused here and never reaches the backend.
 
 function refuseGuest() {
@@ -285,6 +304,14 @@ export async function getImports() {
 export async function startImport(url) {
   refuseGuest();
   return (await dataRequest('/api/imports', 'POST', { url })).import;
+}
+
+// Sends one picture (a Blob with an image type, from preparePhoto in lib/photo.js) to be
+// read in the background, always with the best model first. The same picture twice makes
+// two recipes. Returns the new card.
+export async function startPhotoImport(photo) {
+  refuseGuest();
+  return (await dataRequest('/api/imports/photo', 'POST', photo)).import;
 }
 
 // Returns the new card: a Retry is a new import, and the failed card goes away.
@@ -324,4 +351,12 @@ export async function estimateNutrition(content, recipeId = null) {
   const body = { content };
   if (recipeId !== null) body.recipeId = recipeId;
   return dataRequest('/api/nutrition', 'POST', body);
+}
+
+// Asks for substitutes for the ingredient at `index` in a saved recipe's `from` text
+// ('en' or 'he'), written in `lang`. Nothing is saved: returns [{ name, amount, note }],
+// empty when nothing would work.
+export async function suggestSubstitutes(recipeId, from, index, lang) {
+  refuseGuest();
+  return (await dataRequest('/api/substitute', 'POST', { recipeId, from, index, lang })).substitutes;
 }

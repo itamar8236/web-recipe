@@ -7,6 +7,7 @@ import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
 import HeartButton from '@/components/HeartButton';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import RecipeAiTools from '@/components/RecipeAiTools';
 import RecipeTags from '@/components/RecipeTags';
 import { errorMessage, pickLanguage } from '@/lib/i18n';
 import * as api from '@/lib/api';
@@ -22,9 +23,10 @@ function RecipeView() {
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(null); // null | 'favorite' | 'delete'
-  // A guest's recipes are never sent anywhere, so public or private means nothing to them.
-  // It is changed in the edit form; this page only says which it is.
-  const canShare = useAuth().status === 'user';
+  // A guest's recipes are never sent anywhere, so public or private means nothing to them,
+  // and the AI tools need an account. Public or private is changed in the edit form; this
+  // page only says which it is.
+  const loggedIn = useAuth().status === 'user';
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -128,10 +130,10 @@ function RecipeView() {
                 {new URL(recipe.link).hostname} ↗
               </a>
             ) : (
-              <span>{t.manualSource}</span>
+              <span>{recipe.fromPhoto ? t.photoSource : t.manualSource}</span>
             )}
           </p>
-          {canShare && (
+          {loggedIn && (
             <span className={styles.visibilityLabel}>{recipe.public ? t.publicLabel : `🔒 ${t.privateLabel}`}</span>
           )}
         </div>
@@ -172,6 +174,15 @@ function RecipeView() {
           </ul>
           <p className={styles.nutritionNote}>{t.nutritionAiNote}</p>
         </section>
+      )}
+
+      {loggedIn && (
+        <RecipeAiTools
+          recipe={recipe}
+          lang={lang}
+          // Only the saved text and numbers are taken, so a heart tapped meanwhile isn't undone.
+          onSaved={(saved) => setRecipe((current) => ({ ...current, en: saved.en, he: saved.he, calories: saved.calories, protein: saved.protein }))}
+        />
       )}
 
       {error && <p className="error" role="alert">{error}</p>}

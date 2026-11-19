@@ -18,6 +18,10 @@
   font-weight: 600;
 }
 
+.extra {
+  margin: -8px 0 20px;
+}
+
 .actions .confirm,
 .actions .confirm:hover {
   background: var(--danger);

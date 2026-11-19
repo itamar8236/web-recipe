@@ -82,11 +82,11 @@ END;
 -- token_hash is the SHA-256 of the login cookie; only the hash is stored, so a leaked
 -- database cannot be used to log in. Logging out deletes the row. Deleting a user
 -- cascades here, which logs them out everywhere at once.
--- acting_as_user_id is admin impersonation: while it is set, the admin's session sees
--- and changes that user's tags and recipes exactly as the user would. It lives on the
--- session so it applies only on the admin's device and ends when the admin taps "Stop".
--- user_id stays the admin, so the backend always knows who is really acting. Deleting
--- the impersonated user sets it back to NULL.
+-- acting_as_user_id is admin impersonation ("log in as" in My account): while it is set,
+-- the session is that user for everything (data, account, defaults) exactly as if they
+-- had logged in. It lives on the session so it applies only on the admin's device and
+-- ends when that device logs out. user_id stays the admin, so the row still says who
+-- really logged in. Deleting the impersonated user sets it back to NULL.
 CREATE TABLE IF NOT EXISTS sessions (
   device_id         TEXT    PRIMARY KEY CHECK (length(device_id) >= 32),
   token_hash        TEXT    NOT NULL UNIQUE CHECK (length(token_hash) = 64),
@@ -121,8 +121,12 @@ END;
 -- ('' and '[]') until it is written or translated, but at least one name is set.
 -- source_url NULL means added manually. Its tags are in recipe_tags.
 -- platform is 'manual' or the source an import came from ('youtube', 'facebook',
--- 'instagram', or 'web' for any other web page). It has no list CHECK, so adding a site needs no table rebuild; the backend
--- only ever writes the name of one of its own adapters.
+-- 'instagram', or 'web' for any other web page), or 'photo' for a recipe read from a picture
+-- the user uploaded. It has no list CHECK, so adding a site needs no table rebuild; the backend
+-- only ever writes the name of one of its own adapters. A photo recipe's source_url is
+-- 'photo:<random id>', not a link: it satisfies the CHECK below (only a manual recipe has
+-- none), the API answers it as link '' and fromPhoto true, and the id is the key a later
+-- feature may keep the picture under. The picture itself is never stored.
 -- is_favorite is a plain column because a favorite is the owner's own mark: other users
 -- who browse a public recipe never see or change it.
 -- is_public says other users may see the recipe in Browse and copy it. Only the owner can
@@ -191,14 +195,14 @@ CREATE INDEX IF NOT EXISTS recipe_tags_tag_id ON recipe_tags (tag_id);
 
 -- One row per request for model work: every import from a link, every Retry (a new row,
 -- not the old one restarted), every re-scan of a recipe's video, every translation and every
--- calories estimate.
+-- calories estimate and every ingredient-substitutes request.
 -- It is the record of who used the models: a user's daily best-model uses are the rows with used_best = 1, whatever their
 -- purpose. A separate table rather than unfinished rows in recipes: recipes requires a real
 -- name, and every list and search would otherwise need a "ready?" filter.
--- purpose: 'import' (a link: new, Retry or re-scan; shown as a card), 'translation' or
--- 'nutrition' (a calories-and-protein estimate). The last two come from the edit form: text
--- only, no link, never a card; recipe_id is the recipe being edited, or NULL for one not
--- saved yet.
+-- purpose: 'import' (a link: new, Retry or re-scan; shown as a card), 'translation',
+-- 'nutrition' (a calories-and-protein estimate) or 'substitution' (substitutes for one
+-- ingredient). The last three come from the recipe page's AI tools: text only, no link,
+-- never a card; recipe_id is their recipe.
 -- Rows stay after finishing (dismissing only sets the status), because the caps count them.
 -- platform, source_id and source_url are the link, so only an import has them. platform has
 -- no CHECK, so adding a source needs no table rebuild.
@@ -221,7 +225,7 @@ CREATE INDEX IF NOT EXISTS recipe_tags_tag_id ON recipe_tags (tag_id);
 CREATE TABLE IF NOT EXISTS llm_requests (
   id         INTEGER PRIMARY KEY,
   user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  purpose    TEXT    NOT NULL DEFAULT 'import' CHECK (purpose IN ('import', 'translation', 'nutrition')),
+  purpose    TEXT    NOT NULL DEFAULT 'import' CHECK (purpose IN ('import', 'translation', 'nutrition', 'substitution')),
   platform   TEXT,
   source_id  TEXT,
   source_url TEXT,

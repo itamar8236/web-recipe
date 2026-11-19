@@ -12,7 +12,20 @@ const PAGE_SIZE = 10;
 // (id + seed) modulo a prime: plain integer maths SQLite can sort by, with neighbouring
 // ids landing far apart. Two recipes may share a key, so the id breaks the tie.
 const PRIME = 1000003;
-const ORDER_KEY = `((((r.id + ?2) * (r.id + ?2)) % ${PRIME}) * (r.id + ?2)) % ${PRIME}`;
+const RANDOM_KEY = `((((r.id + ?2) * (r.id + ?2)) % ${PRIME}) * (r.id + ?2)) % ${PRIME}`;
+
+// Every order is "by a key, smallest first, then by id", so one query and one page mark
+// serve them all: a "most first" order sorts by the value turned negative. Ids grow with
+// time (a copy gets a new one), so they give newest and oldest. A recipe with no calories
+// or protein comes after every one that has them.
+const ORDER_KEYS = {
+  random: RANDOM_KEY,
+  newest: '-r.id',
+  oldest: 'r.id',
+  protein: '-COALESCE(r.protein, -1)',
+  kcal_high: '-COALESCE(r.calories, -1)',
+  kcal_low: 'COALESCE(r.calories, 10001)',
+};
 
 // What Browse may show the user (?1): every public recipe of another user. A copy is a
 // plain recipe with no link to its original, so a recipe the user already saved shows
@@ -25,13 +38,13 @@ const TAG_NAMES = `(SELECT json_group_array(tags.name) FROM recipe_tags
 // A recipe as Browse shows it: who saved it and its tags by name (tag ids mean nothing to
 // another user), and none of the owner's own marks.
 function toBrowseRecipe(row) {
-  const { id, link, en, he } = toRecipe({ ...row, tag_ids: '[]' });
-  return { id, owner: row.owner, tags: JSON.parse(row.tag_names), link, en, he };
+  const { id, link, fromPhoto, en, he } = toRecipe({ ...row, tag_ids: '[]' });
+  return { id, owner: row.owner, tags: JSON.parse(row.tag_names), link, fromPhoto, en, he };
 }
 
-// A whole number from the query string, or null.
+// A whole number from the query string (negative when `min` allows it), or null.
 function readInt(text, min, max) {
-  if (!/^\d{1,15}$/.test(text ?? '')) return null;
+  if (!/^-?\d{1,15}$/.test(text ?? '')) return null;
   const value = Number(text);
   return value >= min && value <= max ? value : null;
 }
@@ -39,15 +52,19 @@ function readInt(text, min, max) {
 // One page. `after` is the `next` of the page before ("<key>.<id>"): pages continue from
 // the last recipe shown rather than from a count, so a recipe deleted or made private
 // meanwhile doesn't make the next page skip or repeat one.
+// `sort` is one of ORDER_KEYS (random when left out, which is the only one that needs `seed`).
 async function listBrowse(request, env, userId) {
   const params = new URL(request.url).searchParams;
-  const seed = readInt(params.get('seed'), 1, PRIME - 1);
+  const sort = params.get('sort') ?? 'random';
+  if (!Object.hasOwn(ORDER_KEYS, sort)) return fail(400, 'invalid_request');
+  const orderKey = ORDER_KEYS[sort];
+  const seed = sort === 'random' ? readInt(params.get('seed'), 1, PRIME - 1) : 0;
   if (seed === null) return fail(400, 'invalid_request');
-  let afterKey = -1;
+  let afterKey = -Number.MAX_SAFE_INTEGER;
   let afterId = 0;
   if (params.has('after')) {
     const [key, id] = params.get('after').split('.');
-    afterKey = readInt(key, 0, PRIME);
+    afterKey = readInt(key, -Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
     afterId = readInt(id, 0, Number.MAX_SAFE_INTEGER);
     if (afterKey === null || afterId === null) return fail(400, 'invalid_request');
   }
@@ -55,10 +72,10 @@ async function listBrowse(request, env, userId) {
   const { results } = await env.DB.prepare(
     `SELECT r.id, r.is_favorite, r.is_public, r.source_url, r.source_model, r.calories, r.protein,
             r.name_en, r.ingredients_en, r.steps_en, r.name_he, r.ingredients_he, r.steps_he,
-            users.username AS owner, ${TAG_NAMES} AS tag_names, ${ORDER_KEY} AS order_key
+            users.username AS owner, ${TAG_NAMES} AS tag_names, ${orderKey} AS order_key
        FROM recipes AS r JOIN users ON users.id = r.user_id
       WHERE ${VISIBLE}
-        AND (${ORDER_KEY} > ?3 OR (${ORDER_KEY} = ?3 AND r.id > ?4))
+        AND (${orderKey} > ?3 OR (${orderKey} = ?3 AND r.id > ?4))
       ORDER BY order_key, r.id
       LIMIT ?5`,
   )

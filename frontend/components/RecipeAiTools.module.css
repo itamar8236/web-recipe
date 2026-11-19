@@ -16,15 +16,89 @@
   font-size: 19px;
 }
 
-/* Each action: its button, and for the scan its one choice beside it (below on narrow phones). */
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 16px;
+/* One tile per tool: one column on phones, two side by side when there is room. */
+.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-/* The whole line is the tap target, with room for a finger. */
+.tool {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  min-height: 64px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.tool:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.tool:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tool:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* The running tool stays fully visible while the others fade. */
+.tool[aria-busy='true'] {
+  opacity: 1;
+  border-color: var(--accent);
+}
+
+.icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 20px;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.toolTitle {
+  font-weight: 700;
+}
+
+.hint {
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+
+.busy {
+  color: var(--accent-dark);
+  font-weight: 600;
+}
+
+/* The best-model choice inside the scan's confirmation; the whole line is the tap target. */
 .choice {
   display: flex;
   align-items: center;
@@ -37,10 +111,4 @@
   width: 20px;
   height: 20px;
   flex: none;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
 }

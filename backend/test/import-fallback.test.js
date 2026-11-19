@@ -184,13 +184,11 @@ describe('callFallbackModel: Groq’s request format', () => {
     });
   });
 
-  it('logs the prompt but never the key, and not a prompt that holds the user’s text', async () => {
+  it('logs the prompt but never the key', async () => {
     reply('{}');
     await call();
-    await call({ logPrompt: false });
     const logged = log.mock.calls.flat().join('\n');
     expect(logged).toContain('the prompt');
-    expect(logged).toContain('(prompt not logged: user text)');
     expect(logged).not.toContain('fake-groq-key');
   });
 

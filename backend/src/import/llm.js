@@ -1,6 +1,6 @@
 // The only file that knows Gemini's request format. models.js decides which model to
 // use and reserves the request; this file sends it and says how it went. It also keeps a
-// video in Gemini's file store for the short time an import needs it (videoFiles).
+// video or a photo in Gemini's file store for the short time an import needs it (geminiFiles).
 
 import { ImportError } from './errors.js';
 
@@ -29,11 +29,29 @@ export class QuotaError extends Error {
   }
 }
 
-// Google wouldn't take the video itself (it may be blocked or unreadable).
+// Google wouldn't take the video or the photo itself (it may be blocked or unreadable).
 export class VideoRefusedError extends Error {
   constructor() {
     super('video_refused');
     this.name = 'VideoRefusedError';
+  }
+}
+
+// An uploaded file is gone from Gemini's store (Google deletes files after 48 hours). For
+// a video it is one more way the video can't be used; a photo can't be fetched again.
+// Google refused to answer because the answer would copy published, copyrighted text. It
+// happened with every model tried on a photo of a well-known recipe site's page.
+export class RecitationError extends VideoRefusedError {
+  constructor() {
+    super();
+    this.name = 'RecitationError';
+  }
+}
+
+export class FileGoneError extends VideoRefusedError {
+  constructor() {
+    super();
+    this.name = 'FileGoneError';
   }
 }
 
@@ -80,13 +98,24 @@ function quotaErrorFrom(text) {
   return new QuotaError({ daily: JSON.stringify(details).includes('PerDay'), retryDelayMs: retryDelayFrom(details) });
 }
 
-function requestBody({ model, prompt, schema, videoUrl, videoType, background }) {
+function requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, imageType, background }) {
   const input = [{ type: 'text', text: prompt }];
-  // No media resolution: Google's docs don't say a YouTube link accepts it, and a refused
-  // field would look like a refused video. An uploaded file is sent with its type, a
-  // YouTube link without one, as Google's examples do.
+  // No media resolution for a video: Google's docs don't say a YouTube link accepts it, and
+  // a refused field would look like a refused video. An uploaded file is sent with its type,
+  // a YouTube link without one, as Google's examples do.
   if (videoUrl) input.unshift({ type: 'video', uri: videoUrl, ...(videoType && { mime_type: videoType }) });
+  // A photo of a recipe is mostly small print, so it is read at high resolution, which
+  // Google documents for an image part.
+  if (imageUrl) input.unshift({ type: 'image', uri: imageUrl, mime_type: imageType, resolution: 'high' });
   return { model, input, response_format: { type: 'text', mime_type: 'application/json', schema }, ...(background && { background: true }) };
+}
+
+// How many tokens Google counted, and how many of the input were the image, for the log.
+function usageLine(usage) {
+  if (!usage) return 'no usage reported';
+  const image = (usage.input_tokens_by_modality ?? []).find((entry) => entry?.modality === 'image')?.tokens;
+  const imagePart = image === undefined ? '' : ` (image ${image})`;
+  return `input tokens ${usage.total_input_tokens ?? '?'}${imagePart}, output tokens ${usage.total_output_tokens ?? '?'}`;
 }
 
 function outputText(interaction) {
@@ -129,7 +158,7 @@ function aboutModelOrKey(status, text, model) {
   return status === 401 || text.includes(model) || /api[ _-]?key|SERVICE_DISABLED/i.test(text);
 }
 
-function failureFrom(status, text, { model, videoUrl }) {
+function failureFrom(status, text, { model, media }) {
   if (status === 429) return quotaErrorFrom(text);
   const detail = googleReason(status, text);
   if (status === 503) return new ModelBusyError(detail);
@@ -141,7 +170,10 @@ function failureFrom(status, text, { model, videoUrl }) {
   // A rejected request won't get better by itself, so only a server error is tried again.
   if (status >= 500) return new ImportError('llm_error', { retryable: true, detail });
   // Without a video the request is only our prompt and schema, so a 4xx is about the model.
-  if (videoUrl && !aboutModelOrKey(status, text, model)) return new VideoRefusedError();
+  // Google blocks an answer that would copy published text (e.g. a recipe site's page) as
+  // "recitation". For a video that is one more refusal; a photo has nothing else to read.
+  if (media && /recitation/i.test(text)) return new RecitationError();
+  if (media && !aboutModelOrKey(status, text, model)) return new VideoRefusedError();
   return new ModelUnusableError(detail);
 }
 
@@ -174,7 +206,7 @@ async function waitInBackground({ env, model, id, startedAt, pollMs }) {
       const text = await response.text().catch(() => '');
       console.log(`LLM call failed: model=${model} background check status=${response.status}\n${text.slice(0, 2000)}`);
       // The video was already taken when the request started, so this is never about it.
-      throw failureFrom(response.status, text, { model, videoUrl: null });
+      throw failureFrom(response.status, text, { model, media: null });
     }
     const interaction = await response.json().catch(() => null);
     if (interaction?.status !== 'in_progress') return interaction;
@@ -184,38 +216,39 @@ async function waitInBackground({ env, model, id, startedAt, pollMs }) {
 // Sends one request and returns the model's answer as parsed JSON. Throws QuotaError,
 // ModelBusyError, ModelUnusableError, VideoRefusedError, or ImportError (llm_error for other temporary
 // problems, bad_result for an answer that can't be read). `videoUrl` is a YouTube link or
-// an uploaded file's uri (then with `videoType`). `logPrompt: false` keeps a prompt that
-// holds the user's own text (a translation) out of the logs. `background: true` runs it in
-// Google's background mode (only the best model, models.js); `pollMs` is swapped in tests.
-export async function callModel({ env, model, prompt, schema, videoUrl, videoType, logPrompt = true, background = false, pollMs = 5000 }) {
+// an uploaded file's uri (then with `videoType`); `imageUrl` is an uploaded photo's uri,
+// with `imageType`. `background: true` runs it in Google's background mode (only the best
+// model, models.js); `pollMs` is swapped in tests.
+export async function callModel({ env, model, prompt, schema, videoUrl, videoType, imageUrl, imageType, background = false, pollMs = 5000 }) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
   if (!env.GEMINI_API_KEY) throw new ImportError('llm_error', { detail: 'GEMINI_API_KEY is not set' });
 
   // One line per real request, so a bad result can be traced to what the model was sent.
-  // Never add the key or the headers. Import prompts hold only our instructions and a public
-  // video description; a translation's holds the user's recipe, so it is never logged.
-  console.log(`LLM call: model=${model} video=${videoUrl ?? 'none'}\n${logPrompt ? prompt : '(prompt not logged: user text)'}`);
-
+  // Never add the key or the headers. Every prompt is logged, the AI tools' too, which hold
+  // the user's own recipe (the owner's choice, for debugging); logs are kept 3 days. A
+  // user's photo is only logged by its type, never its uri.
+  const media = imageUrl ? `image=${imageType}` : `video=${videoUrl ?? 'none'}`;
+  console.log(`LLM call: model=${model} ${media}\n${prompt}`);
   const startedAt = Date.now();
+
   let response;
   try {
     response = await fetch(ENDPOINT, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: headersFor(env),
-      body: JSON.stringify(requestBody({ model, prompt, schema, videoUrl, videoType, background })),
+      body: JSON.stringify(requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, imageType, background })),
     });
   } catch (error) {
     const detail = `Gemini request failed: ${error.name}: ${error.message}`;
     console.log(`LLM call failed: model=${model} ${detail}`);
     throw new ImportError('llm_error', { retryable: true, detail });
   }
-  const secondsSince = () => `${Math.round((Date.now() - startedAt) / 1000)}s`;
   if (!response.ok) {
     // Google's error text says why; it never contains the key.
     const text = await response.text().catch(() => '');
-    console.log(`LLM call failed: model=${model} status=${response.status} after ${secondsSince()}\n${text.slice(0, 2000)}`);
-    throw failureFrom(response.status, text, { model, videoUrl });
+    console.log(`LLM call failed: model=${model} status=${response.status}\n${text.slice(0, 2000)}`);
+    throw failureFrom(response.status, text, { model, media: videoUrl || imageUrl });
   }
 
   let interaction = await response.json().catch(() => null);
@@ -223,20 +256,19 @@ export async function callModel({ env, model, prompt, schema, videoUrl, videoTyp
     if (!interaction.id) throw new ImportError('llm_error', { retryable: true, detail: 'Gemini background request answered without an id' });
     interaction = await waitInBackground({ env, model, id: interaction.id, startedAt, pollMs });
   }
-  // How long each model takes, for comparing them in production's logs.
-  console.log(`LLM call answered: model=${model} after ${secondsSince()}${background ? ' (background)' : ''}`);
   if (interaction?.status && interaction.status !== 'completed') {
     const detail = `Gemini answered with status ${interaction.status}`;
     console.log(`LLM call failed: model=${model} ${detail}`);
     throw new ImportError('llm_error', { retryable: true, detail });
   }
+  console.log(`LLM answer: model=${model} in ${Date.now() - startedAt} ms${background ? ' (background)' : ''}, ${usageLine(interaction?.usage)}`);
   return parseOutput(outputText(interaction));
 }
 
-// ---- Videos the model can't read from a link ----
-// Gemini reads a YouTube video from its link. Any other video has to be uploaded to its
-// file store first (free, 2 GB a file, deleted by Google after 48 hours), and the model is
-// then given the file's uri.
+// ---- Files the model can't read from a link ----
+// Gemini reads a YouTube video from its link. Any other video, and a user's photo, has to
+// be uploaded to its file store first (free, 2 GB a file, deleted by Google after 48
+// hours), and the model is then given the file's uri.
 
 // A big file takes a while to send, but the step it runs in has 15 minutes in all.
 const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -256,10 +288,11 @@ async function fileRequest(env, url, init, what) {
   }
 }
 
-// Uploads a video of `bytes` bytes from the stream `body`, without holding it in memory.
+// Uploads a file of `bytes` bytes from the stream `body`, without holding it in memory.
 // Returns { name, uri, mimeType } to keep with the import. Google's upload takes two
 // requests: one that says what is coming and answers with where to send it, then the bytes.
-async function uploadVideo({ env, body, bytes, mimeType }) {
+async function uploadFile({ env, body, bytes, mimeType }) {
+  const startedAt = Date.now();
   const start = await fileRequest(
     env,
     UPLOAD_ENDPOINT,
@@ -273,7 +306,7 @@ async function uploadVideo({ env, body, bytes, mimeType }) {
         'X-Goog-Upload-Header-Content-Length': String(bytes),
         'X-Goog-Upload-Header-Content-Type': mimeType,
       },
-      body: JSON.stringify({ file: { display_name: 'recipe video' } }),
+      body: JSON.stringify({ file: { display_name: mimeType.startsWith('image/') ? 'recipe photo' : 'recipe video' } }),
     },
     'start',
   );
@@ -297,34 +330,34 @@ async function uploadVideo({ env, body, bytes, mimeType }) {
   );
   const file = sent.ok ? (await sent.json().catch(() => null))?.file : null;
   if (!file?.name || !file.uri) throw uploadFailed(`upload answered ${sent.status}`);
-  console.log(`Video uploaded to Gemini: ${file.name}, ${bytes} bytes`);
+  console.log(`File uploaded to Gemini: ${file.name}, ${mimeType}, ${bytes} bytes, in ${Date.now() - startedAt} ms`);
   return { name: file.name, uri: file.uri, mimeType };
 }
 
-// Waits until Gemini has processed an uploaded video, which takes a few seconds. Throws
-// VideoRefusedError when the file can't be used (processing failed, or it is gone), and a
-// retryable llm_error when it is still not ready, so the stage's own retries keep waiting.
+// Waits until Gemini has processed an uploaded file, which takes a few seconds. Throws
+// FileGoneError when it is gone, VideoRefusedError when processing failed, and a retryable
+// llm_error when it is still not ready, so the stage's own retries keep waiting.
 async function waitUntilReady({ env, file, pollMs = FILE_POLL_MS }) {
   for (let poll = 1; ; poll++) {
     const response = await fileRequest(env, FILES_BASE + file.name, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }, 'file check');
-    if (response.status === 403 || response.status === 404) throw new VideoRefusedError();
+    if (response.status === 403 || response.status === 404) throw new FileGoneError();
     if (!response.ok) throw uploadFailed(`file check answered ${response.status}`);
     const { state } = await response.json();
     if (state === 'ACTIVE') return;
     if (state === 'FAILED') throw new VideoRefusedError();
-    if (poll === FILE_POLLS) throw uploadFailed('the video is still being processed');
+    if (poll === FILE_POLLS) throw uploadFailed('the file is still being processed');
     await sleep(pollMs);
   }
 }
 
-// Deletes an uploaded video. A failure is only logged: Google deletes it after 48 hours anyway.
-async function removeVideo({ env, file }) {
+// Deletes an uploaded file. A failure is only logged: Google deletes it after 48 hours anyway.
+async function removeFile({ env, file }) {
   try {
     const response = await fileRequest(env, FILES_BASE + file.name, { method: 'DELETE', signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) }, 'delete');
-    if (!response.ok) console.log(`Video not deleted from Gemini: ${file.name}, status ${response.status}`);
+    if (!response.ok) console.log(`File not deleted from Gemini: ${file.name}, status ${response.status}`);
   } catch (error) {
-    console.log(`Video not deleted from Gemini: ${file.name}, ${error.detail ?? error.message}`);
+    console.log(`File not deleted from Gemini: ${file.name}, ${error.detail ?? error.message}`);
   }
 }
 
-export const videoFiles = { upload: uploadVideo, waitUntilReady, remove: removeVideo };
+export const geminiFiles = { upload: uploadFile, waitUntilReady, remove: removeFile };

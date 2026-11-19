@@ -221,11 +221,11 @@ async function callBest(job, deps, request) {
 }
 
 // The fallback model, from another provider, for when every model in a list is busy or
-// out. It reads text only, so a request with a video never reaches it, and it is off until
+// out. It reads text only, so a request with a video or a photo never reaches it, and it is off until
 // its key is set (GROQ_API_KEY). Returns null when it can't answer either.
 async function callFallback({ env, fallbackLlm = callFallbackModel }, request) {
   const model = env.LLM_FALLBACK_MODEL;
-  if (!model || !env.GROQ_API_KEY || request.videoUrl) return null;
+  if (!model || !env.GROQ_API_KEY || request.videoUrl || request.imageUrl) return null;
   try {
     const fallback = await callUnlessOut({ env, llm: fallbackLlm, model, request });
     return fallback.out ? null : { output: fallback.output, model };
@@ -288,10 +288,24 @@ export async function callChosenModel(job, deps, request) {
   return callInOrder(deps, importModels(deps.env), request);
 }
 
-// A translation's request: text only, so it goes to the small models (LLM_TRANSLATE_MODELS)
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A translation's request, and every other short text-only request from the AI tools (a
+// calories estimate, ingredient substitutes): it goes to the small models (LLM_TRANSLATE_MODELS)
 // and then the fallback model, leaving the stronger models' few requests for videos.
-// Returns { output, model }. Throws ImportError quota when no model can run, and
-// ModelBusyError when one was only busy (the user waits, so nothing waits here).
-export function callTranslationModel(deps, request) {
-  return callInOrder(deps, list(deps.env.LLM_TRANSLATE_MODELS), request);
+// A busy model (Google's "high demand" 503) usually answers a moment later, so when every
+// model was busy the whole list is tried again after each delay in LLM_BUSY_RETRY_MS: a few
+// seconds the user waits instead of an error at once. Returns { output, model }. Throws
+// ImportError quota when no model can run, and ModelBusyError when they stayed busy.
+export async function callTranslationModel(deps, request) {
+  const delays = list(deps.env.LLM_BUSY_RETRY_MS).map(Number);
+  for (let retry = 0; ; retry += 1) {
+    try {
+      return await callInOrder(deps, list(deps.env.LLM_TRANSLATE_MODELS), request);
+    } catch (error) {
+      if (!(error instanceof ModelBusyError) || retry >= delays.length) throw error;
+      console.log(`Every text model is busy, trying again in ${delays[retry]} ms`);
+      await wait(delays[retry]);
+    }
+  }
 }

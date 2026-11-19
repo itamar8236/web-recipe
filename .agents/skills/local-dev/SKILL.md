@@ -31,7 +31,9 @@ local copy, so agents can't reach production even by accident.
   use a test quota, not production's.
 - You may test real imports yourself on the local app, but only on links the owner gives
   in the chat. Don't tick "Use the best model" (or send `model: 'best'`) unless the owner
-  asks, so testing doesn't use up its 20 requests a day. Automated tests always use fake keys and stubs. List in
+  asks, so testing doesn't use up its 20 requests a day. A photo import always calls the best
+  model first, so run one only with the owner's OK, on pictures they gave in the chat (never
+  commit them or copy them into the repo). Automated tests always use fake keys and stubs. List in
   the PR the real imports you ran. `node scripts/e2e-links.mjs "<link>" ...` (from
   `backend/`, with the app running) runs the links the owner gave in the chat, or a file of
   them, through the local app on a test account, without the best model by default; it's the check after Facebook or Instagram change
@@ -63,15 +65,41 @@ database (then run `npm run db:schema:local` and add test data through the app).
 0. If `backend/node_modules` or `frontend/node_modules` is missing (a new worktree whose
    setup hook didn't run), run `npm ci` in that folder first. Tests need it too.
 1. `cd frontend && npm run build` (the Worker serves `frontend/out`).
-2. `cd backend && npm run db:schema:local` (adds any tables new on this branch; it only
-   creates what's missing, so existing data stays), then `npm run dev`: `wrangler dev` on
-   http://localhost:8787 using the local database.
-3. Optional hot reload for UI-only work: in `frontend/`, `npm run dev` (http://localhost:3000).
-   It has no backend, so only guest mode works there; test login on :8787.
+2. Pick a free port (see **Ports** below), then `cd backend && npm run db:schema:local`
+   (adds any tables new on this branch; it only creates what's missing, so existing data
+   stays), then `npx wrangler dev --port <port>`: `wrangler dev` on
+   http://localhost:<port> using the local database. Not `npm run dev`: it is pinned to
+   the owner's :8787.
+3. Optional hot reload for UI-only work: in `frontend/`, `npm run dev -- -p <port>` from the
+   frontend range. It has no backend, so only guest mode works there; test login on the
+   Worker.
 4. **Always stop every server you started when you're done testing**, before reporting
-   or ending your turn, also when the testing failed. The owner tests on the same ports
-   (:8787 and :3000), so a server left running blocks them or shows them your worktree's
-   code. Check that nothing is still listening on those ports.
+   or ending your turn, also when the testing failed, so the next agent finds the port free
+   and nothing keeps showing your worktree's code. Check that nothing you started is
+   still listening.
+
+### Ports
+**:8787 and :3000 are the owner's**: they test PRs there. Agents never start a server on
+them, even when they look free. Several agents may run at once, so each takes the first
+free port in its range:
+
+| Server | Agents use |
+|---|---|
+| Worker (`wrangler dev`) | 8788-8799 |
+| `next dev` | 3001-3009 |
+
+- Check before starting: `netstat -ano | grep -E ":<port> .*LISTEN"` (Git Bash) must print
+  nothing. On Windows a second server can bind a port that is already taken without any
+  error, and the browser then reaches whichever one it likes, so never rely on the start
+  failing.
+- `wrangler dev` also opens an inspector port (9229 and up); it picks a free one by itself.
+- Claude desktop app: `preview_start` runs entries from `.claude/launch.json`, which is
+  git-excluded (each checkout has its own). Add an entry for your port there, e.g.
+  `{"name": "backend-8790", "runtimeExecutable": "npx", "runtimeArgs": ["--prefix",
+  "backend", "wrangler", "dev", "--cwd", "backend", "--port", "8790"], "port": 8790}`,
+  and never start the `backend` / `frontend` entries, which use the owner's ports.
+- A server on one of the owner's ports that you didn't start belongs to them or to
+  another session: leave it alone and tell the owner if it is in the way.
 
 ## Local data
 The local DB is yours to test with: add, edit, or delete anything. Only the owner's
