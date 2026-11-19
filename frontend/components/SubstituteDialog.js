@@ -16,7 +16,7 @@ export default function SubstituteDialog({ recipeId, from, ingredients, onClose 
   const [chosen, setChosen] = useState(null); // the ingredient's index, once tapped
   const [substitutes, setSubstitutes] = useState(null); // null while choosing or waiting
   const [error, setError] = useState('');
-  // A late answer for an ingredient the user moved on from (or after closing) is dropped.
+  // A late answer after closing is dropped.
   const asked = useRef(0);
 
   useEffect(() => {
@@ -40,7 +40,6 @@ export default function SubstituteDialog({ recipeId, from, ingredients, onClose 
   }
 
   function chooseAnother() {
-    asked.current += 1;
     setChosen(null);
     setSubstitutes(null);
     setError('');
@@ -78,6 +77,13 @@ export default function SubstituteDialog({ recipeId, from, ingredients, onClose 
         <div role="status">
           {!error && <p className={styles.question}>{waiting ? t.substituteFinding : t.substituteResults}</p>}
           <p className={styles.item} lang={from} dir={dir(from)}>{ingredients[chosen]}</p>
+          {waiting && (
+            <p className={styles.working} aria-label={t.substituteWorking}>
+              <span />
+              <span />
+              <span />
+            </p>
+          )}
         </div>
       )}
 
@@ -103,7 +109,8 @@ export default function SubstituteDialog({ recipeId, from, ingredients, onClose 
       )}
 
       <div className={styles.actions}>
-        {chosen !== null && (
+        {/* Hidden while the model works: Close, then the tool again, starts over. */}
+        {chosen !== null && !waiting && (
           <button type="button" className="button secondary" onClick={chooseAnother}>{t.substituteAgain}</button>
         )}
         <button type="button" className="button secondary" onClick={onClose}>{t.close}</button>

@@ -156,16 +156,19 @@ frontend/
      "+ Add tag" opens a small panel with the user's other tags (tap one to add it), a
      field for a new tag, and Done. A new recipe has no tags until they are added here.
    - **AI tools** (`components/RecipeAiTools`, a "✨ AI tools" box at the bottom, logged-in
-     users only). Every tool is always shown, one full-width button each, so nothing has
-     to be opened or discovered. They all read the text the page shows (the app's language,
-     or the other one when the app's has none yet). The backend picks the models; the one
-     choice is a checkbox under the scan button.
+     users only). Every tool is always shown as a tile (an icon, a bold title and a one-line
+     hint; one column on phones, two side by side when there is room), so nothing has to be
+     opened or discovered. They all read the text the page shows (the app's language, or the
+     other one when the app's has none yet). The backend picks the models; the one choice
+     is in the scan's confirmation.
    - **"Substitute an ingredient" / "החלפת מצרך"** (needs an ingredient) opens a popup
      (`components/SubstituteDialog`) listing the recipe's ingredients as big buttons. Tapping
-     one asks the model at once and shows up to 4 substitutes, written in the app's
+     one asks the model at once: three pulsing dots show under the chosen ingredient while
+     it works (only Close is offered then), then up to 4 substitutes, written in the app's
      language: what to use, how much, and a short note, with a "Suggested by AI" hint. "No
-     good substitute" when the model finds none. "Choose another ingredient" goes back to
-     the list. Nothing is saved: the answer is gone when the popup closes.
+     good substitute" when the model finds none. "Choose another ingredient" (once there is
+     an answer or an error) goes back to the list. Nothing is saved: the answer is gone when
+     the popup closes.
    - **"Translate to Hebrew" / "Translate to English"** (and the Hebrew labels) translates
      the shown language into the other one and saves the recipe at once, updating the page.
      When the app's language has no text yet, that is the language it translates into. It
@@ -175,11 +178,12 @@ frontend/
      "Per serving" card appears or changes. It asks first if either already has a value.
    - **"Scan the link again"** (only for a recipe with a link) asks first, because it
      replaces the recipe's text including edits, then starts it like a new import and
-     returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
-     to 5 a day)", is off by default; when that model can't be used the scan goes on with
-     the usual models by itself, and nothing asks for approval.
-   - While one tool runs the others are held, and a failure shows its error under the
-     buttons; nothing is saved then.
+     returns to Home, where its card shows. The confirmation holds the checkbox "Use the best
+     model (slower, up to 5 a day)", off by default, so it is clearly about the scan alone;
+     when that model can't be used the scan goes on with the usual models by itself, and
+     nothing asks for approval.
+   - While one tool runs its tile's hint says so ("Translating...") and the other tiles are
+     held; a failure shows its error under the tiles, and nothing is saved then.
 6. **Edit**: name, ingredients, and steps (one per line) in the app's current language,
    plus two optional number fields, calories (kcal) and protein (g) per serving, which are
    the same in both languages (empty = not known).

@@ -12,12 +12,14 @@ import styles from './RecipeAiTools.module.css';
 const hasText = (content) => Boolean(content.name || content.ingredients.length || content.steps.length);
 
 // The "AI tools" box at the bottom of a saved recipe's page, for a logged-in user. Every
-// tool is shown at once, as one big button each, so there is nothing to discover:
+// tool is shown at once, as a tile with an icon, a title and a one-line hint, so there is
+// nothing to open or discover:
 // - translate the language shown into the other one, or, when the app's language has no
 //   text yet, the other language into it;
 // - calculate calories and protein per serving from the shown text;
 // - substitute an ingredient: opens a dialog, and its answer is gone when it closes;
-// - for an imported recipe, scan its link again, optionally with the best model.
+// - for an imported recipe, scan its link again; its confirmation holds the one model
+//   choice, the best model, so it is clearly about the scan only.
 // Translating and calculating save the recipe at once and hand the saved recipe to
 // `onSaved`; a translation or an estimate that would replace something asks first. The
 // backend picks the models.
@@ -90,51 +92,41 @@ export default function RecipeAiTools({ recipe, lang, onSaved }) {
         <span aria-hidden="true">✨</span> {t.aiTools}
       </h2>
 
-      <div className={styles.buttons}>
-        <button
-          type="button"
-          className={`button secondary ${styles.tool}`}
+      <ul className={styles.list}>
+        <Tool
+          icon="🔄"
+          title={t.substitute}
+          hint={t.substituteHint}
           disabled={busy !== null || !hasIngredients}
           onClick={() => setSubstituting(true)}
-        >
-          {t.substitute}
-        </button>
-
-        <button
-          type="button"
-          className={`button secondary ${styles.tool}`}
+        />
+        <Tool
+          icon="🌐"
+          title={t.translateTo[into]}
+          hint={busy === 'translate' ? t.translating : t.translateHint}
+          busy={busy === 'translate'}
           disabled={busy !== null || !hasText(content)}
           onClick={() => (hasText(recipe[into]) ? setConfirming('translate') : translate())}
-        >
-          {busy === 'translate' ? t.translating : t.translateTo[into]}
-        </button>
-
-        <button
-          type="button"
-          className={`button secondary ${styles.tool}`}
+        />
+        <Tool
+          icon="🔥"
+          title={t.estimateNutrition}
+          hint={busy === 'nutrition' ? t.estimatingNutrition : t.estimateNutritionHint}
+          busy={busy === 'nutrition'}
           disabled={busy !== null || !hasIngredients}
           onClick={() => (hasNutrition ? setConfirming('nutrition') : estimateNutrition())}
-        >
-          {busy === 'nutrition' ? t.estimatingNutrition : t.estimateNutrition}
-        </button>
-
+        />
         {recipe.link && (
-          <div className={styles.rescan}>
-            <button
-              type="button"
-              className={`button secondary ${styles.tool}`}
-              disabled={busy !== null}
-              onClick={() => setConfirming('rescan')}
-            >
-              {busy === 'rescan' ? t.importStarting : t.rescan}
-            </button>
-            <label className={styles.choice}>
-              <input type="checkbox" checked={useBest} disabled={busy !== null} onChange={(event) => setUseBest(event.target.checked)} />
-              {t.useBestModel}
-            </label>
-          </div>
+          <Tool
+            icon="🔗"
+            title={t.rescan}
+            hint={busy === 'rescan' ? t.importStarting : t.rescanHint}
+            busy={busy === 'rescan'}
+            disabled={busy !== null}
+            onClick={() => setConfirming('rescan')}
+          />
         )}
-      </div>
+      </ul>
 
       {error && <p className="error" role="alert">{error}</p>}
 
@@ -145,12 +137,35 @@ export default function RecipeAiTools({ recipe, lang, onSaved }) {
           danger={false}
           onConfirm={confirmations[confirming].onConfirm}
           onCancel={() => setConfirming(null)}
-        />
+        >
+          {/* The one model choice, asked only here: it applies to the scan alone. */}
+          {confirming === 'rescan' && (
+            <label className={styles.choice}>
+              <input type="checkbox" checked={useBest} onChange={(event) => setUseBest(event.target.checked)} />
+              {t.useBestModel}
+            </label>
+          )}
+        </ConfirmDialog>
       )}
 
       {substituting && (
         <SubstituteDialog recipeId={recipe.id} from={shown} ingredients={content.ingredients} onClose={() => setSubstituting(false)} />
       )}
     </section>
+  );
+}
+
+// One tool's tile. While it runs, its hint says what is happening.
+function Tool({ icon, title, hint, busy = false, disabled, onClick }) {
+  return (
+    <li>
+      <button type="button" className={styles.tool} disabled={disabled} aria-busy={busy} onClick={onClick}>
+        <span className={styles.icon} aria-hidden="true">{icon}</span>
+        <span className={styles.text}>
+          <span className={styles.toolTitle}>{title}</span>
+          <span className={busy ? `${styles.hint} ${styles.busy}` : styles.hint}>{hint}</span>
+        </span>
+      </button>
+    </li>
   );
 }
