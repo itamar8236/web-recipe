@@ -25,6 +25,7 @@ const REQUEST = { prompt: 'p', schema: {}, videoUrl: null };
 const bare429 = () => new QuotaError({ daily: false, retryDelayMs: 1 });
 const daily429 = () => new QuotaError({ daily: true, retryDelayMs: 1 });
 const busy = () => new ModelBusyError('Gemini 503: high demand');
+const cutOff = () => new ModelBusyError('Gemini 524: error code: 524', { counted: true });
 const unusable = () => new ModelUnusableError('Gemini 404: models/x is not found');
 
 const setUsage = (model, calls, day = today()) =>
@@ -178,6 +179,20 @@ describe('an import: the models are tried in order, and nobody is asked', () => 
     expect(await usage(SECOND)).toBe(1);
   });
 
+  it('moves on from a model Cloudflare cut off (524) at once, keeping its request counted', async () => {
+    const llm = answering(cutOff(), ANSWER);
+    expect(await run(await newJob(await insertUser()), llm)).toEqual({ output: ANSWER, model: SECOND });
+    expect(modelsUsed(llm)).toEqual([FIRST, SECOND]);
+    expect(await usage(FIRST)).toBe(1);
+    expect(await usage(SECOND)).toBe(1);
+  });
+
+  it('sends the import models nothing about background mode', async () => {
+    const llm = answering(busy(), ANSWER);
+    await run(await newJob(await insertUser()), llm);
+    for (const [args] of llm.mock.calls) expect(args.background).toBeUndefined();
+  });
+
   it('reaches the last model when the two before it are busy or out', async () => {
     await markOut(SECOND);
     const llm = answering(busy(), ANSWER);
@@ -293,6 +308,8 @@ describe('when the user asked for the best model', () => {
     const llm = answering(ANSWER);
     expect(await run(job, llm)).toEqual({ output: ANSWER, model: BEST });
     expect(modelsUsed(llm)).toEqual([BEST]);
+    // It can take minutes on a video, so it runs in Google's background mode.
+    expect(llm.mock.calls[0][0]).toMatchObject({ ...REQUEST, background: true });
     expect(await usage(BEST)).toBe(1);
     expect((await reload(job)).used_best).toBe(1);
   });
@@ -302,6 +319,7 @@ describe('when the user asked for the best model', () => {
     const llm = answering(busy(), ANSWER);
     expect(await run(job, llm)).toEqual({ output: ANSWER, model: FIRST });
     expect(modelsUsed(llm)).toEqual([BEST, FIRST]);
+    expect(llm.mock.calls[1][0].background).toBeUndefined();
     expect(await usage(BEST)).toBe(0);
     expect((await reload(job)).used_best).toBe(1);
   });

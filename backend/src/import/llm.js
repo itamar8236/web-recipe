@@ -68,12 +68,14 @@ export class ModelUnusableError extends Error {
 
 // Google said the model is overloaded (503). That lasts minutes or more, longer than the
 // quick Workflow retries, so the request moves on to the next model (models.js), and when
-// every model is busy the Workflow waits and tries again (workflow.js).
+// every model is busy the Workflow waits and tries again (workflow.js). `counted` says
+// Google ran the request anyway (a 524), so it stays in the day's count.
 export class ModelBusyError extends Error {
-  constructor(detail) {
+  constructor(detail, { counted = false } = {}) {
     super('model_busy');
     this.name = 'ModelBusyError';
     this.detail = detail;
+    this.counted = counted;
   }
 }
 
@@ -96,7 +98,7 @@ function quotaErrorFrom(text) {
   return new QuotaError({ daily: JSON.stringify(details).includes('PerDay'), retryDelayMs: retryDelayFrom(details) });
 }
 
-function requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, imageType }) {
+function requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, imageType, background }) {
   const input = [{ type: 'text', text: prompt }];
   // No media resolution for a video: Google's docs don't say a YouTube link accepts it, and
   // a refused field would look like a refused video. An uploaded file is sent with its type,
@@ -105,7 +107,7 @@ function requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, ima
   // A photo of a recipe is mostly small print, so it is read at high resolution, which
   // Google documents for an image part.
   if (imageUrl) input.unshift({ type: 'image', uri: imageUrl, mime_type: imageType, resolution: 'high' });
-  return { model, input, response_format: { type: 'text', mime_type: 'application/json', schema } };
+  return { model, input, response_format: { type: 'text', mime_type: 'application/json', schema }, ...(background && { background: true }) };
 }
 
 // How many tokens Google counted, and how many of the input were the image, for the log.
@@ -160,6 +162,11 @@ function failureFrom(status, text, { model, media }) {
   if (status === 429) return quotaErrorFrom(text);
   const detail = googleReason(status, text);
   if (status === 503) return new ModelBusyError(detail);
+  // Cloudflare's own answer, not Google's: Google sent nothing back for about 100 s, the
+  // longest Cloudflare waits. A slow model does that on most videos, and trying it again
+  // would only wait again, so the request moves on to the next model, like a busy one.
+  // Google still ran it, so it stays counted.
+  if (status === 524) return new ModelBusyError(detail, { counted: true });
   // A rejected request won't get better by itself, so only a server error is tried again.
   if (status >= 500) return new ImportError('llm_error', { retryable: true, detail });
   // Without a video the request is only our prompt and schema, so a 4xx is about the model.
@@ -170,12 +177,49 @@ function failureFrom(status, text, { model, media }) {
   return new ModelUnusableError(detail);
 }
 
+const headersFor = (env) => ({
+  'Content-Type': 'application/json',
+  'x-goog-api-key': env.GEMINI_API_KEY,
+  'Api-Revision': API_REVISION,
+});
+
+// A request in Google's background mode answers at once with an id and keeps running at
+// Google, so no connection has to stay open past Cloudflare's ~100 s (see 524 above). Its
+// answer is then asked for, sooner at first and every 30 s after, which keeps a 14-minute
+// wait to about 30 requests, under the Workers free plan's 50 per step.
+const POLL_TIMEOUT_MS = 30 * 1000;
+
+async function waitInBackground({ env, model, id, startedAt, pollMs }) {
+  const url = `${ENDPOINT}/${encodeURIComponent(id)}`;
+  for (let poll = 1; ; poll++) {
+    if (Date.now() - startedAt > REQUEST_TIMEOUT_MS) {
+      throw new ImportError('llm_error', { retryable: true, detail: `Gemini background request ${id} still running after ${REQUEST_TIMEOUT_MS / 60000} minutes` });
+    }
+    await sleep(Math.min(poll * pollMs, 6 * pollMs));
+    let response;
+    try {
+      response = await fetch(url, { signal: AbortSignal.timeout(POLL_TIMEOUT_MS), headers: headersFor(env) });
+    } catch (error) {
+      throw new ImportError('llm_error', { retryable: true, detail: `Gemini background check failed: ${error.name}: ${error.message}` });
+    }
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      console.log(`LLM call failed: model=${model} background check status=${response.status}\n${text.slice(0, 2000)}`);
+      // The video was already taken when the request started, so this is never about it.
+      throw failureFrom(response.status, text, { model, media: null });
+    }
+    const interaction = await response.json().catch(() => null);
+    if (interaction?.status !== 'in_progress') return interaction;
+  }
+}
+
 // Sends one request and returns the model's answer as parsed JSON. Throws QuotaError,
 // ModelBusyError, ModelUnusableError, VideoRefusedError, or ImportError (llm_error for other temporary
 // problems, bad_result for an answer that can't be read). `videoUrl` is a YouTube link or
 // an uploaded file's uri (then with `videoType`); `imageUrl` is an uploaded photo's uri,
-// with `imageType`.
-export async function callModel({ env, model, prompt, schema, videoUrl, videoType, imageUrl, imageType }) {
+// with `imageType`. `background: true` runs it in Google's background mode (only the best
+// model, models.js); `pollMs` is swapped in tests.
+export async function callModel({ env, model, prompt, schema, videoUrl, videoType, imageUrl, imageType, background = false, pollMs = 5000 }) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
   if (!env.GEMINI_API_KEY) throw new ImportError('llm_error', { detail: 'GEMINI_API_KEY is not set' });
 
@@ -192,12 +236,8 @@ export async function callModel({ env, model, prompt, schema, videoUrl, videoTyp
     response = await fetch(ENDPOINT, {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': env.GEMINI_API_KEY,
-        'Api-Revision': API_REVISION,
-      },
-      body: JSON.stringify(requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, imageType })),
+      headers: headersFor(env),
+      body: JSON.stringify(requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, imageType, background })),
     });
   } catch (error) {
     const detail = `Gemini request failed: ${error.name}: ${error.message}`;
@@ -211,13 +251,17 @@ export async function callModel({ env, model, prompt, schema, videoUrl, videoTyp
     throw failureFrom(response.status, text, { model, media: videoUrl || imageUrl });
   }
 
-  const interaction = await response.json().catch(() => null);
+  let interaction = await response.json().catch(() => null);
+  if (background && interaction?.status === 'in_progress') {
+    if (!interaction.id) throw new ImportError('llm_error', { retryable: true, detail: 'Gemini background request answered without an id' });
+    interaction = await waitInBackground({ env, model, id: interaction.id, startedAt, pollMs });
+  }
   if (interaction?.status && interaction.status !== 'completed') {
     const detail = `Gemini answered with status ${interaction.status}`;
     console.log(`LLM call failed: model=${model} ${detail}`);
     throw new ImportError('llm_error', { retryable: true, detail });
   }
-  console.log(`LLM answer: model=${model} in ${Date.now() - startedAt} ms, ${usageLine(interaction?.usage)}`);
+  console.log(`LLM answer: model=${model} in ${Date.now() - startedAt} ms${background ? ' (background)' : ''}, ${usageLine(interaction?.usage)}`);
   return parseOutput(outputText(interaction));
 }
 

@@ -491,7 +491,21 @@ needs no code change:
   checkbox. It is slower and more detailed. It is tried first,
   once; if it is busy, out for the day, or the user has used their 5, the import goes on
   with the import models by itself, and nobody is told or asked. Photos share its 20 a day
-  with re-scans, so on a busy day most photo imports use the import models.
+  with re-scans, so on a busy day most photo imports use the import models. It runs in
+  Google's **background mode** (`background: true`): Google answers at once with an id and
+  keeps working, and the stage asks for the answer by that id (`GET /v1beta/interactions/<id>`),
+  after 5 s, then 10, 15... up to every 30 s, at most 14 minutes, so about 30 requests,
+  under the free plan's 50 per step. No request stays open long enough for Cloudflare's
+  ~100 s cut (524, below). Only the best model uses it: Google lists background mode for
+  `gemini-4-hydrogen` and `gemini-3.8-flash`, not for the other import models. Its log line
+  says `(background)`, so its times can be compared with the others'.
+- **Cloudflare's ~100 s cut (524).** A request to Google that sends nothing back for about
+  100 s is ended by Cloudflare, which Gemini's error shows as `524` (`error code: 524`).
+  Measured locally on 2026-11-18/19 (no such cut there), `gemini-3.8-flash` took 96-454 s on
+  a short video, whether or not calories were asked for, and `gemini-3.5-flash-lite` about
+  10 s, with recipes as complete. So a 524 is treated like a busy model: the next model is
+  tried at once, instead of retrying the slow one, but its request stays counted, since
+  Google ran it.
 - **The fallback model** can't watch a video or read a photo, so a request with one never reaches it. It
   is off until `GROQ_API_KEY` is set. Groq's free limit when checked was 1,000 requests and
   200,000 tokens a day, 8,000 tokens a minute.
@@ -548,7 +562,7 @@ in `error_detail` (never sent to the browser).
 | Too long, description not enough | `video_too_long` | no | no |
 | No recipe | `no_recipe` | no | no |
 | Several recipes | `multiple_recipes` | no | no |
-| Every model it could use is busy (503) | `llm_error` | yes, see below | yes |
+| Every model it could use is busy (503) or was cut off by Cloudflare (524) | `llm_error` | yes, see below | yes |
 | Other 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
 | Invalid output | `bad_result` | yes, 3 tries per stage | yes |
 | Every model it could use is out for the day (some may also have been unable to run) | `quota` | no | yes |
