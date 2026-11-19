@@ -1,0 +1,57 @@
+/* Looks like the Search button beside it: a small pill that stays out of the way. */
+.menu {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  color: var(--accent-dark);
+}
+
+.select {
+  min-height: 44px;
+  max-width: 100%;
+  padding-block: 0;
+  padding-inline: 38px 34px;
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  appearance: none;
+}
+
+.select:hover {
+  background: var(--accent-soft);
+}
+
+/* The app draws its own arrow, so it sits on the correct side in RTL. */
+.menu::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: 15px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor; /* physical: a down arrow in both directions */
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+.icon {
+  position: absolute;
+  inset-inline-start: 14px;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}

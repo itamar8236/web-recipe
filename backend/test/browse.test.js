@@ -103,6 +103,41 @@ describe('browse', () => {
     expect(first).not.toEqual(Array.from({ length: 25 }, (_, i) => `Recipe ${i + 1}`));
   });
 
+  it('sorts by newest, oldest, protein or calories, a page at a time, with unknown values last', async () => {
+    const nutrition = [
+      [300, 10],
+      [null, null],
+      [800, 40],
+      [120, 25],
+    ];
+    for (let i = 0; i < 12; i++) {
+      const recipe = await newRecipe(dana, `R${i + 1}`);
+      const [calories, protein] = nutrition[i % 4];
+      await as(dana).put(`/api/recipes/${recipe.id}`, { en: recipe.en, he: recipe.he, calories, protein });
+    }
+
+    const order = async (sort) => {
+      const first = await browse(noa, `sort=${sort}`);
+      expect(first.recipes).toHaveLength(10);
+      const second = await browse(noa, `sort=${sort}&after=${first.next}`);
+      expect(second.next).toBeNull();
+      return [...first.recipes, ...second.recipes].map((recipe) => recipe.en.name);
+    };
+
+    const oldest = Array.from({ length: 12 }, (_, i) => `R${i + 1}`);
+    expect(await order('oldest')).toEqual(oldest);
+    expect(await order('newest')).toEqual([...oldest].reverse());
+    expect(await order('protein')).toEqual(['R3', 'R7', 'R11', 'R4', 'R8', 'R12', 'R1', 'R5', 'R9', 'R2', 'R6', 'R10']);
+    expect(await order('kcal_high')).toEqual(['R3', 'R7', 'R11', 'R1', 'R5', 'R9', 'R4', 'R8', 'R12', 'R2', 'R6', 'R10']);
+    expect(await order('kcal_low')).toEqual(['R4', 'R8', 'R12', 'R1', 'R5', 'R9', 'R3', 'R7', 'R11', 'R2', 'R6', 'R10']);
+  });
+
+  it('rejects an unknown sort', async () => {
+    expect((await as(noa).get('/api/browse?sort=tastiest')).status).toBe(400);
+    expect((await as(noa).get('/api/browse?sort=random')).status).toBe(400); // random needs a seed
+    expect((await call('/api/browse?sort=newest')).status).toBe(401);
+  });
+
   it('rejects a bad seed or page mark, and needs a login', async () => {
     expect((await as(noa).get('/api/browse')).status).toBe(400);
     expect((await as(noa).get('/api/browse?seed=0')).status).toBe(400);
