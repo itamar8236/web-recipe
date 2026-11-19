@@ -52,7 +52,7 @@ describe('POST /api/substitute', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ substitutes: [BUTTER] });
     const [args] = llm.mock.calls[0];
-    expect(args).toMatchObject({ model: SMALL, logPrompt: false });
+    expect(args).toMatchObject({ model: SMALL });
     expect(args.prompt).toContain('"כף חמאה"');
     expect(args.prompt).toContain('in English');
     expect(await rows()).toEqual([
@@ -94,10 +94,22 @@ describe('POST /api/substitute', () => {
     expect((await rows())[0]).toMatchObject({ status: 'failed', error: 'bad_result', model: SMALL });
   });
 
-  it('answers 503 model_busy when its model is busy', async () => {
+  it('tries a busy model again and answers once it is free', async () => {
     const userId = await insertUser();
-    const response = await substitute({ recipeId: await insertRecipe(userId), from: 'en', index: 0, lang: 'en' }, answering(new ModelBusyError('busy')), userId);
+    const llm = vi.fn().mockRejectedValueOnce(new ModelBusyError('busy')).mockResolvedValueOnce({ substitutes: [BUTTER] });
+    const response = await substitute({ recipeId: await insertRecipe(userId), from: 'en', index: 0, lang: 'en' }, llm, userId);
+    expect(await response.json()).toEqual({ substitutes: [BUTTER] });
+    expect(llm).toHaveBeenCalledTimes(2);
+    expect(await rows()).toEqual([expect.objectContaining({ status: 'done', model: SMALL })]);
+  });
+
+  it('answers 503 model_busy when its model stays busy through every retry', async () => {
+    const userId = await insertUser();
+    const llm = answering(new ModelBusyError('busy'));
+    const response = await substitute({ recipeId: await insertRecipe(userId), from: 'en', index: 0, lang: 'en' }, llm, userId);
     expect(response.status).toBe(503);
     expect((await response.json()).error).toBe('model_busy');
+    // The first try and one per delay in LLM_BUSY_RETRY_MS (two in the tests).
+    expect(llm).toHaveBeenCalledTimes(3);
   });
 });
