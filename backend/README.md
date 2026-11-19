@@ -567,7 +567,12 @@ Groq's in `groq.js`; `models.js` alone decides which model runs and counts the c
 requests a day on each of the three stronger models and 500 on the small one, and Google
 says the limits aren't guaranteed. PR previews
 can't exercise any of this: a preview's binding uses the Workflow already deployed to
-production, and gives `workflow.not_found` before the first deploy.
+production, and gives `workflow.not_found` before the first deploy. A photo import fails on
+a preview at once with `photo_upload_failed`: the upload runs in the preview Worker itself,
+and previews don't inherit Worker secrets, so it has no `GEMINI_API_KEY` (the log says
+"Photo upload failed: GEMINI_API_KEY is not set"). Giving previews the key wouldn't be
+enough before a merge either, since production's Workflow code doesn't know photos yet, and
+would let any preview spend the production quota. Test photo imports locally.
 
 **Logging.** `llm.js` logs each Gemini request (the model, the video link, or only the
 type of a user's photo, and the full prompt), each answer (how long it took and the tokens

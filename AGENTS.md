@@ -30,7 +30,8 @@ resolved. One short line each, linking to the README section with the details.
 - Builds made on Windows log harmless prefetch 404s (`frontend/README.md` → Layout).
   Accepted.
 - PR previews can't exercise the import Workflow: they use the one already deployed to
-  production (`backend/README.md` → Import from a link). Accepted.
+  production (`backend/README.md` → Import from a link). Accepted. A photo import fails on a
+  preview at once (`photo_upload_failed`): previews have no Gemini key; test photos locally.
 - The free-tier model quota is shared by all users: 20 requests a day on each stronger
   model, 500 on the small one (`backend/README.md` → Import from a link). Accepted.
 - A few rare import edge cases are left as they are (`backend/README.md` → Import from a
