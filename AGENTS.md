@@ -217,7 +217,7 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 | Task           | `backend/`                                   | `frontend/`       |
 |----------------|----------------------------------------------|-------------------|
 | Install        | `npm install`                                | `npm install`     |
-| Dev server     | `npm run dev` (wrangler on :8787 with the local DB, serving `frontend/out`: build the frontend first) | `npm run dev` (:3000) |
+| Dev server     | `npm run dev` (wrangler on :8787 with the local DB, serving `frontend/out`: build the frontend first). Agents: `npx wrangler dev --port <8788-8799>` | `npm run dev` (:3000). Agents: `npm run dev -- -p <3001-3009>` |
 | Tests          | `npm test` (Workers runtime, throwaway local DB) | `npm test`        |
 | Lint           | (planned)                                    | `npm run lint`    |
 | Build          | n/a                                          | `npm run build` → `out/` |
@@ -239,7 +239,9 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
   (`backend/README.md` → Links, Web pages). No proxies, scraping services, logins or
   CAPTCHA solvers.
 - Add an API endpoint that skips the login check (only sign-up, login and logout are public).
-- Run `npm run deploy` or `wrangler deploy`. Run the app only locally (`npm run dev`);
+- Start a server on :8787 or :3000: they're the owner's, for testing PRs. Agents use
+  8788-8799 and 3001-3009 (`local-dev` skill → Ports).
+- Run `npm run deploy` or `wrangler deploy`. Run the app only locally (`wrangler dev`);
   production changes only when the owner merges a PR into `main`.
 - Add a paid service or anything outside the free tiers above.
 
