@@ -521,6 +521,7 @@ It is given back only when nothing was sent (the shared count was already used u
 choice (`state.bestChosen`) holds through Workflow retries, busy waits and a Retry.
 The admin (`users.is_admin = 1`, not while they act as another user) has no 5: their rows
 are still marked `used_best`, but only the shared count stops them using the best model.
+So every link the admin imports (`POST /api/imports`) asks for it too, as if `model: 'best'`.
 
 **Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
 way to ask how many requests are left, so `llm_usage` counts them: every real call first

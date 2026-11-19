@@ -20,7 +20,8 @@ const hasText = (content) => Boolean(content.name || content.ingredients.length 
 // - calculate calories and protein per serving from the shown text;
 // - substitute an ingredient: opens a dialog, and its answer is gone when it closes;
 // - for an imported recipe, scan its link again; its confirmation holds the one model
-//   choice, the best model, so it is clearly about the scan only.
+//   choice, the best model, so it is clearly about the scan only. It is ticked while the
+//   user still has the best model today.
 // Translating and calculating save the recipe at once and hand the saved recipe to
 // `onSaved`; a translation or an estimate that would replace something asks first. The
 // backend picks the models.
@@ -82,6 +83,19 @@ export default function RecipeAiTools({ recipe, lang, onSaved }) {
     }
   }
 
+  // The best model is on by default while the user still has it today (the shared count
+  // and their 5); if that can't be read, it starts off and the user can still tick it.
+  async function askRescan() {
+    setConfirming('rescan');
+    setUseBest(false);
+    try {
+      const { models } = await api.getImports();
+      setUseBest(models.bestAvailable === true);
+    } catch {
+      // Keep it off.
+    }
+  }
+
   const confirmations = {
     translate: { message: t.confirmTranslate[into], label: t.translateShort, onConfirm: translate },
     nutrition: { message: t.confirmEstimateNutrition, label: t.estimateNutritionShort, onConfirm: estimateNutrition },
@@ -125,7 +139,7 @@ export default function RecipeAiTools({ recipe, lang, onSaved }) {
             hint={busy === 'rescan' ? t.importStarting : t.rescanHint}
             busy={busy === 'rescan'}
             disabled={busy !== null}
-            onClick={() => setConfirming('rescan')}
+            onClick={askRescan}
           />
         )}
       </ul>

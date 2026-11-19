@@ -147,10 +147,15 @@ async function startNew(env, userId, link, { bestChosen }, replaceRecipeId = nul
   return insertAndStart(env, userId, source, bestChosen ? { bestChosen: true } : {}, replaceRecipeId);
 }
 
+const isAdmin = async (env, userId) =>
+  (await env.DB.prepare('SELECT is_admin FROM users WHERE id = ?').bind(userId).first())?.is_admin === 1;
+
 async function createImport(request, env, userId) {
   const body = await readJson(request);
   const choice = readModelChoice(body);
   if (typeof body?.url !== 'string' || !choice) return fail(400, 'invalid_request');
+  // The admin has no daily limit on the best model, so every link they import asks for it.
+  if (await isAdmin(env, userId)) choice.bestChosen = true;
 
   const link = readLink(body.url);
   if (link.error) return fail(400, link.error);

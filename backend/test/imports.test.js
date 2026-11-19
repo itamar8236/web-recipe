@@ -510,13 +510,16 @@ describe('import endpoints', () => {
       expect(await rows()).toEqual([expect.objectContaining({ status: 'failed', error: 'llm_error' })]);
     });
 
-    it('acts for the user the admin is impersonating', async () => {
+    it('asks for the best model for the admin, but not for the user they act as', async () => {
       const admin = await signUp('admin');
       const target = await signUp('target');
       await env.DB.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').bind(admin.userId).run();
-      await env.DB.prepare('UPDATE sessions SET acting_as_user_id = ? WHERE user_id = ?').bind(target.userId, admin.userId).run();
       await startImport(admin.cookie);
-      expect((await rows())[0].user_id).toBe(target.userId);
+      expect((await rows())[0]).toMatchObject({ user_id: admin.userId, state: '{"bestChosen":true}' });
+
+      await env.DB.prepare('UPDATE sessions SET acting_as_user_id = ? WHERE user_id = ?').bind(target.userId, admin.userId).run();
+      await startImport(admin.cookie, `https://youtu.be/${'b'.repeat(11)}`);
+      expect((await rows())[1]).toMatchObject({ user_id: target.userId, state: '{}' });
 
       // The database never lets the admin row go, so lift that rule to clean up after this test.
       const { sql } = await env.DB.prepare(`SELECT sql FROM sqlite_master WHERE name = 'users_admin_not_deleted'`).first();

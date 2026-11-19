@@ -179,7 +179,8 @@ frontend/
    - **"Scan the link again"** (only for a recipe with a link) asks first, because it
      replaces the recipe's text including edits, then starts it like a new import and
      returns to Home, where its card shows. The confirmation holds the checkbox "Use the best
-     model (slower, up to 5 a day)" (for the admin, who has no limit of 5, just "(slower)"), off by default, so it is clearly about the scan alone;
+     model (slower, up to 5 a day)" (for the admin, who has no limit of 5, just "(slower)"), ticked by default while `models.bestAvailable` (read from `GET /api/imports`
+     when the tile is tapped; off if that fails), so it is clearly about the scan alone;
      when that model can't be used the scan goes on with the usual models by itself, and
      nothing asks for approval.
    - While one tool runs its tile's hint says so ("Translating...") and the other tiles are
