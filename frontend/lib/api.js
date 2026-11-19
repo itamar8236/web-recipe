@@ -75,6 +75,16 @@ export async function updateAccount(changes) {
   return (await dataRequest('/api/auth/me', 'PUT', changes)).user;
 }
 
+// Admin only: everyone the admin can log in as, `[{ id, username }]`, A to Z.
+export async function getUsers() {
+  return (await dataRequest('/api/admin/users')).users;
+}
+
+// Admin only: this device is logged in as that user, with no password, until it logs out.
+export async function impersonate(userId) {
+  return (await dataRequest('/api/admin/impersonate', 'POST', { userId })).user;
+}
+
 export async function logout() {
   await request('/api/auth/logout', 'POST');
 }

@@ -1,5 +1,5 @@
-// Tags and recipes. Every query is filtered by `userId`, the user the session works
-// on (see getSessionUser), so nobody can change another user's data. Reading other users'
+// Tags and recipes. Every query is filtered by `userId`, the user the session is logged in
+// as (see getSessionUser), so nobody can change another user's data. Reading other users'
 // public recipes is only in browse.js.
 
 import { fail, json, readJson } from './http.js';

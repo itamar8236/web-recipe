@@ -30,7 +30,7 @@ frontend/
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools, SubstituteDialog
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools, SubstituteDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -233,6 +233,11 @@ frontend/
    change. Saving with nothing changed shows a hint instead. Under them, "My defaults" has
    two checkboxes saved with the same Save: "New recipes are public" and "Copy the tags
    too when I save someone else's recipe".
+   The admin (only) also sees "Log in as another user" under them
+   (`components/ImpersonateSection`): a list of every other username, A to Z, and "Log in
+   as this user", which asks first and then reloads the app as that user (a full reload,
+   so no screen keeps the admin's data). That user has no admin section, so to come back
+   the admin logs out and logs in as themself.
 
 9. **Share** (`/share`, no link to it in the app): where Android's Share menu opens the
    installed app (`share_target` in `app/manifest.js`, method GET, so `sw.js` is

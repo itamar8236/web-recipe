@@ -48,6 +48,8 @@ session except the three public auth endpoints; unknown paths are 404 when logge
 | `POST /api/auth/logout` | Delete this device's session | 200 `{ok}` | none (works without a session) |
 | `GET /api/auth/me` | Who is logged in | 200 `{user}` | 401 `not_logged_in` |
 | `PUT /api/auth/me` `{username?, password?, defaultPublic?, copyTags?}` | Change your own username, password and/or defaults (at least one; the old password is not asked for). Every existing login stays, on this device and the others | 200 `{user}` | 400 `invalid_request` (also a default that isn't `true`/`false`), `username_invalid`, `password_invalid` (same limits as sign-up), 409 `username_taken`, 401 `not_logged_in` |
+| `GET /api/admin/users` | Admin only: everyone else, to log in as | 200 `{users: [{id, username}]}`, A to Z | 403 `not_admin`, 401 `not_logged_in` |
+| `POST /api/admin/impersonate` `{userId}` | Admin only: log this device in as that user, no password | 200 `{user}` (that user) | 400 `invalid_request`, 404 `not_found` (no such user, or the admin), 403 `not_admin`, 401 `not_logged_in` |
 
 `user` is `{ id, username, is_admin, defaultPublic, copyTags }`. The last two are the user's
 defaults, both `true` for a new user: a recipe they add (manually, by import or by copying)
@@ -56,11 +58,19 @@ starts public, and copying a recipe in Browse copies its tags too. Cookies (both
 secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
 device. Not built yet: login rate limiting.
 
+**Admin login as a user**: `POST /api/admin/impersonate` sets `sessions.acting_as_user_id`
+on this device's row (the schema's triggers refuse it for anyone but the admin). From then
+on `getSessionUser` returns that user for everything: `GET/PUT /api/auth/me`, tags,
+recipes, Browse, imports and the model caps, exactly as if they had logged in; `user_id`
+stays the admin, so the row still says who really logged in. The user is never the admin,
+so the admin endpoints answer 403 until the device logs out. Logging out deletes the row,
+and the next login starts with `acting_as_user_id` NULL. Usernames are unique
+(case-insensitive), so the list never shows two the same.
+
 ## Tags and recipes API
 
 All need a session (401 `not_logged_in` otherwise) and work only on the logged-in user's
-data (the queries read `COALESCE(sessions.acting_as_user_id, sessions.user_id)`, and
-nothing sets `acting_as_user_id`, so it is always the session's user). Another user's tag or recipe
+data (the session's user, or the user the admin logged in as; see Auth API). Another user's tag or recipe
 answers 404, exactly like one that doesn't exist. Bodies must be JSON with
 `Content-Type: application/json` (400 `invalid_request` otherwise). A path that exists
 with the wrong method answers 405 `method_not_allowed`.
