@@ -286,7 +286,8 @@ export async function callChosenModel(job, deps, request) {
   return callInOrder(deps, importModels(deps.env), request);
 }
 
-// A translation's request: text only, so it goes to the small models (LLM_TRANSLATE_MODELS)
+// A translation's request, and every other short text-only request from the AI tools (a
+// calories estimate, ingredient substitutes): it goes to the small models (LLM_TRANSLATE_MODELS)
 // and then the fallback model, leaving the stronger models' few requests for videos.
 // Returns { output, model }. Throws ImportError quota when no model can run, and
 // ModelBusyError when one was only busy (the user waits, so nothing waits here).

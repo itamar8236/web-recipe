@@ -30,13 +30,13 @@ frontend/
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools, SubstituteDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
 │   ├── api.test.js        # Vitest tests for api.js and i18n helpers
 │   ├── i18n.js            # UI strings in en/he + pickLanguage()
-│   ├── recipeForm.js      # Edit form text <-> api lines, withTranslation()
+│   ├── recipeForm.js      # Edit form text <-> api lines
 │   ├── recipeForm.test.js # Vitest tests for recipeForm.js
 │   ├── search.js          # matchesSearch(): recipe name/ingredient/tag search
 │   ├── photo.js           # preparePhoto(): a chosen picture, ready to send
@@ -141,14 +141,39 @@ frontend/
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
 5. **Recipe view**: name, source link (opens the video or page; "From a photo" for a photo), tags, ingredients, steps, then a
-   "Per serving" card with calories and protein (only when the recipe has either) and a small note that they were calculated by AI and may be inaccurate. Heart, Edit
-   and Delete buttons (delete asks for confirmation). Calories and protein show only here,
+   "Per serving" card with calories and protein (only when the recipe has either) and a small note that they were calculated by AI and may be inaccurate, then the
+   AI tools box (logged-in users only, below), then Edit and Delete buttons (delete asks
+   for confirmation). The heart is beside the name. Calories and protein show only here,
    never on the Home or Browse cards.
    - **Tags** (`components/RecipeTags`) are changed right here, not on the edit form, and
      every tap saves at once. Each tag is a chip with an ×: tapping it removes the tag.
      "+ Add tag" opens a small panel with the user's other tags (tap one to add it), a
-     field for a new tag, and Done. A new recipe has no tags until they are added here. No AI actions here: they are all on
-   the edit form, so the view stays simple.
+     field for a new tag, and Done. A new recipe has no tags until they are added here.
+   - **AI tools** (`components/RecipeAiTools`, a "✨ AI tools" box at the bottom, logged-in
+     users only). Every tool is always shown, one full-width button each, so nothing has
+     to be opened or discovered. They all read the text the page shows (the app's language,
+     or the other one when the app's has none yet). The backend picks the models; the one
+     choice is a checkbox under the scan button.
+   - **"Substitute an ingredient" / "החלפת מצרך"** (needs an ingredient) opens a popup
+     (`components/SubstituteDialog`) listing the recipe's ingredients as big buttons. Tapping
+     one asks the model at once and shows up to 4 substitutes, written in the app's
+     language: what to use, how much, and a short note, with a "Suggested by AI" hint. "No
+     good substitute" when the model finds none. "Choose another ingredient" goes back to
+     the list. Nothing is saved: the answer is gone when the popup closes.
+   - **"Translate to Hebrew" / "Translate to English"** (and the Hebrew labels) translates
+     the shown language into the other one and saves the recipe at once, updating the page.
+     When the app's language has no text yet, that is the language it translates into. It
+     asks first ("... and save the recipe?") if the other language already has text.
+   - **"Calculate calories and protein" / "חישוב קלוריות וחלבון"** estimates both per
+     serving from the shown text (it needs an ingredient) and saves them at once, so the
+     "Per serving" card appears or changes. It asks first if either already has a value.
+   - **"Scan the link again"** (only for a recipe with a link) asks first, because it
+     replaces the recipe's text including edits, then starts it like a new import and
+     returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
+     to 5 a day)", is off by default; when that model can't be used the scan goes on with
+     the usual models by itself, and nothing asks for approval.
+   - While one tool runs the others are held, and a failure shows its error under the
+     buttons; nothing is saved then.
 6. **Edit**: name, ingredients, and steps (one per line) in the app's current language,
    plus two optional number fields, calories (kcal) and protein (g) per serving, which are
    the same in both languages (empty = not known).
@@ -158,26 +183,9 @@ frontend/
    language with a "not written yet" note.
    - **Public or private** (logged-in users only): a box saying which it is, with its
      explanation and a "Make private" / "Make public" button. The button only changes the
-     form; Save (or a translation's save) stores it, and Cancel leaves it as it was. A new
-     recipe starts with the user's "New recipes are public" default.
-   - **AI tools** (`components/RecipeAiTools`, a box above Save, logged-in users only). The
-     backend picks the models; the one choice is a checkbox beside the scan button.
-   - **"Translate to Hebrew" / "תרגום לאנגלית"** translates the language being written into
-     the other one, then saves the recipe at once with everything in the form (unsaved
-     edits included) and opens the recipe view. If the translation fails nothing is saved
-     and its error shows in the AI box; if the save fails the form stays open, filled in,
-     with the usual save error. It asks first ("... and save the recipe?") if the other
-     language already has text. Works on manual recipes and on new ones before their first
-     save (that creates the recipe). Save is held while it runs.
-   - **"Calculate calories and protein" / "חישוב קלוריות וחלבון"** estimates both per
-     serving from the language being written (it needs an ingredient), fills them in and
-     saves the recipe at once, exactly like a translation. It asks first if calories or
-     protein already has a value.
-   - **"Scan the link again"** (only for a recipe with a link) asks first, because it
-     replaces the recipe's text including edits, then starts it like a new import and
-     returns to Home, where its card shows. Its checkbox, "Use the best model (slower, up
-     to 5 a day)", is off by default; when that model can't be used the scan goes on with
-     the usual models by itself, and nothing asks for approval.
+     form; Save stores it, and Cancel leaves it as it was. A new recipe starts with the
+     user's "New recipes are public" default.
+   - No AI tools here: they are on the recipe view, so the form stays a plain form.
 7. **Browse** (`/browse`, logged-in users only): reached with the two big tabs at the top
    of Home and Browse (`components/ModeTabs`: "My recipes" / "From others"; a guest never
    sees them, and `/browse` tells a guest to log in).
@@ -271,13 +279,13 @@ frontend/
 recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `setRecipePublic`, `deleteRecipe`), browse (`getBrowse`, `copyRecipe`, `newBrowseSeed`) and imports
 (`getImports`, `startImport`, `startPhotoImport` (the picture as the body, with its own
 `Content-Type`), `retryImport`, `dismissImport`, `rerunRecipe`) and
-`translateRecipe`, `estimateNutrition`. For a guest the tag and recipe functions use memory instead. They
+`translateRecipe`, `estimateNutrition`, `suggestSubstitutes`. For a guest the tag and recipe functions use memory instead. They
 trim names and lines and drop blank lines like the backend, and make only some of its
 checks, with the same codes: `name_required` (a tag, or a recipe with no name in either
 language), `tag_exists`, and `not_found` for renaming a missing tag or setting a
 missing recipe's tags or favorite. There are no length limits (`too_long`); deleting a
 missing item does nothing, and `getRecipe` returns `null`.
-The import, translate and estimate functions throw `import_needs_login` without calling the backend,
+The import and AI-tool functions throw `import_needs_login` without calling the backend,
 and the browse functions `browse_needs_login`.
 
 - Requests go to the same origin (`/api/...`), so the session cookie is sent without any

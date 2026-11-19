@@ -55,9 +55,9 @@ export function failureOf(error) {
   return { status: 502, code: error.code === 'bad_result' ? 'bad_result' : 'llm_error', detail: error.detail };
 }
 
-// The row an edit-form request is recorded in, linked to the recipe being edited (none for
-// a recipe not saved yet). `purpose` is 'translation' or 'nutrition'; its stage is the same
-// word ('translate' for a translation, as before).
+// The row an AI-tools request is recorded in, linked to its recipe (none for a recipe not
+// saved yet). `purpose` is 'translation', 'nutrition' or 'substitution'; its stage is the
+// same word ('translate' for a translation, as before).
 export function insertRow(env, userId, recipeId, now, purpose = 'translation') {
   const stage = purpose === 'translation' ? 'translate' : purpose;
   return env.DB.prepare(

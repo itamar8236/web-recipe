@@ -16,12 +16,22 @@
   font-size: 19px;
 }
 
-/* Each action: its button, and for the scan its one choice beside it (below on narrow phones). */
-.row {
+/* One big button per tool, stacked, so each is easy to hit and to read on a phone. */
+.buttons {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 16px;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool {
+  width: 100%;
+}
+
+/* The scan, with its one choice under it. */
+.rescan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* The whole line is the tap target, with room for a finger. */
@@ -37,10 +47,4 @@
   width: 20px;
   height: 20px;
   flex: none;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
 }
