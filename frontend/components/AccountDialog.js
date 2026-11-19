@@ -4,13 +4,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from './Auth';
 import { useLanguage } from './Language';
 import ConfirmDialog from './ConfirmDialog';
+import ImpersonateSection from './ImpersonateSection';
 import { errorMessage } from '@/lib/i18n';
 import styles from './AccountDialog.module.css';
 
 // "My account": change the username, the password and the user's two defaults (new recipes
 // public or private; copy the tags with someone else's recipe), confirmed with an "are you
 // sure?" box. The old password isn't asked for (the owner's choice: the session already proves
-// who this is).
+// who this is). The admin also gets "Log in as another user" here.
 export default function AccountDialog({ onClose }) {
   const { t } = useLanguage();
   const { user, updateAccount } = useAuth();
@@ -131,6 +132,8 @@ export default function AccountDialog({ onClose }) {
           </button>
         </div>
       </form>
+
+      {user.is_admin && <ImpersonateSection busy={busy} setBusy={setBusy} />}
 
       {confirming && (
         <ConfirmDialog

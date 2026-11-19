@@ -82,11 +82,11 @@ END;
 -- token_hash is the SHA-256 of the login cookie; only the hash is stored, so a leaked
 -- database cannot be used to log in. Logging out deletes the row. Deleting a user
 -- cascades here, which logs them out everywhere at once.
--- acting_as_user_id is admin impersonation: while it is set, the admin's session sees
--- and changes that user's tags and recipes exactly as the user would. It lives on the
--- session so it applies only on the admin's device and ends when the admin taps "Stop".
--- user_id stays the admin, so the backend always knows who is really acting. Deleting
--- the impersonated user sets it back to NULL.
+-- acting_as_user_id is admin impersonation ("log in as" in My account): while it is set,
+-- the session is that user for everything (data, account, defaults) exactly as if they
+-- had logged in. It lives on the session so it applies only on the admin's device and
+-- ends when that device logs out. user_id stays the admin, so the row still says who
+-- really logged in. Deleting the impersonated user sets it back to NULL.
 CREATE TABLE IF NOT EXISTS sessions (
   device_id         TEXT    PRIMARY KEY CHECK (length(device_id) >= 32),
   token_hash        TEXT    NOT NULL UNIQUE CHECK (length(token_hash) = 64),
