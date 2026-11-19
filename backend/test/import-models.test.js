@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:test';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ImportError } from '../src/import/errors.js';
 import { ModelBusyError, ModelUnusableError, QuotaError, VideoRefusedError } from '../src/import/llm.js';
 import {
@@ -42,6 +42,18 @@ const useUpBest = async (userId, count) => {
 };
 const usedBestCount = async (userId) =>
   (await env.DB.prepare('SELECT COUNT(*) AS n FROM llm_requests WHERE user_id = ? AND quota_day = ? AND used_best = 1').bind(userId, today()).first()).n;
+const insertAdmin = async () => {
+  const id = await insertUser('admin');
+  await env.DB.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').bind(id).run();
+  return id;
+};
+// The database never lets the admin row go, so lift that rule to empty the table after a test.
+afterEach(async () => {
+  const { sql } = await env.DB.prepare(`SELECT sql FROM sqlite_master WHERE name = 'users_admin_not_deleted'`).first();
+  await env.DB.prepare('DROP TRIGGER users_admin_not_deleted').run();
+  await env.DB.prepare('DELETE FROM users WHERE is_admin = 1').run();
+  await env.DB.prepare(sql).run();
+});
 const reload = (job) => env.DB.prepare('SELECT * FROM llm_requests WHERE id = ?').bind(job.id).first();
 
 const answering = (...results) => {
@@ -312,6 +324,16 @@ describe('when the user asked for the best model', () => {
     expect(await usedBestCount(userId)).toBe(5);
   });
 
+  it('still uses it for the admin after 5, until its shared count is used up', async () => {
+    const userId = await insertAdmin();
+    await useUpBest(userId, 5);
+    const llm = answering(ANSWER);
+    expect(await run(await bestJob(userId), llm)).toMatchObject({ model: BEST });
+    expect(await usedBestCount(userId)).toBe(6);
+    await markOut(BEST);
+    expect(await run(await bestJob(userId), llm)).toMatchObject({ model: FIRST });
+  });
+
   it('a daily 429 from it marks it out, keeps the use, and the import goes on', async () => {
     const job = await bestJob(await insertUser());
     const llm = answering(daily429(), ANSWER);
@@ -422,6 +444,14 @@ describe('what the API reports and the checks before starting', () => {
     const now = Date.now();
     const { models } = await readModelState(env, userId, now);
     expect(models).toMatchObject({ bestAvailable: false, bestLeftForUser: 0, bestAvailableAt: nextQuotaReset(now) });
+  });
+
+  it('gives the admin no limit of their own, only the shared count', async () => {
+    const userId = await insertAdmin();
+    await useUpBest(userId, 5);
+    expect((await stateFor(userId)).models).toMatchObject({ bestAvailable: true, bestLeftForUser: null, bestAvailableAt: null });
+    await markOut(BEST);
+    expect((await stateFor(userId)).models).toMatchObject({ bestAvailable: false, bestLeftToday: 0 });
   });
 
   it('says the best model is unavailable until the reset when its shared count is used up', async () => {

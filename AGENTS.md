@@ -91,7 +91,8 @@ resolved. One short line each, linking to the README section with the details.
   model wrote a recipe is stored with it.
 - The one choice is the **best model**: slower and more detailed, up to 5 a day per user,
   offered only on "Scan the link again", and used by default, with no choice, for every
-  photo import. Every try that calls it counts toward the 5.
+  photo import. Every try that calls it counts toward the 5. The admin has no 5: they use
+  it until its shared daily quota runs out.
   When it can't be used, the scan or photo import goes on with the usual models by itself,
   with no question.
 - **Share to the app**: on Android, the installed app is in the Share menu. Sharing a

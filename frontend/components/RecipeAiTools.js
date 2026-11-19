@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from './Language';
+import { useAuth } from './Auth';
 import ConfirmDialog from './ConfirmDialog';
 import SubstituteDialog from './SubstituteDialog';
 import { errorMessage } from '@/lib/i18n';
@@ -25,6 +26,7 @@ const hasText = (content) => Boolean(content.name || content.ingredients.length 
 // backend picks the models.
 export default function RecipeAiTools({ recipe, lang, onSaved }) {
   const { t } = useLanguage();
+  const { user } = useAuth();
   const router = useRouter();
   const [useBest, setUseBest] = useState(false);
   const [busy, setBusy] = useState(null); // null | 'translate' | 'nutrition' | 'rescan'
@@ -142,7 +144,7 @@ export default function RecipeAiTools({ recipe, lang, onSaved }) {
           {confirming === 'rescan' && (
             <label className={styles.choice}>
               <input type="checkbox" checked={useBest} onChange={(event) => setUseBest(event.target.checked)} />
-              {t.useBestModel}
+              {user?.is_admin ? t.useBestModelAdmin : t.useBestModel}
             </label>
           )}
         </ConfirmDialog>
