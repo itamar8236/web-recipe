@@ -357,18 +357,17 @@ describe('import endpoints', () => {
       expect((await startImport(cookie)).status).toBe(202);
     });
 
-    it('counts 10 a day including finished and dismissed rows', async () => {
+    it('has no daily cap: finished and dismissed imports never stop a new one', async () => {
       const { cookie, userId } = await signUp();
-      for (let i = 0; i < 9; i++) await insertImport(userId, otherVideo({ status: i % 2 ? 'dismissed' : 'done' }));
+      for (let i = 0; i < 30; i++) await insertImport(userId, otherVideo({ status: i % 2 ? 'dismissed' : 'done' }));
       expect((await startImport(cookie)).status).toBe(202);
-      expect(await errorOf(await startImport(cookie, `https://youtu.be/aaaaaaaaaaa`))).toBe('too_many_imports');
     });
 
-    it('does not count other days or other users', async () => {
+    it('does not count other days or other users toward the running cap', async () => {
       const dana = await signUp('dana');
       const noa = await signUp('noa');
-      for (let i = 0; i < 10; i++) await insertImport(noa.userId, otherVideo({ status: 'done' }));
-      for (let i = 0; i < 10; i++) await insertImport(dana.userId, otherVideo({ status: 'done', quota_day: '2020-01-01' }));
+      for (let i = 0; i < 3; i++) await insertImport(noa.userId, otherVideo());
+      for (let i = 0; i < 3; i++) await insertImport(dana.userId, otherVideo({ quota_day: '2020-01-01' }));
       expect((await startImport(dana.cookie)).status).toBe(202);
     });
 
@@ -704,10 +703,10 @@ describe('import endpoints', () => {
       expect((await reload(row)).status).toBe('failed');
     });
 
-    it('is a new try: it counts toward the caps', async () => {
+    it('is a new try: it counts toward the running cap', async () => {
       const { cookie, userId } = await signUp();
       const row = await failedImport(userId);
-      for (let i = 0; i < 9; i++) await insertImport(userId, otherVideo({ status: 'done' }));
+      for (let i = 0; i < 3; i++) await insertImport(userId, otherVideo());
       expect(await errorOf(await retry(cookie, row.id))).toBe('too_many_imports');
       expect((await reload(row)).status).toBe('failed');
     });
@@ -850,10 +849,10 @@ describe('import endpoints', () => {
       expect(await errorOf(await rerun(cookie, recipe.id))).toBe('not_rerunnable');
     });
 
-    it('counts against the daily caps', async () => {
+    it('counts against the running cap', async () => {
       const { cookie, userId } = await signUp();
       const recipe = await insertRecipe(userId);
-      for (let i = 0; i < 10; i++) await insertImport(userId, otherVideo({ status: 'done' }));
+      for (let i = 0; i < 3; i++) await insertImport(userId, otherVideo());
       expect(await errorOf(await rerun(cookie, recipe.id))).toBe('too_many_imports');
     });
   });

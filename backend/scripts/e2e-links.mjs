@@ -11,8 +11,7 @@
 //
 // A links file has one link per line; other lines are ignored. Imports run on a test
 // account made for this script, whose recipes and cards are cleared at the start, so every
-// run begins clean. More than 10 links a day need the daily cap raised for the session:
-//   npm run dev -- --var IMPORT_DAILY_LIMIT:200
+// run begins clean.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 

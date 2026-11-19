@@ -172,9 +172,9 @@ except a photo's, which is the picture itself.
 - POST checks in this order: body, link, a running duplicate, `already_imported`
   (`recipes.source_url`), caps, model state (only every import model being out stops it), then insert
   and start.
-- Caps, counted from today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running) and
-  `IMPORT_DAILY_LIMIT` (10 a day) count import rows, so every Retry and re-scan too, but not
-  the AI tools' requests. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`, and
+- Cap, counted from today's `quota_day`: `IMPORT_MAX_RUNNING` (3 running at once) counts
+  import rows, so every Retry and re-scan too, but not the AI tools' requests. There is no
+  daily count of imports: only the models' daily limits stop them. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`, and
   is the only per-user limit on a model.
 - A Retry is a **new row**: it copies the failed row's link, title and model choice, starts
   over from the first stage in its own Workflow, and the failed row becomes `dismissed`.
