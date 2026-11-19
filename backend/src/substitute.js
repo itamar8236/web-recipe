@@ -80,8 +80,7 @@ async function substitute(request, env, userId, llm) {
   const ingredient = recipe.ingredients[index];
   if (ingredient === undefined) return fail(400, 'invalid_request');
 
-  // The prompt holds the user's own text, so llm.js must not log it.
-  const llmRequest = { prompt: buildPrompt(recipe, ingredient, lang), schema: SCHEMA, logPrompt: false };
+  const llmRequest = { prompt: buildPrompt(recipe, ingredient, lang), schema: SCHEMA };
   const job = await insertRow(env, userId, recipeId, Date.now(), 'substitution');
   let model = null;
   try {

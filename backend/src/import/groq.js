@@ -27,9 +27,9 @@ function parseOutput(text) {
 
 // Sends one text request and returns the answer as parsed JSON. Same contract as
 // llm.js's callModel: throws QuotaError, ModelBusyError, ModelUnusableError or ImportError.
-export async function callFallbackModel({ env, model, prompt, schema, logPrompt = true }) {
+export async function callFallbackModel({ env, model, prompt, schema }) {
   if (!env.GROQ_API_KEY) throw new ImportError('llm_error', { detail: 'GROQ_API_KEY is not set' });
-  console.log(`LLM call: model=${model} (fallback) video=none\n${logPrompt ? prompt : '(prompt not logged: user text)'}`);
+  console.log(`LLM call: model=${model} (fallback) video=none\n${prompt}`);
 
   let response;
   try {

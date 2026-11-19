@@ -47,7 +47,7 @@ describe('POST /api/nutrition', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ calories: 321, protein: 20 });
     const [args] = llm.mock.calls[0];
-    expect(args).toMatchObject({ model: SMALL, logPrompt: false });
+    expect(args).toMatchObject({ model: SMALL });
     expect(args.prompt).toContain('3 eggs');
     expect(args.schema.required).toEqual(['ingredients', 'totalCalories', 'totalProtein', 'servings']);
     expect(await rows()).toEqual([

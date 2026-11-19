@@ -95,8 +95,7 @@ async function translate(request, env, userId, llm) {
   if (recipeId !== null && !(await recipeBelongsToUser(env, userId, recipeId))) return fail(404, 'not_found');
 
   const to = body.from === 'en' ? 'he' : 'en';
-  // The prompt holds the user's own text, so llm.js must not log it.
-  const llmRequest = { prompt: buildPrompt(body.from, to, source.value), schema: SCHEMA, logPrompt: false };
+  const llmRequest = { prompt: buildPrompt(body.from, to, source.value), schema: SCHEMA };
   const job = await insertRow(env, userId, recipeId, Date.now());
   // Kept even when the answer turns out unusable, to know which model wrote it.
   let model = null;
