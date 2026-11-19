@@ -11,7 +11,7 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 Built so far: the recipe browsing UI (tags, recipes, favorites, English/Hebrew, manual
 add/edit/delete, calories and protein per serving), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, editing your own username,
-password and defaults, browsing and copying other users' public recipes, the tags/recipes API, so a
+password and defaults, browsing and copying other users' public recipes, sorting both lists, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
 a recipe from a YouTube, Facebook or Instagram link, from any public recipe web page, or
 from a photo of a written recipe, in the background with a Cloudflare Workflow, plus three AI tools on the edit form (translate a
@@ -119,6 +119,9 @@ resolved. One short line each, linking to the README section with the details.
   recipes. They show in a **random order**, a few at a time, with more loading as the
   user scrolls. Each shows **who saved it and its tags**, and one tap saves an **identical
   copy** as the user's own recipe (then theirs to edit; the original never changes).
+- **Sorting**: both lists keep their usual order (My recipes newest first, Browse random)
+  until the user picks another in a small dropdown beside Search: newest or oldest first,
+  most protein, most calories or fewest calories per serving.
 - **Two defaults per user**, in "My account", both on for every old and new user: **new
   recipes are public**, and **a copy from Browse brings the recipe's tags** (as the
   user's own tags).
@@ -214,7 +217,7 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 | Task           | `backend/`                                   | `frontend/`       |
 |----------------|----------------------------------------------|-------------------|
 | Install        | `npm install`                                | `npm install`     |
-| Dev server     | `npm run dev` (wrangler on :8787 with the local DB, serving `frontend/out`: build the frontend first) | `npm run dev` (:3000) |
+| Dev server     | `npm run dev` (wrangler on :8787 with the local DB, serving `frontend/out`: build the frontend first). Agents: `npx wrangler dev --port <8788-8799>` | `npm run dev` (:3000). Agents: `npm run dev -- -p <3001-3009>` |
 | Tests          | `npm test` (Workers runtime, throwaway local DB) | `npm test`        |
 | Lint           | (planned)                                    | `npm run lint`    |
 | Build          | n/a                                          | `npm run build` → `out/` |
@@ -236,7 +239,9 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
   (`backend/README.md` → Links, Web pages). No proxies, scraping services, logins or
   CAPTCHA solvers.
 - Add an API endpoint that skips the login check (only sign-up, login and logout are public).
-- Run `npm run deploy` or `wrangler deploy`. Run the app only locally (`npm run dev`);
+- Start a server on :8787 or :3000: they're the owner's, for testing PRs. Agents use
+  8788-8799 and 3001-3009 (`local-dev` skill → Ports).
+- Run `npm run deploy` or `wrangler deploy`. Run the app only locally (`wrangler dev`);
   production changes only when the owner merges a PR into `main`.
 - Add a paid service or anything outside the free tiers above.
 
