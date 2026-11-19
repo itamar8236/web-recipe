@@ -11,7 +11,7 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 Built so far: the recipe browsing UI (tags, recipes, favorites, English/Hebrew, manual
 add/edit/delete, calories and protein per serving), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, editing your own username,
-password and defaults, browsing and copying other users' public recipes, sorting both lists, the tags/recipes API, so a
+password and defaults, the admin logging in as any user, browsing and copying other users' public recipes, sorting both lists, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
 a recipe from a YouTube, Facebook or Instagram link, from any public recipe web page, or
 from a photo of a written recipe, in the background with a Cloudflare Workflow, plus three AI tools on the edit form (translate a
@@ -115,6 +115,10 @@ resolved. One short line each, linking to the README section with the details.
   remembered: after logging in once, a user never sees the login page again on that device
   unless they log out. Changing their own username or password keeps them logged in on
   every device.
+- **Admin login as a user**: the one admin (set in the database, never by sign-up) can,
+  in "My account", pick any other username and log in as that user with no password. The
+  device is then that user for everything (recipes, Browse, imports, "My account"), until
+  it logs out; the admin then logs in again as themself.
 - **Browse**: a logged-in user can switch from "My recipes" to other users' public
   recipes. They show in a **random order**, a few at a time, with more loading as the
   user scrolls. Each shows **who saved it and its tags**, and one tap saves an **identical
