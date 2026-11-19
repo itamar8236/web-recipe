@@ -260,11 +260,13 @@ export async function deleteRecipe(id) {
 // A number for a new random order of the feed (the backend's order depends on it).
 export const newBrowseSeed = () => 1 + Math.floor(Math.random() * 1000000);
 
-// One page of the feed, in the order `seed` gives. `after` is the `next` of the page
-// before (null for the first). Returns { recipes, next }, `next` null on the last page.
-export async function getBrowse(seed, after = null) {
+// One page of the feed, in the order `sort` gives (one of SORTS in lib/sort.js, or
+// 'random': the order `seed` gives). `after` is the `next` of the page before (null for
+// the first). Returns { recipes, next }, `next` null on the last page.
+export async function getBrowse(seed, after = null, sort = 'random') {
   if (guest) throw new ApiError(403, 'browse_needs_login');
-  return dataRequest(`/api/browse?seed=${seed}${after ? `&after=${after}` : ''}`);
+  const order = sort === 'random' ? `seed=${seed}` : `sort=${sort}`;
+  return dataRequest(`/api/browse?${order}${after ? `&after=${after}` : ''}`);
 }
 
 // Saves the user's own copy of a browsed recipe. Returns the new recipe.

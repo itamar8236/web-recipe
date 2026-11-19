@@ -5,6 +5,13 @@
   gap: 14px;
 }
 
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .title {
   font-size: 23px;
   overflow-wrap: anywhere;

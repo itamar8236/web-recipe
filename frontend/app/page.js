@@ -8,10 +8,12 @@ import ImportCards, { useImports } from '@/components/ImportCards';
 import ImportDialog from '@/components/ImportDialog';
 import RecipeCard from '@/components/RecipeCard';
 import SearchBox from '@/components/SearchBox';
+import SortMenu from '@/components/SortMenu';
 import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
 import { errorMessage } from '@/lib/i18n';
 import { matchesSearch } from '@/lib/search';
+import { sortRecipes } from '@/lib/sort';
 import * as api from '@/lib/api';
 import styles from './page.module.css';
 
@@ -25,6 +27,7 @@ export default function HomePage() {
   const [selected, setSelected] = useState('all');
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState('newest');
   const [importOpen, setImportOpen] = useState(false);
   // Importing needs an account, so a guest goes straight to the manual form.
   const canImport = useAuth().status === 'user';
@@ -62,7 +65,7 @@ export default function HomePage() {
   if (!tags) return <p>{t.loading}</p>;
 
   const tagName = (id) => tags.find((tag) => tag.id === id)?.name;
-  const visible = recipes.filter((r) => {
+  const visible = sortRecipes(recipes, sort).filter((r) => {
     if (favoritesOnly && !r.favorite) return false;
     if (!matchesSearch(r, query, r.tagIds.map(tagName).filter(Boolean))) return false;
     if (selected === 'all') return true;
@@ -107,7 +110,10 @@ export default function HomePage() {
     <ModeTabs current="mine" show={canImport}>
     <div className={styles.layout}>
       <aside className={styles.side}>
-        <SearchBox value={query} onChange={setQuery} />
+        <div className={styles.tools}>
+          <SearchBox value={query} onChange={setQuery} />
+          <SortMenu value={sort} onChange={setSort} />
+        </div>
         <TagBar
           tags={tags}
           recipes={recipes}

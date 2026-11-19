@@ -30,7 +30,7 @@ frontend/
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools, SubstituteDialog
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools, SubstituteDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -39,6 +39,8 @@ frontend/
 │   ├── recipeForm.js      # Edit form text <-> api lines
 │   ├── recipeForm.test.js # Vitest tests for recipeForm.js
 │   ├── search.js          # matchesSearch(): recipe name/ingredient/tag search
+│   ├── sort.js            # SORTS, sortRecipes(): the orders the lists can be sorted in
+│   ├── sort.test.js       # Vitest tests for sort.js
 │   ├── photo.js           # preparePhoto(): a chosen picture, ready to send
 │   ├── photo.test.js      # Vitest tests for photo.js
 │   ├── share.js           # findSharedLink(): the link in what Android shared
@@ -106,6 +108,10 @@ frontend/
    name, ingredients (both languages) or tag names (every typed word must match),
    combined with the selected tag and "Favorites". It runs in the browser on the loaded
    recipes.
+   Beside Search, a small **sort** dropdown (`components/SortMenu`, a native `<select>`)
+   shows "Newest first", the usual order; it can switch to oldest first, most protein,
+   most calories or fewest calories (`lib/sort.js`, in the browser; a recipe with no
+   calories or protein goes last). The choice is not remembered.
 3. **Add recipe** (`components/ImportDialog`, a popup, no route): "+ Add recipe" opens it
    for a logged-in user. A guest goes straight to the manual form, since importing needs
    an account. One focused link field ("A video, a post or a recipe page"); it asks only
@@ -135,7 +141,7 @@ frontend/
      A photo's card is titled "A photo" until the recipe has a name, and says "Reading the
      photo..." at every stage.
    - Ready: "Recipe ready: <name>" with Open (which also dismisses) and ×. Needed because
-     the recipe list is oldest-first.
+     the list may be sorted so the new recipe isn't on top.
    - Failed: red, the message, Retry when it can help, ×. Retry starts a new import (a new
      card id) and the failed card is replaced by it.
    - `useImports` polls every 4 s only while something is running and the page is visible,
@@ -200,6 +206,9 @@ frontend/
      itself when the end of the list comes within 600px of the screen
      (`IntersectionObserver`); the "Show more" button at the end does the same by hand.
      Each visit gets a new order. The end says "You have seen them all."
+   - The same sort dropdown as on Home, beside Search, starts on "Random order" and offers
+     the same five orders; picking one reloads the list from the top in that order (the
+     backend sorts, since the list comes a page at a time).
    - The same "Search" button as on Home sits above the title and searches name,
      ingredients and tags the same way, on the recipes loaded so far. While few match,
      the end of the list stays near the screen, so more pages keep loading by themselves
