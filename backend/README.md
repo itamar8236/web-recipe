@@ -340,7 +340,12 @@ answers with is used only on Google's own host.
 row, and then does the duplicate checks a normal link gets before starting: if the user
 already has that recipe the card fails with `already_imported`, and if the same post is
 already being imported (the unique index) the newer row dismisses itself. A share link that
-leads to something that isn't a video or post fails with `link_unsupported`.
+leads to something that isn't a video or post fails with `link_unsupported`. From some
+networks (seen from Cloudflare's), Facebook sends a share link of a public video to its
+login page instead; when that page's `next` parameter is the video's link, the import reads
+the video from its own page (`/watch/?v=<id>`, built from the parsed id) and goes on.
+Otherwise it fails with `login_required`, and `error_detail` keeps the login page's full
+address, query included, to show what Facebook sent.
 
 ### Web pages
 

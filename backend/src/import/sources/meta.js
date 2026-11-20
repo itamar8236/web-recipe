@@ -39,12 +39,17 @@ async function get(url) {
 // Gets a page, following redirects by hand so that every hop is checked: it must stay on
 // the site's own hosts (`isSiteHost`), and a hop to a login page means the post isn't
 // public. Returns the page and the URL it ended on, which for a share link is the first
-// place that says which post it is.
+// place that says which post it is. A login_required error keeps the login page's URL
+// (`loginUrl`), which may say what was asked for.
 export async function fetchPage(startUrl, isSiteHost) {
   let url = new URL(startUrl);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (url.protocol !== 'https:' || !isSiteHost(url.hostname)) throw blocked(`Redirected off the site, to ${url.hostname}`);
-    if (LOGIN_PATH.test(url.pathname)) throw new ImportError('login_required', { detail: `Redirected to ${url.hostname}${url.pathname}` });
+    if (LOGIN_PATH.test(url.pathname)) {
+      const error = new ImportError('login_required', { detail: `Redirected to ${url.hostname}${url.pathname}${url.search}` });
+      error.loginUrl = url;
+      throw error;
+    }
 
     const response = await get(url);
     const location = response.headers.get('location');

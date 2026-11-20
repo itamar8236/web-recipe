@@ -210,6 +210,29 @@ describe('Facebook adapter: fetchPost', () => {
     expect(requested()).toEqual([share, reel]);
   });
 
+  it('reads the video from the login page a share link was sent to, when it names the video', async () => {
+    const share = 'https://www.facebook.com/share/r/1HDyJfvnoW/';
+    const reel = `https://www.facebook.com/reel/${FB_ID}/?rdid=abc`;
+    const login = `https://www.facebook.com/login/?next=${encodeURIComponent(reel)}`;
+    stubSite({ [share]: redirect(login), [FB_WATCH]: html(facebookWatchPage()) });
+    const post = await facebook.fetchPost('share/r/1HDyJfvnoW');
+    expect(post).toMatchObject({ sourceId: FB_ID, sourceUrl: FB_WATCH });
+    expect(requested()).toEqual([share, FB_WATCH]);
+  });
+
+  it.each([
+    ['no next', 'https://www.facebook.com/login/'],
+    ['a next that is the share link itself', `https://www.facebook.com/login/?next=${encodeURIComponent('https://www.facebook.com/share/r/1HDyJfvnoW/')}`],
+    ['a next off Facebook', `https://www.facebook.com/login/?next=${encodeURIComponent(`https://evil.example/reel/${FB_ID}/`)}`],
+    ['a next that is not a link', 'https://www.facebook.com/login/?next=%%%'],
+  ])('says login_required for a share link sent to a login page with %s, keeping its address', async (_, login) => {
+    const share = 'https://www.facebook.com/share/r/1HDyJfvnoW/';
+    stubSite({ [share]: redirect(login) });
+    const error = await failure(facebook.fetchPost('share/r/1HDyJfvnoW'));
+    expect(error).toMatchObject({ code: 'login_required', retryable: false, detail: `Redirected to ${login.slice('https://'.length)}` });
+    expect(requested()).toEqual([share]);
+  });
+
   it('follows a fb.watch link, which starts on its own host', async () => {
     const reel = `https://www.facebook.com/watch/?v=${FB_ID}`;
     stubSite({ 'https://fb.watch/abcdef/': redirect(reel), [reel]: html(facebookWatchPage()) });
