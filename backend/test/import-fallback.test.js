@@ -99,6 +99,13 @@ describe('the fallback model in the model policy', () => {
     expect(fallbackLlm).not.toHaveBeenCalled();
   });
 
+  it('is never given a page the model must open itself: it has no tool to read it', async () => {
+    const fallbackLlm = answering(ANSWER);
+    const request = { pageUrl: 'https://recipes.example.co.il/salad/' };
+    await expect(ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm }, request)).rejects.toBeInstanceOf(ModelBusyError);
+    expect(fallbackLlm).not.toHaveBeenCalled();
+  });
+
   it('reports the first busy model when the fallback is busy too', async () => {
     const error = await ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm: answering(new ModelBusyError('Groq 503')) }).catch((e) => e);
     expect(error).toBeInstanceOf(ModelBusyError);

@@ -37,8 +37,9 @@ resolved. One short line each, linking to the README section with the details.
   model, 500 on the small one (`backend/README.md` → Import from a link). Accepted.
 - A few rare import edge cases are left as they are (`backend/README.md` → Import from a
   link → Known small gaps).
-- Web pages are read as plain text, as an anonymous visitor: a site that blocks bots or
-  builds its page only in JavaScript fails with `source_blocked` or `no_recipe`
+- Web pages are read as plain text, as an anonymous visitor: a site that builds its page
+  only in JavaScript fails with `no_recipe`, and one that blocks the Worker (403/429) is
+  opened by Google instead, failing with `source_blocked` only when Google is blocked too
   (`backend/README.md` → Web pages). Accepted.
 - Facebook and Instagram are read as an anonymous visitor, so only public posts work, and
   Meta may block or change this at any time (`backend/README.md` → Facebook and Instagram).
@@ -70,7 +71,8 @@ resolved. One short line each, linking to the README section with the details.
   the user leaves the app, and **saves the recipe by itself**, with no tags. The user can
   edit or delete it afterwards. Supported now: **YouTube**, **Facebook** (videos and reels)
   and **Instagram** (reels, and photo posts by their caption), public posts only, and any
-  other public **web page** with a recipe (a recipe site or blog, read as text). Only
+  other public **web page** with a recipe (a recipe site or blog, read as text; a page
+  that blocks the Worker is opened by Google's URL tool instead). Only
   short videos are sent to the LLM (a longer one still works when its text holds the
   recipe); if a video can't be fetched, the text alone is used. Other platforms (TikTok,
   ...) may come later; don't build for them until asked.
@@ -190,7 +192,7 @@ One Cloudflare Worker  (backend/)
 │                                               ├──► YouTube Data API (video details)
 │                                               ├──► Facebook / Instagram (public post page, video file)
 │                                               ├──► Any other public web page (its text)
-│                                               ├──► Google LLMs (text + video or photo → recipe)
+│                                               ├──► Google LLMs (text + video or photo, or a blocked page's address → recipe)
 │                                               └──► Groq (text-only fallback)
 └── /*       → static files built from frontend/ (frontend/out)
 ```

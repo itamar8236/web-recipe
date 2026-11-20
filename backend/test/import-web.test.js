@@ -124,12 +124,25 @@ describe('reading a web page', () => {
     [404, 'video_unavailable', false],
     [410, 'video_unavailable', false],
     [401, 'login_required', false],
-    [403, 'source_blocked', true],
     [503, 'source_blocked', true],
     [400, 'source_blocked', false],
   ])('turns a %s answer into %s', async (status, code, retryable) => {
     stubSite({ [PAGE_URL]: page('nope', {}, status) });
     expect(await failure(web.fetchPost(PAGE_URL))).toMatchObject({ code, retryable });
+  });
+
+  it.each([403, 429])('leaves a page that answers %s for the model to open itself, at the address it ended at', async (status) => {
+    const moved = 'https://www.example.co.il/salad/';
+    stubSite({ [PAGE_URL]: redirect(moved), [moved]: page('Access Denied', {}, status) });
+    expect(await web.fetchPost(PAGE_URL)).toEqual({
+      sourceId: PAGE_URL,
+      sourceUrl: PAGE_URL,
+      title: 'www.example.co.il',
+      text: '',
+      transcript: '',
+      video: null,
+      pageUrl: moved,
+    });
   });
 
   it('refuses a link to a file that is not a page', async () => {
@@ -219,6 +232,61 @@ describe('the Workflow, end to end, for a web page', () => {
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'failed', error: 'no_recipe' });
     expect(requested()).toEqual([PAGE_URL]);
+  });
+
+  it('has the model open a page that blocks the Worker, with its URL tool and nothing from the page', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url) === PAGE_URL) return page('Access Denied', {}, 403);
+        return new Response(
+          JSON.stringify({
+            status: 'completed',
+            steps: [
+              { type: 'url_context_result', result: [{ url: PAGE_URL, status: 'success' }] },
+              { type: 'model_output', content: [{ type: 'text', text: JSON.stringify(ONE) }] },
+            ],
+          }),
+        );
+      }),
+    );
+    const row = await webImport();
+    await runWorkflow(row);
+
+    const after = await reload(row);
+    expect(after).toMatchObject({ status: 'done', title: 'recipes.example.co.il', error: null, model: FIRST });
+    const recipe = await env.DB.prepare('SELECT * FROM recipes WHERE id = ?').bind(after.recipe_id).first();
+    expect(recipe).toMatchObject({ platform: 'web', source_url: PAGE_URL, name_en: 'Edamame salad' });
+
+    const [, modelCall] = fetch.mock.calls;
+    const sent = JSON.parse(modelCall[1].body);
+    expect(sent.tools).toEqual([{ type: 'url_context' }]);
+    expect(sent.input).toHaveLength(1);
+    expect(sent.input[0].text).toContain(PAGE_URL);
+    expect(sent.input[0].text).not.toContain('Access Denied');
+  });
+
+  it('fails with source_blocked when the model cannot open the page either', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url) => {
+        if (String(url) === PAGE_URL) return page('Access Denied', {}, 403);
+        return new Response(
+          JSON.stringify({
+            status: 'completed',
+            steps: [
+              { type: 'url_context_result', result: [{ url: PAGE_URL, status: 'error' }] },
+              { type: 'model_output', content: [{ type: 'text', text: '{"status":"none"}' }] },
+            ],
+          }),
+        );
+      }),
+    );
+    const row = await webImport();
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'failed', error: 'source_blocked' });
+    // Every model would open it the same way, so only one is asked.
+    expect(requested().filter((url) => url.endsWith('/interactions'))).toHaveLength(1);
   });
 
   it('fails with video_unavailable, calling no model, for a page that does not exist', async () => {

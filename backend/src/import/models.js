@@ -227,11 +227,11 @@ async function callBest(job, deps, request) {
 }
 
 // The fallback model, from another provider, for when every model in a list is busy or
-// out. It reads text only, so a request with a video or a photo never reaches it, and it is off until
+// out. It reads text only, so a request with a video, a photo or a page to open never reaches it, and it is off until
 // its key is set (GROQ_API_KEY). Returns null when it can't answer either.
 async function callFallback({ env, fallbackLlm = callFallbackModel }, request) {
   const model = env.LLM_FALLBACK_MODEL;
-  if (!model || !env.GROQ_API_KEY || request.videoUrl || request.imageUrl) return null;
+  if (!model || !env.GROQ_API_KEY || request.videoUrl || request.imageUrl || request.pageUrl) return null;
   try {
     const fallback = await callUnlessOut({ env, llm: fallbackLlm, model, request });
     return fallback.out ? null : { output: fallback.output, model };
