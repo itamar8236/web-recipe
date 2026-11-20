@@ -63,12 +63,37 @@ function readPage(html, id) {
   };
 }
 
+// The video a login page was asked for in its `next` parameter, or null.
+function videoIdFromLogin(loginUrl) {
+  try {
+    const next = new URL(loginUrl.searchParams.get('next'));
+    return next.protocol === 'https:' && isHost(next.hostname) ? videoIdFrom(next) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Follows a share link to its video's page. From some networks Facebook sends a share
+// link to its login page instead, while the video itself is public; when that page names
+// the video, the video's own page is read. Only a URL built from the parsed id is fetched.
+async function fetchSharePage(sharePath) {
+  try {
+    const { url, html } = await fetchPage(shareUrl(sharePath), isHost);
+    // A share link can lead to a photo, a profile or anything else.
+    const id = videoIdFrom(url);
+    if (!id) throw new ImportError('link_unsupported', { detail: `The share link led to ${url.pathname}` });
+    return { id, html };
+  } catch (error) {
+    const id = error.loginUrl ? videoIdFromLogin(error.loginUrl) : null;
+    if (!id) throw error;
+    console.log(`Facebook ${sharePath}: sent to the login page, reading video ${id} from its own page`);
+    return { id, html: (await fetchPage(watchUrl(id), isHost)).html };
+  }
+}
+
 async function fetchPost(sourceId) {
   const isShare = !VIDEO_ID.test(sourceId);
-  const { url, html } = await fetchPage(isShare ? shareUrl(sourceId) : watchUrl(sourceId), isHost);
-  const id = isShare ? videoIdFrom(url) : sourceId;
-  // A share link can lead to a photo, a profile or anything else.
-  if (!id) throw new ImportError('link_unsupported', { detail: `The share link led to ${url.pathname}` });
+  const { id, html } = isShare ? await fetchSharePage(sourceId) : { id: sourceId, ...(await fetchPage(watchUrl(sourceId), isHost)) };
 
   const page = readPage(html, id);
   if (!page) {

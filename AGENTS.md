@@ -42,7 +42,8 @@ resolved. One short line each, linking to the README section with the details.
   (`backend/README.md` → Web pages). Accepted.
 - Facebook and Instagram are read as an anonymous visitor, so only public posts work, and
   Meta may block or change this at any time (`backend/README.md` → Facebook and Instagram).
-  Not yet checked from Cloudflare's network. Facebook photo and text posts aren't supported.
+  From Cloudflare's network a Facebook share link may be sent to the login page; that works
+  only when the login page names the video. Facebook photo and text posts aren't supported.
 - Browse shows a recipe the user already saved, and other users' public copies of one
   recipe, since a copy keeps no link to its original (`backend/README.md` → Browse API). Accepted.
 - Sharing to the app returns to the source app only when the app wasn't already open;
