@@ -2,7 +2,8 @@
 // YouTube, Facebook or Instagram never gets here. Unlike the other adapters, the page has
 // no id to rebuild a link from, so the pasted link itself is fetched, which is why every
 // hop is checked by `isFetchableUrl` (backend/README.md → Web pages). Everything that
-// comes back is untrusted data, read as text only; nothing on the page is followed.
+// comes back is untrusted data, read as text only; nothing on the page is followed. A page
+// that turns the Worker away is left for the model to open with Google's URL tool.
 
 import { ImportError } from '../errors.js';
 import { BROWSER_HEADERS, decodeEntities } from './meta.js';
@@ -19,6 +20,9 @@ const LOGIN_PATH = /(^|\/)(login|log-in|signin|sign-in|wp-login\.php)(\/|$)/i;
 // Names that only make sense inside a private network, never on the public web.
 const PRIVATE_SUFFIX = /(^|\.)(localhost|local|internal|intranet|lan|home|corp|home\.arpa|test|invalid|example)$/i;
 const TRACKING_PARAM = /^(utm_.+|fbclid|gclid|dclid|msclkid|igsh|igshid|mc_cid|mc_eid)$/i;
+// How a site's bot protection turns the Worker away: such sites often block Cloudflare's
+// addresses, not Google's, so the model is asked to open the page itself.
+const BLOCKED_STATUSES = [403, 429];
 
 const blocked = (detail, retryable = false) => new ImportError('source_blocked', { retryable, detail });
 
@@ -98,13 +102,17 @@ async function fetchWebPage(startUrl) {
       url = new URL(location, url);
       continue;
     }
+    if (BLOCKED_STATUSES.includes(response.status)) {
+      await response.body?.cancel();
+      console.log(`${url.hostname} answered ${response.status}: the model will open the page itself`);
+      return { url, blocked: true };
+    }
     if (!response.ok) {
       await response.body?.cancel();
       if (response.status === 404 || response.status === 410) throw new ImportError('video_unavailable', { detail: `${url.hostname} answered ${response.status}` });
       if (response.status === 401) throw new ImportError('login_required', { detail: `${url.hostname} answered 401` });
-      // 403 and 429 are how a block or a rate limit looks, and a 5xx may pass.
-      const mayPass = response.status === 403 || response.status === 429 || response.status >= 500;
-      throw blocked(`${url.hostname} answered ${response.status}`, mayPass);
+      // A 5xx may pass.
+      throw blocked(`${url.hostname} answered ${response.status}`, response.status >= 500);
     }
     const type = (response.headers.get('content-type') ?? 'text/html').split(';')[0].trim().toLowerCase();
     if (!PAGE_TYPES.includes(type)) {
@@ -208,7 +216,10 @@ function pageTitle(html, url) {
 }
 
 async function fetchPost(sourceId) {
-  const { url, html, isHtml } = await fetchWebPage(sourceId);
+  const { url, html, isHtml, blocked: isBlocked } = await fetchWebPage(sourceId);
+  // Nothing of the page is had, so the model gets its address (the last hop, which passed
+  // isFetchableUrl) and opens it with Google's URL tool (stages.js).
+  if (isBlocked) return { sourceId, sourceUrl: sourceId, title: url.hostname, text: '', transcript: '', video: null, pageUrl: url.href };
   // The structured block comes first because it is the cleanest, but the page goes too:
   // sites often leave a part out of it, such as a topping's ingredients.
   const structured = isHtml ? structuredRecipe(html) : null;

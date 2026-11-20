@@ -365,12 +365,23 @@ There is no id to rebuild a link from, so the pasted link is fetched, and that i
   are not part of the recipe. A page with no recipe ends as `no_recipe`, one with several
   as `multiple_recipes`, and one with under 80 characters of text as `no_recipe` with no
   model call.
+- **A page that turns the Worker away (403 or 429)** is opened by the model itself, with
+  Google's URL context tool (`url_context`): many sites' bot protection blocks Cloudflare's
+  addresses but not Google's. The Worker stops there, reads nothing of the page, and sends
+  the model only its address (the last redirect hop, which passed `isFetchableUrl`); the
+  card's title is the host name. The request goes through the usual model order, but
+  never to the fallback model, which has no such tool. Unless Google reports that it
+  opened the page, the answer is not used and the import ends as `source_blocked`, with no
+  retry and no other model, since any of them would open it the same way. Found with
+  makorrishon.co.il (behind Akamai, 403 from Cloudflare only); tested on 2026-11-20 on
+  `gemini-3.6-flash`, also with the answer schema. A `share.google` link can't be opened
+  this way, so the Worker's own redirects lead the model to the real page.
 - Failures: 404 or 410 is `video_unavailable`; 401, or a redirect to a login path, is
-  `login_required`; 403, 429, 5xx and a site that can't be reached (also a domain that
-  doesn't exist) are `source_blocked`, retried by the Workflow; any other 4xx is
-  `source_blocked` with no retry.
-- A site that builds its page only in JavaScript, or blocks requests from servers, can't be
-  read (`no_recipe` or `source_blocked`). "Scan the link again" reads the page again.
+  `login_required`; 5xx and a site that can't be reached (also a domain that doesn't
+  exist) are `source_blocked`, retried by the Workflow; any other 4xx is `source_blocked`
+  with no retry.
+- A site that builds its page only in JavaScript, or blocks Google too, can't be read
+  (`no_recipe` or `source_blocked`). "Scan the link again" reads the page again.
 - Tested on 2026-11-17 on four Hebrew recipe sites (kerenagam.co.il, israelhayom.co.il,
   mako.co.il, boxfromjerus.co.il): all four gave the full recipe on `gemini-3.6-flash`.
 
@@ -506,7 +517,7 @@ needs no code change:
   10 s, with recipes as complete. So a 524 is treated like a busy model: the next model is
   tried at once, instead of retrying the slow one, but its request stays counted, since
   Google ran it.
-- **The fallback model** can't watch a video or read a photo, so a request with one never reaches it. It
+- **The fallback model** can't watch a video, read a photo or open a web page, so a request with one never reaches it. It
   is off until `GROQ_API_KEY` is set. Groq's free limit when checked was 1,000 requests and
   200,000 tokens a day, 8,000 tokens a minute.
 - **A model that can't run** (`ModelUnusableError`): Google or Groq rejected the request
@@ -555,7 +566,8 @@ in `error_detail` (never sent to the browser).
 |---|---|---|---|
 | Removed or private, or the video couldn't be used and nothing else had the recipe; a web page that answered 404/410 | `video_unavailable` | no | no |
 | The site redirected to a login page, or shows the post only after a login | `login_required` | no | yes |
-| The site answered 403/429/5xx, or sent a page with none of the known parts | `source_blocked` | yes, 3 tries | yes |
+| The site answered 5xx (or 403/429 for Facebook and Instagram), or sent a page with none of the known parts | `source_blocked` | yes, 3 tries | yes |
+| A web page turned away the Worker (403/429) and Google couldn't open it either | `source_blocked` | no | yes |
 | A share link led to a recipe the user already has | `already_imported` | no | no |
 | A share link led to something that isn't a video or post; a web page redirected to a refused address, or isn't a page (a PDF, an image, over 5 MB) | `link_unsupported` | no | no |
 | Private or unlisted, description not enough | `video_private` | no | no |

@@ -63,6 +63,15 @@ describe('callModel: the request', () => {
     expect(sentBody().input).toEqual([{ type: 'text', text: 'the prompt' }]);
   });
 
+  it('gives the model its URL tool only for a page it must read itself', async () => {
+    const opened = interaction('{"status":"none"}');
+    opened.steps.unshift({ type: 'url_context_result', result: [{ url: 'https://recipes.example.co.il/salad/', status: 'success' }] });
+    respond(opened);
+    await call({ pageUrl: 'https://recipes.example.co.il/salad/' });
+    expect(sentBody().tools).toEqual([{ type: 'url_context' }]);
+    expect(sentBody().input).toEqual([{ type: 'text', text: 'the prompt' }]);
+  });
+
   it.each([[undefined], ['']])('sends nothing when the key is %j', async (key) => {
     respond(interaction('{"status":"none"}'));
     const error = await callModel({ env: { ...env, GEMINI_API_KEY: key }, model: 'm', prompt: 'p', schema: SCHEMA }).catch((e) => e);
@@ -101,6 +110,36 @@ describe('callModel: reading the answer', () => {
   it('returns the parsed JSON from the model_output step, skipping thoughts', async () => {
     respond(interaction('{"status":"one","language":"he"}'));
     expect(await call()).toEqual({ status: 'one', language: 'he' });
+  });
+
+  it('says the page is blocked when Google could not open it either', async () => {
+    const PAGE = 'https://recipes.example.co.il/salad/';
+    respond({
+      status: 'completed',
+      steps: [
+        { type: 'url_context_call', arguments: { urls: [PAGE] } },
+        { type: 'url_context_result', result: [{ url: PAGE, status: 'error' }], is_error: false },
+        { type: 'model_output', content: [{ type: 'text', text: '{"status":"none"}' }] },
+      ],
+    });
+    await expect(call({ pageUrl: PAGE })).rejects.toMatchObject({ code: 'source_blocked', retryable: false });
+  });
+
+  it('reads the answer when Google opened the page', async () => {
+    const PAGE = 'https://recipes.example.co.il/salad/';
+    respond({
+      status: 'completed',
+      steps: [
+        { type: 'url_context_result', result: [{ url: PAGE, status: 'success' }] },
+        { type: 'model_output', content: [{ type: 'text', text: '{"status":"one"}' }] },
+      ],
+    });
+    expect(await call({ pageUrl: PAGE })).toEqual({ status: 'one' });
+  });
+
+  it('refuses an answer when the model never opened the page, so it can’t answer from memory', async () => {
+    respond(interaction('{"status":"one"}'));
+    await expect(call({ pageUrl: 'https://recipes.example.co.il/salad/' })).rejects.toMatchObject({ code: 'source_blocked' });
   });
 
   it('joins output split over several text parts', async () => {
