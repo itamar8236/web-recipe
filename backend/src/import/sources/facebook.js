@@ -2,6 +2,7 @@
 // reels are read; a photo or text post is not supported yet.
 
 import { ImportError } from '../errors.js';
+import { previewImageUrl } from '../../pictures.js';
 import { clipText, decodeEntities, fetchPage, fetchSubtitles, findObject, jsonBlocks, openVideo, previewText, titleFrom } from './meta.js';
 
 const HOSTS = new Set(['facebook.com', 'www.facebook.com', 'm.facebook.com', 'web.facebook.com', 'fb.watch']);
@@ -107,13 +108,16 @@ async function fetchPost(sourceId) {
   const { id, html } = isShare ? await fetchSharePage(sourceId) : { id: sourceId, ...(await fetchPage(watchUrl(sourceId), isHost)) };
 
   const page = readPage(html, id);
+  // The page's preview image is the video's cover. Its address expires in a few days, so
+  // the picture step copies it rather than linking to it.
+  const pictureUrls = [previewImageUrl(html, watchUrl(id))].filter(Boolean);
   if (!page) {
     if (html.includes('"video":null')) throw new ImportError('video_unavailable', { detail: 'Facebook has no public video with this id' });
     // A page without its data may still carry the caption for link previews.
     const preview = clipText(previewText(html));
     if (!preview) throw new ImportError('source_blocked', { retryable: true, detail: `Facebook sent a page without the video's data (${html.length} bytes)` });
     console.log(`Facebook ${id}: no data blocks in the page, using its preview text`);
-    return { sourceId: id, sourceUrl: watchUrl(id), title: titleFrom(preview, 'Facebook'), text: preview, transcript: '', video: null, author: authorFromTitle(html) };
+    return { sourceId: id, sourceUrl: watchUrl(id), title: titleFrom(preview, 'Facebook'), text: preview, transcript: '', video: null, author: authorFromTitle(html), pictureUrls };
   }
 
   return {
@@ -124,6 +128,7 @@ async function fetchPost(sourceId) {
     transcript: page.subtitlesUrl ? await fetchSubtitles(page.subtitlesUrl) : '',
     video: page.video,
     author: page.author ?? authorFromTitle(html),
+    pictureUrls,
   };
 }
 

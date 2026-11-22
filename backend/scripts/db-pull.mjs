@@ -4,6 +4,7 @@
 // so this is run as `npx wrangler login`, `npm run db:pull`, `npx wrangler logout`.
 import { execSync } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
+import { loadDump } from './load-dump.mjs';
 
 const DB = 'recipes-db';
 const DUMP = '.wrangler/prod-dump.sql';
@@ -18,7 +19,8 @@ run(`npx wrangler d1 export ${DB} --remote --output=${DUMP}`);
 
 // Start from an empty local database so rows deleted in production disappear locally too.
 rmSync('.wrangler/state/v3/d1', { recursive: true, force: true });
-run(`npx wrangler d1 execute ${DB} --local --file=${DUMP} --yes`);
+// Pictures are too big for `wrangler d1 execute`, so loadDump inserts them on their own.
+await loadDump(DUMP);
 
 // schema.sql only uses IF NOT EXISTS, so this adds any tables the current branch
 // introduced that production doesn't have yet, and changes nothing else.

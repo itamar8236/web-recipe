@@ -36,15 +36,23 @@ export default function BrowseCard({ recipe }) {
 
   return (
     <article className={styles.card}>
-      <h2 className={styles.name} lang={contentLang} dir={contentDir}>{content.name}</h2>
+      <div className={styles.top}>
+        {recipe.picture && (
+          // eslint-disable-next-line @next/next/no-img-element -- static export, no image optimizer
+          <img src={recipe.picture.thumb} alt="" loading="lazy" className={styles.thumb} />
+        )}
+        <div className={styles.topText}>
+          <h2 className={styles.name} lang={contentLang} dir={contentDir}>{content.name}</h2>
 
-      <p className={styles.owner}>
-        <svg className={styles.ownerIcon} viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="8" r="4" />
-          <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" />
-        </svg>
-        <span className={styles.ownerName}>{t.savedBy(recipe.owner)}</span>
-      </p>
+          <p className={styles.owner}>
+            <svg className={styles.ownerIcon} viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7" />
+            </svg>
+            <span className={styles.ownerName}>{t.savedBy(recipe.owner)}</span>
+          </p>
+        </div>
+      </div>
 
       <p className={styles.meta}>
         {recipe.author && <span>{t.author} <bdi>{recipe.author}</bdi></span>}

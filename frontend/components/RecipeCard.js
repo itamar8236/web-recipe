@@ -13,13 +13,19 @@ export default function RecipeCard({ recipe, tagNames, saving, onToggleFavorite 
   return (
     <div className={styles.wrap}>
       <Link href={`/recipe?id=${recipe.id}`} className={styles.card}>
-        <h2 className={styles.name}>{content.name}</h2>
-        <p className={styles.meta}>
-          {recipe.public === false && <span className={styles.private}>🔒 {t.privateLabel}</span>}
-          {recipe.author && <span>{t.author} <bdi>{recipe.author}</bdi></span>}
-          {tagNames.map((name) => <span key={name} className={styles.tag}>{name}</span>)}
-          <span>{t.ingredients}: {content.ingredients.length}</span>
-        </p>
+        {recipe.picture && (
+          // eslint-disable-next-line @next/next/no-img-element -- static export, no image optimizer
+          <img src={recipe.picture.thumb} alt="" loading="lazy" className={styles.thumb} />
+        )}
+        <div className={styles.body}>
+          <h2 className={styles.name}>{content.name}</h2>
+          <p className={styles.meta}>
+            {recipe.public === false && <span className={styles.private}>🔒 {t.privateLabel}</span>}
+            {recipe.author && <span>{t.author} <bdi>{recipe.author}</bdi></span>}
+            {tagNames.map((name) => <span key={name} className={styles.tag}>{name}</span>)}
+            <span>{t.ingredients}: {content.ingredients.length}</span>
+          </p>
+        </div>
       </Link>
       {/* A sibling of the link, not inside it: buttons can't be nested in links. */}
       <HeartButton active={recipe.favorite} disabled={saving} onClick={onToggleFavorite} className={styles.heart} />
