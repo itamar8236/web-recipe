@@ -22,7 +22,8 @@ locally with `npm run dev` (port 8787, after `npm run build` in `frontend/`). Ne
   (see [Database](#database)). It needs the `previews` block in
   `wrangler.jsonc`.
 
-Code: `src/index.js` (routes and auth), `src/data.js` (tags and recipes), `src/browse.js`
+Code: `src/index.js` (routes, auth and the daily cron job), `src/data.js` (tags and recipes), `src/deleted.js`
+("Recently deleted": restoring and the 30-day purge), `src/browse.js`
 (other users' public recipes),
 `src/imports.js` (import endpoints), `src/translate.js` (translation), `src/nutrition.js` (calories estimate), `src/substitute.js` (ingredient substitutes), `src/http.js` (JSON helpers), `src/session.js`
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
@@ -86,7 +87,9 @@ with the wrong method answers 405 `method_not_allowed`.
 | `PUT /api/recipes/:id/tags` `{tags: [name]}` | Set its tags to exactly these names | 200 `{recipe, tags}` | 400 `invalid_request`, `name_required` (a blank name), `too_long` (a name > 100 chars, or > 20 tags), 404 |
 | `PUT /api/recipes/:id/favorite` `{favorite: true\|false}` | Set (not toggle) the favorite | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `PUT /api/recipes/:id/public` `{public: true\|false}` | Set (not toggle) whether other users can see and copy it | 200 `{recipe}` | 400 `invalid_request`, 404 |
-| `DELETE /api/recipes/:id` | Delete | 200 `{ok}` | 404 |
+| `DELETE /api/recipes/:id` | Move it to "Recently deleted" (below) | 200 `{ok}` | 404 |
+| `GET /api/deleted-recipes` | The user's deleted recipes from the last 30 days, most recently deleted first | 200 `{recipes: [{id, en: {name}, he: {name}, deletedAt, expiresAt}]}` | |
+| `POST /api/deleted-recipes/:id/restore` | Put it back among the user's recipes, with its tags | 200 `{recipe, tags}` | 404 (not theirs, already restored, or over 30 days old) |
 
 `recipe` is `{ id, tagIds, favorite, public, link, fromPhoto, sourceModel, calories, protein, author, en, he }`, where `public` says
 other users can see it in Browse (a new recipe gets the user's `defaultPublic`), `en` and `he` are
@@ -104,6 +107,21 @@ lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ing
 or steps per language, 2000 chars per line. The table also keeps
 `machine_translated_lang` (which language an import's model filled in, as a translation),
 and editing that language clears it; the API never returns it.
+
+**Recently deleted.** Deleting a recipe moves it, in one batch, into `deleted_recipes`: a JSON
+snapshot of the row (every column but its id) with its tag names. Tags are kept by name
+because a tag left on no recipe is still deleted at once, as before. For 30 days the owner
+can restore it: the recipe comes back with its text, link, model, author, favorite, public flag,
+calories and protein, and each tag is found again by name (whatever its case now) or
+created again. It gets a **new id**, so it shows first in "Newest first", and an old link to
+`/recipe?id=<old>` no longer finds it. A Cloudflare **Cron Trigger** (`triggers.crons` in
+`wrangler.jsonc`, daily at 03:00 UTC) runs `scheduled()` in `index.js`, which deletes
+for good every row older than 30 days; the list and restore already ignore those, so a
+late run never shows one. A binned recipe doesn't count as saved, so the same link can be
+imported again meanwhile; restoring it then gives two recipes. Locally, run the purge by
+hand with `npx wrangler dev --test-scheduled --port <8788-8799>` and open
+`/cdn-cgi/handler/scheduled` on that port (`/__scheduled` is served the static 404 page,
+since only `/api/*` reaches the Worker first).
 
 ## Browse API
 
@@ -228,6 +246,8 @@ into, and `lang` the language to answer in. See [Ingredient substitutes](#ingred
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
   and Hebrew** so either version can be edited. Its tags are set on their own
   (see the API above), never with its text. A favorite is a flag on the recipe, since it is the owner's own mark and is never shown to others.
+- **Deleted recipes** wait 30 days in `deleted_recipes` (see "Recently deleted" above), then
+  the daily cron job deletes them for good. Deleting a user deletes theirs at once.
 - **Model requests** live in the `llm_requests` table: **one row per request** a user
   makes, with a `purpose`: `import` (a new import, each Retry, each re-scan), `translation`, `nutrition` (a calories estimate) or `substitution` (ingredient substitutes); the last three are linked to their recipe by `recipe_id`. So an
   unfinished import never appears as a recipe, and the rows are the record of who used the

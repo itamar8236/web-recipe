@@ -2,6 +2,7 @@
 // as (see getSessionUser), so nobody can change another user's data. Reading other users'
 // public recipes is only in browse.js.
 
+import { moveToBin } from './deleted.js';
 import { fail, json, readJson } from './http.js';
 import { isPhotoSource } from './import/sources/photo.js';
 
@@ -340,9 +341,12 @@ async function setPublic(request, env, userId, id) {
   return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');
 }
 
-// Its tags go with it, and a tag that was only on this recipe is deleted too.
+// Moves it to "Recently deleted" (deleted.js), where it can be restored for 30 days. Its
+// tags go with it, and a tag that was only on this recipe is deleted too: restoring
+// creates it again by name.
 async function deleteRecipe(env, userId, id) {
-  const [deleted] = await env.DB.batch([
+  const [, deleted] = await env.DB.batch([
+    moveToBin(env, userId, id, Date.now()),
     env.DB.prepare('DELETE FROM recipes WHERE id = ? AND user_id = ? RETURNING id').bind(id, userId),
     deleteUnusedTags(env, userId),
   ]);

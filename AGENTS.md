@@ -9,7 +9,7 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 ## Status
 
 Built so far: the recipe browsing UI (tags, recipes, favorites, English/Hebrew, manual
-add/edit/delete, calories and protein per serving, who a recipe is by), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
+add/edit/delete, restoring a deleted recipe for 30 days, calories and protein per serving, who a recipe is by), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, editing your own username,
 password and defaults, the admin logging in as any user, browsing and copying other users' public recipes, sorting both lists, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
@@ -67,6 +67,9 @@ resolved. One short line each, linking to the README section with the details.
 - A recipe has any number of **tags** (none, one or more), and Home filters by tag. Tags
   are added and removed on the recipe's own page (an existing tag or a new one), without
   opening the edit form. A tag no recipe has is deleted by itself; a tag can be renamed.
+- **Deleting a recipe** moves it to **Recently deleted** (a link at the end of Home), where
+  its owner can restore it, tags and all, for 30 days; a daily cron job then deletes it
+  for good. A guest's delete is final.
 - Add, edit, and delete recipes **manually**, or **from a link**: the backend sends the
   post's text and video, or the web page's text, to Google's free LLMs in the background, so it keeps going after
   the user leaves the app, and **saves the recipe by itself**, with no tags. The user can
@@ -152,7 +155,8 @@ resolved. One short line each, linking to the README section with the details.
 ### What this project is not
 
 - Not built to scale. A few users, a few hundred recipes. No caches, microservices, or
-  multi-tenant design, and no queues beyond the one Cloudflare Workflow that runs imports.
+  multi-tenant design, and no queues beyond the one Cloudflare Workflow that runs imports
+  (and one daily cron job).
 - Not paid. Every service must have a **free tier** that covers this usage (hosting, DB,
   LLM). Never add anything that needs a credit card to work.
 
@@ -179,7 +183,7 @@ resolved. One short line each, linking to the README section with the details.
 | Frontend  | Next.js (App Router), React, plain JavaScript, CSS Modules | Static export (`output: 'export'`), no TypeScript, no UI library |
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Node-style JS on the Workers runtime (`nodejs_compat`); no web framework |
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
-| Background jobs | Cloudflare Workflows                         | Imports only; free on this plan                    |
+| Background jobs | Cloudflare Workflows; one daily Cron Trigger | Workflows for imports; the cron purges recipes deleted 30 days ago; both free |
 | LLM       | Google's free-tier LLMs; Groq's free tier as a text-only fallback | An ordered list of import models, a translation model, a fallback and an opt-in best model, all set by config; keys in Worker secrets. Videos are handed to Gemini through its free file store |
 | Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); stays logged in |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-plugin`           |

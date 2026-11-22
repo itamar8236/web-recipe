@@ -199,6 +199,22 @@ CREATE TABLE IF NOT EXISTS recipe_tags (
 
 CREATE INDEX IF NOT EXISTS recipe_tags_tag_id ON recipe_tags (tag_id);
 
+-- "Recently deleted": deleting a recipe moves it here, and the user can restore it for 30
+-- days; a daily cron job (scheduled() in index.js) then deletes it for good.
+-- A separate table rather than a deleted flag on recipes: every query that reads recipes
+-- (lists, Browse, imports, the AI tools) stays as it is and can never show a deleted one.
+-- recipe is a JSON snapshot of the row: every column but id and user_id, plus `tags`, its
+-- tag names. Names, not ids, because a tag left on no recipe is deleted with the recipe;
+-- restoring finds or re-creates each tag by name. A restored recipe gets a new id.
+CREATE TABLE IF NOT EXISTS deleted_recipes (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  recipe     TEXT    NOT NULL CHECK (json_valid(recipe)),
+  deleted_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS deleted_recipes_user_id ON deleted_recipes (user_id, deleted_at);
+
 -- One row per request for model work: every import from a link, every Retry (a new row,
 -- not the old one restarted), every re-scan of a recipe's video, every translation and every
 -- calories estimate and every ingredient-substitutes request.

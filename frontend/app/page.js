@@ -5,6 +5,7 @@ import Link from 'next/link';
 import ModeTabs from '@/components/ModeTabs';
 import TagBar from '@/components/TagBar';
 import ImportCards, { useImports } from '@/components/ImportCards';
+import DeletedDialog from '@/components/DeletedDialog';
 import ImportDialog from '@/components/ImportDialog';
 import RecipeCard from '@/components/RecipeCard';
 import SearchBox from '@/components/SearchBox';
@@ -29,6 +30,8 @@ export default function HomePage() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState('newest');
   const [importOpen, setImportOpen] = useState(false);
+  const [deleted, setDeleted] = useState([]); // "Recently deleted", for the link and its dialog
+  const [deletedOpen, setDeletedOpen] = useState(false);
   // Importing needs an account, so a guest goes straight to the manual form.
   const canImport = useAuth().status === 'user';
 
@@ -46,6 +49,8 @@ export default function HomePage() {
     } catch (error) {
       setLoadError(error);
     }
+    // Only for the link at the bottom: if it fails, the link just doesn't show.
+    api.getDeletedRecipes().then(setDeleted).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -181,7 +186,25 @@ export default function HomePage() {
             ))}
           </ul>
         )}
+
+        {deleted.length > 0 && (
+          <button type="button" className={`button secondary ${styles.deletedLink}`} onClick={() => setDeletedOpen(true)}>
+            🗑 {t.recentlyDeleted} ({deleted.length})
+          </button>
+        )}
       </section>
+
+      {deletedOpen && (
+        <DeletedDialog
+          recipes={deleted}
+          onClose={() => setDeletedOpen(false)}
+          onRestored={(id, restored) => {
+            setDeleted((list) => list.filter((r) => r.id !== id));
+            setRecipes((list) => [...list, restored.recipe]);
+            setTags(restored.tags);
+          }}
+        />
+      )}
 
       {importOpen && (
         <ImportDialog

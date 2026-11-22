@@ -91,6 +91,13 @@
   grid-template-columns: 1fr;
 }
 
+/* Quiet, at the end of the list: it is rarely needed. */
+.deletedLink {
+  align-self: center;
+  min-height: 44px;
+  font-size: 15px;
+}
+
 .empty {
   padding: 32px 18px;
   border: 2px dashed var(--line);

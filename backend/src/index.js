@@ -1,5 +1,6 @@
 import { handleBrowse } from './browse.js';
 import { handleData } from './data.js';
+import { handleDeleted, purgeDeleted } from './deleted.js';
 import { handleImports } from './imports.js';
 import { handleNutrition } from './nutrition.js';
 import { handleSubstitute } from './substitute.js';
@@ -183,6 +184,7 @@ async function handleApi(request, env, path) {
     handleNutrition(request, env, path, user.id) ??
     handleSubstitute(request, env, path, user.id) ??
     handleData(request, env, path, user.id) ??
+    handleDeleted(request, env, path, user.id) ??
     handleBrowse(request, env, path, user.id) ??
     fail(404, 'not_found')
   );
@@ -196,5 +198,10 @@ export default {
       console.error(error);
       return fail(500, 'server_error');
     }
+  },
+
+  // The daily cron job (triggers.crons in wrangler.jsonc).
+  async scheduled(controller, env) {
+    await purgeDeleted(env);
   },
 };

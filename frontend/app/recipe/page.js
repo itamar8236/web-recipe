@@ -201,7 +201,7 @@ function RecipeView() {
 
       {confirmingDelete && (
         <ConfirmDialog
-          message={t.confirmDeleteRecipe}
+          message={loggedIn ? t.confirmDeleteRecipeBin : t.confirmDeleteRecipe}
           confirmLabel={t.delete}
           onConfirm={remove}
           onCancel={() => setConfirmingDelete(false)}

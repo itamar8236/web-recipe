@@ -273,6 +273,21 @@ export async function deleteRecipe(id) {
   await dataRequest(`/api/recipes/${id}`, 'DELETE');
 }
 
+// ---- Recently deleted ----
+// A deleted recipe can be restored for 30 days: { id, en: {name}, he: {name}, deletedAt,
+// expiresAt }, most recently deleted first. A guest has none: their delete is final.
+
+export async function getDeletedRecipes() {
+  if (guest) return [];
+  return (await dataRequest('/api/deleted-recipes')).recipes;
+}
+
+// Puts it back among the user's recipes, with its tags. Returns { recipe, tags }.
+export async function restoreRecipe(id) {
+  if (guest) throw new ApiError(404, 'not_found');
+  return dataRequest(`/api/deleted-recipes/${id}/restore`, 'POST', {});
+}
+
 // ---- Browse: other users' public recipes ----
 // A browsed recipe is { id, owner, tags: [name], link, en, he }: who saved it and its tags
 // by name. It needs an account, like everything that reads the database.
