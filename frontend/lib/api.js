@@ -18,12 +18,13 @@ export function setLoggedOutHandler(handler) {
   onLoggedOut = handler;
 }
 
-// `body` is sent as JSON, except a Blob (a photo), which is sent as it is, with its type.
+// `body` is sent as JSON, except a Blob (a photo), which is sent as it is, with its type,
+// and FormData (a recipe's picture), which the browser sends as multipart.
 async function request(path, method = 'GET', body) {
-  const isFile = body instanceof Blob;
+  const isFile = body instanceof Blob || body instanceof FormData;
   let headers = {};
-  if (isFile) headers = { 'Content-Type': body.type };
-  else if (body !== undefined) headers = { 'Content-Type': 'application/json' };
+  if (body instanceof Blob) headers = { 'Content-Type': body.type };
+  else if (body !== undefined && !isFile) headers = { 'Content-Type': 'application/json' };
   let response;
   try {
     response = await fetch(path, {
@@ -95,10 +96,18 @@ let guest = false;
 let nextId = 0;
 let memory = { tags: [], recipes: [] };
 
+// A guest's pictures are object URLs of Blobs held in memory, freed when they go.
+function freePicture(picture) {
+  if (!picture) return;
+  URL.revokeObjectURL(picture.url);
+  URL.revokeObjectURL(picture.thumb);
+}
+
 // Called on every change of who uses the app. A guest starts from an empty app, and one
 // guest's data never shows for the next person.
 export function setGuestMode(on) {
   guest = on;
+  for (const recipe of memory.recipes) freePicture(recipe.picture);
   memory = { tags: [], recipes: [] };
 }
 
@@ -198,7 +207,8 @@ export async function setRecipeTags(id, names) {
 }
 
 // ---- Recipes ----
-// A recipe is { id, tagIds, favorite, public, link, fromPhoto, calories, protein, author, en: {name, ingredients[], steps[]}, he: {...} }.
+// A recipe is { id, tagIds, favorite, public, link, fromPhoto, calories, protein, author, picture, en: {name, ingredients[], steps[]}, he: {...} }.
+// `picture` is null, or { url, thumb }: the addresses of its picture and of a small copy.
 // `link` is '' for a manual recipe and for one read from a photo (then `fromPhoto` is true).
 // calories (kcal) and protein (grams) are per serving, null when not known.
 // `author` is who the recipe is by (a chef, a channel), '' when not known.
@@ -233,7 +243,7 @@ export async function saveRecipe(id, data) {
     const existing = findRecipe(id);
     Object.assign(fields, cleanNutrition(data, existing), { author: cleanAuthor(data.author, existing) });
     if (existing) Object.assign(existing, fields);
-    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', fromPhoto: false, favorite: false, public: true, ...fields });
+    else memory.recipes.push({ id: ++nextId, tagIds: [], link: '', fromPhoto: false, favorite: false, public: true, picture: null, ...fields });
     return copy(existing ?? memory.recipes.at(-1));
   }
   const body = { en: data.en, he: data.he, calories: data.calories, protein: data.protein, author: data.author };
@@ -266,6 +276,7 @@ export async function setRecipePublic(id, isPublic) {
 
 export async function deleteRecipe(id) {
   if (guest) {
+    freePicture(findRecipe(id)?.picture);
     memory.recipes = memory.recipes.filter((r) => r.id !== id);
     dropUnusedTags();
     return;
@@ -273,8 +284,41 @@ export async function deleteRecipe(id) {
   await dataRequest(`/api/recipes/${id}`, 'DELETE');
 }
 
+// ---- A recipe's picture ----
+
+const pictureForm = ({ full, thumb }) => {
+  const form = new FormData();
+  form.append('full', full, 'full.jpg');
+  form.append('thumb', thumb, 'thumb.jpg');
+  return form;
+};
+
+// Sets the recipe's picture ({ full, thumb }, from makePicture in lib/picture.js),
+// replacing any it had. Returns the new `picture` ({ url, thumb }).
+export async function setRecipePicture(id, picture) {
+  if (guest) {
+    const recipe = findRecipe(id);
+    if (!recipe) throw new ApiError(404, 'not_found');
+    freePicture(recipe.picture);
+    recipe.picture = { url: URL.createObjectURL(picture.full), thumb: URL.createObjectURL(picture.thumb) };
+    return copy(recipe.picture);
+  }
+  return (await dataRequest(`/api/recipes/${id}/picture`, 'PUT', pictureForm(picture))).picture;
+}
+
+export async function removeRecipePicture(id) {
+  if (guest) {
+    const recipe = findRecipe(id);
+    if (!recipe) throw new ApiError(404, 'not_found');
+    freePicture(recipe.picture);
+    recipe.picture = null;
+    return;
+  }
+  await dataRequest(`/api/recipes/${id}/picture`, 'DELETE');
+}
+
 // ---- Browse: other users' public recipes ----
-// A browsed recipe is { id, owner, tags: [name], link, en, he }: who saved it and its tags
+// A browsed recipe is { id, owner, tags: [name], link, picture, en, he }: who saved it and its tags
 // by name. It needs an account, like everything that reads the database.
 
 // A number for a new random order of the feed (the backend's order depends on it).
@@ -322,6 +366,13 @@ export async function startImport(url) {
 export async function startPhotoImport(photo) {
   refuseGuest();
   return (await dataRequest('/api/imports/photo', 'POST', photo)).import;
+}
+
+// Sends the photo import's picture ({ full, thumb }, made from the same photo), which
+// becomes the new recipe's picture. The photo itself goes only to the model.
+export async function sendImportPicture(importId, picture) {
+  refuseGuest();
+  await dataRequest(`/api/imports/${importId}/picture`, 'PUT', pictureForm(picture));
 }
 
 // Returns the new card: a Retry is a new import, and the failed card goes away.

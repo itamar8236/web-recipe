@@ -9,6 +9,8 @@
 //                      the post's details: { sourceId, sourceUrl, title, text, transcript,
 //                      video }. sourceId and sourceUrl differ from the ones given only for
 //                      a share link, which doesn't say which post it is until followed.
+//                      `pictureUrls` (optional) are the post's picture addresses, best
+//                      first: a video's thumbnail or a page's preview image.
 //                      `video` is null for a post without one, otherwise { seconds,
 //                      isPublic } plus either `uri`, a link the model reads by itself, or
 //                      `downloadUrl`, a file that has to be handed to the model.

@@ -12,8 +12,8 @@
 .card {
   height: 100%;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 12px;
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -27,6 +27,24 @@
 .card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 22px rgba(80, 55, 30, 0.14);
+}
+
+/* A small square at the start side (the right in Hebrew); a card with no picture has none. */
+.thumb {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--accent-soft);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .name {
@@ -68,8 +86,11 @@
   }
 
   .card {
-    gap: 8px;
     padding: 18px 20px;
+  }
+
+  .body {
+    gap: 8px;
   }
 
   .name {
