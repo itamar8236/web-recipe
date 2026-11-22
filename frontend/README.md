@@ -32,7 +32,7 @@ frontend/
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools, RecipePicture, SubstituteDialog
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, DeletedDialog, ImportDialog, ImportCards, RecipeAiTools, RecipePicture, SubstituteDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -119,6 +119,11 @@ frontend/
    shows "Newest first", the usual order; it can switch to oldest first, most protein,
    most calories or fewest calories (`lib/sort.js`, in the browser; a recipe with no
    calories or protein goes last). The choice is not remembered.
+   At the end of the list, a quiet "🗑 Recently deleted (N)" button shows only while the
+   logged-in user has deleted recipes from the last 30 days. It opens a popup
+   (`components/DeletedDialog`) listing each one's name and "Deleted for good in N days",
+   with a Restore button. A restored recipe leaves the popup and shows at once on Home
+   (first in "Newest first": it gets a new id). A guest has no bin: their delete is final.
 3. **Add recipe** (`components/ImportDialog`, a popup, no route): "+ Add recipe" opens it
    for a logged-in user. A guest goes straight to the manual form, since importing needs
    an account. One focused link field ("A video, a post or a recipe page"); it asks only
@@ -160,7 +165,8 @@ frontend/
    "By: <author>" under it when the recipe has one, the picture, tags, ingredients, steps, then a
    "Per serving" card with calories and protein (only when the recipe has either) and a small note that they were calculated by AI and may be inaccurate, then the
    AI tools box (logged-in users only, below), then Edit and Delete buttons (delete asks
-   for confirmation). The heart is beside the name. Calories and protein show only here,
+   for confirmation, which tells a logged-in user they can restore it from "Recently
+   deleted" for 30 days, and a guest that it can't be undone). The heart is beside the name. Calories and protein show only here,
    never on the Home or Browse cards.
    - **Picture** (`components/RecipePicture`, only when the recipe has one): under the
      name, full width, 220px tall on a phone (320px on desktop), cropped to fill

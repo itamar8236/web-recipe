@@ -30,6 +30,9 @@
   "workflows": [
     { "name": "recipe-import", "binding": "IMPORT_WORKFLOW", "class_name": "ImportWorkflow" }
   ],
+  // Once a day (03:00 UTC) the Worker's scheduled() deletes for good the recipes that have
+  // been in "Recently deleted" for 30 days.
+  "triggers": { "crons": ["0 3 * * *"] },
   // Model names, their order and their limits are settings, so changing them needs no
   // code change. An import tries LLM_IMPORT_MODELS in order and a translation
   // LLM_TRANSLATE_MODELS, then the fallback model (Groq, text only, unused until
