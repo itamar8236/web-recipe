@@ -113,7 +113,7 @@ resolved. One short line each, linking to the README section with the details.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
 - A recipe may also have **who it is by** (its author: a chef, a channel or a site; the same
-  in both languages), shown on its page and its card, and found by Search. An import fills
+  in both languages), shown on its page and its Browse card (not its card in My recipes), and found by Search. An import fills
   it in by itself when it can tell: for a video, the channel or account that posted it,
   from the site; for a web page or a photo, the name its text gives as the recipe's author,
   if any (the model never guesses one). A manual recipe has none until the user types it,

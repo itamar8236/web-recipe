@@ -98,7 +98,7 @@ frontend/
 1. **Login / Sign up**: described above.
 2. **Home**: tags with recipe counts (`components/TagBar`), which filter the list. On
    phones only, they are one row of pills that scrolls sideways; on desktop, a side list
-   with no scrolling; recipes with the selected tag as cards, each showing all its tags (and "By <author>" when it has one).
+   with no scrolling; recipes with the selected tag as cards, each showing all its tags (not its author: that shows only on its page, though Search still finds it).
    "No tags" shows only while some recipe has none. The selected tag can be renamed
    inline; there is no "new tag" or "delete tag" here: tags are added and removed on each
    recipe's page, and a tag no recipe has is gone. Big "Add recipe" button. Each card has a
