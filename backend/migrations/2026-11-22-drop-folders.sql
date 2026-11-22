@@ -9,11 +9,18 @@
 --
 -- SQLite can't drop a column a foreign key uses, and recipes can't keep pointing at a
 -- dropped table, so recipes is rebuilt. Dropping the old recipes table would delete every
--- recipe's tags and unlink every import from its recipe (their foreign keys), so both are
--- saved first and put back after.
+-- recipe's tags and picture and unlink every import from its recipe (their foreign keys),
+-- so all three are saved first and put back after. Nothing else refers to recipes:
+-- deleted_recipes keeps its own copy, and import_pictures belongs to llm_requests.
+--
+-- Run it after schema.sql has created recipe_pictures (the recipe-pictures PR); before
+-- that it stops at its first statement and changes nothing. The pictures are copied once
+-- while it runs, so the database briefly needs room for a second copy of them.
 --
 -- No BEGIN/COMMIT: D1 rejects transaction statements in files and runs the file as one unit.
 
+CREATE TABLE recipe_pictures_saved AS
+  SELECT recipe_id, full, thumb, type, edited, updated_at FROM recipe_pictures;
 CREATE TABLE recipe_tags_saved AS SELECT recipe_id, tag_id FROM recipe_tags;
 CREATE TABLE llm_links_saved AS SELECT id, recipe_id FROM llm_requests WHERE recipe_id IS NOT NULL;
 
@@ -61,9 +68,12 @@ CREATE INDEX recipes_user_id ON recipes (user_id);
 DROP TABLE folders;
 
 INSERT INTO recipe_tags (recipe_id, tag_id) SELECT recipe_id, tag_id FROM recipe_tags_saved;
+INSERT INTO recipe_pictures (recipe_id, full, thumb, type, edited, updated_at)
+  SELECT recipe_id, full, thumb, type, edited, updated_at FROM recipe_pictures_saved;
 UPDATE llm_requests
    SET recipe_id = (SELECT recipe_id FROM llm_links_saved WHERE llm_links_saved.id = llm_requests.id)
  WHERE id IN (SELECT id FROM llm_links_saved);
 
+DROP TABLE recipe_pictures_saved;
 DROP TABLE recipe_tags_saved;
 DROP TABLE llm_links_saved;
