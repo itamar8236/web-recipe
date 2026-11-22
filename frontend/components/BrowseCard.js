@@ -47,7 +47,6 @@ export default function BrowseCard({ recipe }) {
       </p>
 
       <p className={styles.meta}>
-        {recipe.author && <span>{t.author} <bdi>{recipe.author}</bdi></span>}
         {recipe.tags.map((name) => <span key={name} className={styles.tag}>{name}</span>)}
         <span>{t.ingredients}: {content.ingredients.length}</span>
         {recipe.link && (

@@ -220,7 +220,7 @@ frontend/
      ingredients, author and tags the same way, on the recipes loaded so far. While few match,
      the end of the list stays near the screen, so more pages keep loading by themselves
      until enough match or there are no more (then "No recipes found." if none did).
-   - Each card (`components/BrowseCard`) shows the name, "Saved by <username>", "By <author>" when it has one, the tags,
+   - Each card (`components/BrowseCard`) shows the name, "Saved by <username>", the tags,
      the ingredient count and the source link, with two buttons side by side: **Show
      recipe** opens the ingredients and steps inside the card, and **+ Save a copy** saves
      the user's own copy at once (no question: it is easy to delete). The button then
