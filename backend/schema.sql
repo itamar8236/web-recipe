@@ -146,8 +146,8 @@ END;
 -- cleared when the user edits that language, since it is then human text.
 -- Production's recipes also has a leftover folder_id column (from before tags), with a
 -- foreign key to a leftover folders table. Both are unused: folder_id is always NULL and
--- folders is empty. They are kept because SQLite can drop neither without rebuilding
--- recipes (and copying every recipe and picture), so a new database doesn't get them.
+-- folders is empty. They stay because SQLite can drop neither without rebuilding recipes
+-- (copying every recipe and picture). They aren't in this file, so a new database has neither.
 CREATE TABLE IF NOT EXISTS recipes (
   id             INTEGER PRIMARY KEY,
   user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
