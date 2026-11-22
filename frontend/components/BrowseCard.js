@@ -55,7 +55,6 @@ export default function BrowseCard({ recipe }) {
       </div>
 
       <p className={styles.meta}>
-        {recipe.author && <span>{t.author} <bdi>{recipe.author}</bdi></span>}
         {recipe.tags.map((name) => <span key={name} className={styles.tag}>{name}</span>)}
         <span>{t.ingredients}: {content.ingredients.length}</span>
         {recipe.link && (
@@ -67,6 +66,7 @@ export default function BrowseCard({ recipe }) {
 
       {open && (
         <div id={detailsId} className={styles.details}>
+          {recipe.author && <p className={styles.author}>{t.author}: <bdi>{recipe.author}</bdi></p>}
           <h3>{t.ingredients}</h3>
           <ul lang={contentLang} dir={contentDir}>
             {content.ingredients.map((item, i) => <li key={i}>{item}</li>)}

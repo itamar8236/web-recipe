@@ -102,7 +102,7 @@ frontend/
 1. **Login / Sign up**: described above.
 2. **Home**: tags with recipe counts (`components/TagBar`), which filter the list. On
    phones only, they are one row of pills that scrolls sideways; on desktop, a side list
-   with no scrolling; recipes with the selected tag as cards, each showing all its tags (and "By <author>" when it has one).
+   with no scrolling; recipes with the selected tag as cards, each showing all its tags (not its author: that shows only on its page, though Search still finds it).
    "No tags" shows only while some recipe has none. The selected tag can be renamed
    inline; there is no "new tag" or "delete tag" here: tags are added and removed on each
    recipe's page, and a tag no recipe has is gone. Big "Add recipe" button. Each card has a
@@ -246,9 +246,9 @@ frontend/
      the end of the list stays near the screen, so more pages keep loading by themselves
      until enough match or there are no more (then "No recipes found." if none did).
    - Each card (`components/BrowseCard`) shows the picture's thumb (as on Home, beside the
-     name), the name, "Saved by <username>", "By <author>" when it has one, the tags,
+     name), the name, "Saved by <username>", the tags,
      the ingredient count and the source link, with two buttons side by side: **Show
-     recipe** opens the ingredients and steps inside the card, and **+ Save a copy** saves
+     recipe** opens the author (when it has one), ingredients and steps inside the card, and **+ Save a copy** saves
      the user's own copy at once (no question: it is easy to delete). The button then
      becomes "✓ Saved to your recipes" with an Open link to the copy.
    - A recipe the user already saved still shows, on a later visit with the Save button again.
