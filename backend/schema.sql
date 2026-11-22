@@ -144,6 +144,10 @@ END;
 -- machine_translated_lang names the language an import's model filled in as a translation
 -- of the post's own language. Only the backend reads it (the API doesn't return it); it is
 -- cleared when the user edits that language, since it is then human text.
+-- Production's recipes also has a leftover folder_id column (from before tags), with a
+-- foreign key to a leftover folders table. Both are unused: folder_id is always NULL and
+-- folders is empty. They stay because SQLite can drop neither without rebuilding recipes
+-- (copying every recipe and picture). They aren't in this file, so a new database has neither.
 CREATE TABLE IF NOT EXISTS recipes (
   id             INTEGER PRIMARY KEY,
   user_id        INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
