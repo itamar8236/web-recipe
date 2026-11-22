@@ -22,10 +22,17 @@
   ],
   // Keeps the Worker's logs (including every Gemini call and failure) for 3 days, free.
   "observability": { "enabled": true },
+  // Resizes a link import's picture once, when it is saved (src/pictures.js). Free: 5,000
+  // transformations a month on the Images Free plan. `wrangler dev` and the tests run it
+  // offline on this computer.
+  "images": { "binding": "IMAGES" },
   // Runs an import in the background, so it keeps going after the user leaves the app.
   "workflows": [
     { "name": "recipe-import", "binding": "IMPORT_WORKFLOW", "class_name": "ImportWorkflow" }
   ],
+  // Once a day (03:00 UTC) the Worker's scheduled() deletes for good the recipes that have
+  // been in "Recently deleted" for 30 days.
+  "triggers": { "crons": ["0 3 * * *"] },
   // Model names, their order and their limits are settings, so changing them needs no
   // code change. An import tries LLM_IMPORT_MODELS in order and a translation
   // LLM_TRANSLATE_MODELS, then the fallback model (Groq, text only, unused until
@@ -60,6 +67,7 @@
     "workflows": [
       { "name": "recipe-import", "binding": "IMPORT_WORKFLOW", "class_name": "ImportWorkflow" }
     ],
+    "images": { "binding": "IMAGES" },
     "vars": {
       "LLM_IMPORT_MODELS": "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite",
       "LLM_TRANSLATE_MODELS": "gemini-3.5-flash-lite",

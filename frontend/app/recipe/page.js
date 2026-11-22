@@ -8,6 +8,7 @@ import { useLanguage } from '@/components/Language';
 import HeartButton from '@/components/HeartButton';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import RecipeAiTools from '@/components/RecipeAiTools';
+import RecipePicture from '@/components/RecipePicture';
 import RecipeTags from '@/components/RecipeTags';
 import { errorMessage, pickLanguage } from '@/lib/i18n';
 import * as api from '@/lib/api';
@@ -144,6 +145,8 @@ function RecipeView() {
         </div>
       </header>
 
+      {recipe.picture && <RecipePicture picture={recipe.picture} name={content.name} />}
+
       <RecipeTags
         recipe={recipe}
         allTags={tags}
@@ -201,7 +204,7 @@ function RecipeView() {
 
       {confirmingDelete && (
         <ConfirmDialog
-          message={t.confirmDeleteRecipe}
+          message={loggedIn ? t.confirmDeleteRecipeBin : t.confirmDeleteRecipe}
           confirmLabel={t.delete}
           onConfirm={remove}
           onCancel={() => setConfirmingDelete(false)}

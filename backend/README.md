@@ -22,8 +22,10 @@ locally with `npm run dev` (port 8787, after `npm run build` in `frontend/`). Ne
   (see [Database](#database)). It needs the `previews` block in
   `wrangler.jsonc`.
 
-Code: `src/index.js` (routes and auth), `src/data.js` (tags and recipes), `src/browse.js`
-(other users' public recipes),
+Code: `src/index.js` (routes, auth and the daily cron job), `src/data.js` (tags and recipes), `src/deleted.js`
+("Recently deleted": restoring and the 30-day purge), `src/browse.js`
+(other users' public recipes), `src/pictures.js` (recipes' pictures: the only file that
+touches picture bytes),
 `src/imports.js` (import endpoints), `src/translate.js` (translation), `src/nutrition.js` (calories estimate), `src/substitute.js` (ingredient substitutes), `src/http.js` (JSON helpers), `src/session.js`
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
 `workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
@@ -86,9 +88,14 @@ with the wrong method answers 405 `method_not_allowed`.
 | `PUT /api/recipes/:id/tags` `{tags: [name]}` | Set its tags to exactly these names | 200 `{recipe, tags}` | 400 `invalid_request`, `name_required` (a blank name), `too_long` (a name > 100 chars, or > 20 tags), 404 |
 | `PUT /api/recipes/:id/favorite` `{favorite: true\|false}` | Set (not toggle) the favorite | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `PUT /api/recipes/:id/public` `{public: true\|false}` | Set (not toggle) whether other users can see and copy it | 200 `{recipe}` | 400 `invalid_request`, 404 |
-| `DELETE /api/recipes/:id` | Delete | 200 `{ok}` | 404 |
+| `DELETE /api/recipes/:id` | Move it, with its picture, to "Recently deleted" (below) | 200 `{ok}` | 404 |
+| `GET /api/deleted-recipes` | The user's deleted recipes from the last 30 days, most recently deleted first | 200 `{recipes: [{id, en: {name}, he: {name}, deletedAt, expiresAt}]}` | |
+| `POST /api/deleted-recipes/:id/restore` | Put it back among the user's recipes, with its tags | 200 `{recipe, tags}` | 404 (not theirs, already restored, or over 30 days old) |
+| `GET /api/recipes/:id/picture[?size=thumb]` | The recipe's picture (or its thumb) as an image: yours, or anyone's public one (Browse) | 200 the bytes, `Cache-Control: private, max-age=31536000, immutable` | 404 (no picture, or another user's private recipe) |
+| `PUT /api/recipes/:id/picture`, multipart `full` + `thumb` | Set the picture the user chose (`edited` 1), replacing any | 200 `{picture}` | 400 `picture_invalid`; 413 `picture_too_big`; 404 |
+| `DELETE /api/recipes/:id/picture` | Remove its picture | 200 `{ok}` | 404 |
 
-`recipe` is `{ id, tagIds, favorite, public, link, fromPhoto, sourceModel, calories, protein, author, en, he }`, where `public` says
+`recipe` is `{ id, tagIds, favorite, public, link, fromPhoto, sourceModel, calories, protein, author, picture, en, he }`, where `public` says
 other users can see it in Browse (a new recipe gets the user's `defaultPublic`), `en` and `he` are
 `{ name, ingredients: [string], steps: [string] }`, `link` is the source video (`''` for
 manual recipes and for one read from a photo, whose `fromPhoto` is then `true`; see
@@ -105,6 +112,30 @@ or steps per language, 2000 chars per line. The table also keeps
 `machine_translated_lang` (which language an import's model filled in, as a translation),
 and editing that language clears it; the API never returns it.
 
+`picture` is `null`, or `{ url, thumb }`: `/api/recipes/<id>/picture?v=<updated_at>` and the
+same with `&size=thumb`. The address changes with every new picture, so the browser caches
+it for good. The picture upload is two parts the browser made from one picture (see
+[Pictures](#pictures)), both JPEG or both WebP (checked by their first bytes, not only the
+type they claim), `full` at most 1,000,000 bytes and `thumb` at most 100,000; anything else is
+`picture_invalid` / `picture_too_big`. It is a `PUT`: another site's plain HTML form can
+send multipart, but only by POST. The image answers carry `X-Content-Type-Options: nosniff`.
+
+**Recently deleted.** Deleting a recipe moves it, in one batch, into `deleted_recipes`: a JSON
+snapshot of the row (every column but its id) with its tag names, and its picture, as it
+was, into `deleted_recipe_pictures`. Tags are kept by name
+because a tag left on no recipe is still deleted at once, as before. For 30 days the owner
+can restore it: the recipe comes back with its text, link, model, author, favorite, public flag,
+calories, protein and picture, and each tag is found again by name (whatever its case now) or
+created again. It gets a **new id**, so it shows first in "Newest first", and an old link to
+`/recipe?id=<old>` no longer finds it. A Cloudflare **Cron Trigger** (`triggers.crons` in
+`wrangler.jsonc`, daily at 03:00 UTC) runs `scheduled()` in `index.js`, which deletes
+for good every row older than 30 days, with its picture; the list and restore already ignore those, so a
+late run never shows one. A binned recipe doesn't count as saved, so the same link can be
+imported again meanwhile; restoring it then gives two recipes. Locally, run the purge by
+hand with `npx wrangler dev --test-scheduled --port <8788-8799>` and open
+`/cdn-cgi/handler/scheduled` on that port (`/__scheduled` is served the static 404 page,
+since only `/api/*` reaches the Worker first).
+
 ## Browse API
 
 The only endpoints that read another user's recipes (`src/browse.js`). Both need a session.
@@ -114,7 +145,7 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
 | `GET /api/browse?seed=<n>[&after=<next>]` or `?sort=<order>[&after=<next>]` | One page (10) of other users' public recipes | 200 `{recipes, next}` | 400 `invalid_request` (an unknown `sort`, `seed` not a whole number from 1 to 1000002, or a bad `after`) |
 | `POST /api/browse/:id/copy` `{}` | Save your own copy of that recipe | 201 `{recipe}` (the new one, as in the recipes API) | 404 `not_found` (missing, private, or your own) |
 
-- A browsed recipe is `{ id, owner, tags, link, fromPhoto, author, en, he }`: `owner` is the username of who
+- A browsed recipe is `{ id, owner, tags, link, fromPhoto, author, picture, en, he }`: `owner` is the username of who
   saved it and `tags` its tag **names** (ids mean nothing to another user). The owner's
   favorite mark is never sent, nor the calories and protein (shown only on a recipe's own
   page); a copy brings them along.
@@ -133,7 +164,7 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
   included, is "a key, smallest first, then the id" (a "most first" key is the value turned
   negative), so they share the query and `next`. Leaving `sort` out (or `sort=random`)
   is the random order, and only it needs `seed`.
-- **Copy**: the new recipe has the same text, link, platform and model, no favorite, and
+- **Copy**: the new recipe has the same text, link, platform, model and picture, no favorite, and
   is public or private by the user's `defaultPublic`. With
   `copyTags` on, each of the original's tags is found by name among the user's own tags or
   created. The original is never changed, and later changes to either don't reach the other.
@@ -150,7 +181,8 @@ except a photo's, which is the picture itself.
 | `POST /api/imports/photo`, body: the picture, `Content-Type: image/jpeg\|png\|webp\|heic\|heif` | Start an import from one photo, best model first ([Import from a photo](#import-from-a-photo)) | 202 `{import}` | 400 `photo_invalid`; 413 `photo_too_big`; 429 `too_many_imports`, `quota`; 502 `photo_upload_failed` |
 | `GET /api/imports` | Cards plus model state | 200 `{imports, models}` | |
 | `POST /api/imports/:id/retry` `{}` | Try a failed import again, as a new import | 202 `{import}` (the new one) | 400 `invalid_request`; 404; 409 `not_retryable`; 429 `too_many_imports`, `quota` |
-| `DELETE /api/imports/:id` | Dismiss the card | 200 `{ok}` | 404 |
+| `DELETE /api/imports/:id` | Dismiss the card (and a photo's waiting picture) | 200 `{ok}` | 404 |
+| `PUT /api/imports/:id/picture`, multipart `full` + `thumb` | A photo import's picture, made by the browser from the same photo ([Pictures](#pictures)) | 200 `{ok}` | 400 `picture_invalid`; 413 `picture_too_big`; 404 (not your photo import) |
 | `POST /api/recipes/:id/rerun` `{model?}` | Scan an imported recipe's video again; replaces its text when done | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_rerunnable` (manual recipe, or that video is running); 429 `too_many_imports`, `quota` |
 
 - `import` is `{ id, status, stage, link, fromPhoto, title, error, retryable, recipeId, recipeName }`.
@@ -180,7 +212,8 @@ except a photo's, which is the picture itself.
   daily count of imports: only the models' daily limits stop them. `IMPORT_BEST_DAILY_PER_USER` (5) counts every row with `used_best = 1`, and
   is the only per-user limit on a model.
 - A Retry is a **new row**: it copies the failed row's link, title and model choice, starts
-  over from the first stage in its own Workflow, and the failed row becomes `dismissed`.
+  over from the first stage in its own Workflow, and the failed row becomes `dismissed`
+  (a photo's waiting picture moves to the new row).
   Only a failed save keeps its `state` and stage, since it already holds the recipe. It answers `not_retryable` if the same video is already running or saved
   (for a re-scan: if its recipe was deleted). A failed `model_approval_needed` row (from
   before approvals were dropped) can be retried and just runs.
@@ -228,6 +261,8 @@ into, and `lang` the language to answer in. See [Ingredient substitutes](#ingred
 - **Recipes**: name, source link, ingredients, and instructions, stored in **both English
   and Hebrew** so either version can be edited. Its tags are set on their own
   (see the API above), never with its text. A favorite is a flag on the recipe, since it is the owner's own mark and is never shown to others.
+- **Deleted recipes** wait 30 days in `deleted_recipes` (see "Recently deleted" above), then
+  the daily cron job deletes them for good. Deleting a user deletes theirs at once.
 - **Model requests** live in the `llm_requests` table: **one row per request** a user
   makes, with a `purpose`: `import` (a new import, each Retry, each re-scan), `translation`, `nutrition` (a calories estimate) or `substitution` (ingredient substitutes); the last three are linked to their recipe by `recipe_id`. So an
   unfinished import never appears as a recipe, and the rows are the record of who used the
@@ -236,6 +271,12 @@ into, and `lang` the language to answer in. See [Ingredient substitutes](#ingred
   `used_best = 1`. A row stays after it finishes, because the caps count it. `llm_usage` holds the app's own count of
   requests per Pacific day and model, shared by all users; it counts every request to
   Google, including a Workflow's own quick retries, which happen inside one row.
+
+- **Pictures**: at most one per recipe, stored resized as BLOBs in `recipe_pictures` (a full
+  picture and a thumb, about 165 KB a recipe at most), so deleting a user deletes them and
+  copying is one statement. Deleting a recipe moves its picture to `deleted_recipe_pictures`
+  with it, until it is restored or purged (see "Recently deleted"). A photo import's picture waits in `import_pictures`
+  until its recipe is saved. See [Pictures](#pictures).
 
 Every table, column and constraint is in [`schema.sql`](schema.sql), with comments on why.
 
@@ -250,7 +291,10 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   reach production. To copy production to local, run `npx wrangler login`,
   `npm run db:pull`, `npx wrangler logout`. `db:pull`
   ([`scripts/db-pull.mjs`](scripts/db-pull.mjs)) exports production (read-only), replaces
-  the local database with that copy, then applies `schema.sql` locally.
+  the local database with that copy, then applies `schema.sql` locally. `wrangler d1
+  execute` refuses statements over 100 KB, which a picture row is, so the picture rows are
+  left out of the file it runs and inserted afterwards with their bytes bound
+  ([`scripts/load-dump.mjs`](scripts/load-dump.mjs)). Pictures come along.
 - **A worktree's local copy**: each git worktree has its own `.wrangler/state`, empty at
   first. `npm run db:copy-main` ([`scripts/db-copy-main.mjs`](scripts/db-copy-main.mjs))
   replaces it with a copy of the main checkout's local database (found through git), then
@@ -269,6 +313,60 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   `wrangler.jsonc` repeats the D1 binding; without it every query fails. Accepted for now: nobody else gets the preview links, and
   a separate preview database may come later. It's a concern only if a PR would change
   production data during the build or deploy itself (see the `local-dev` skill).
+
+## Pictures
+
+A recipe has at most **one picture** (`src/pictures.js`, the only file that touches picture
+bytes). It is stored **resized** in D1's `recipe_pictures`: `full` (at most 1280 px on its
+longer side) for the recipe's page and `thumb` (240 px on its shorter side; the card crops
+it to a square) for the Home and Browse cards, so no view ever resizes. Never an AI-made
+picture of the dish.
+
+| Where it comes from | `edited` | How |
+|---|---|---|
+| A link import | 0 | The Workflow's `picture` step |
+| A photo import | 0 | A copy of the photo, resized in the browser |
+| The edit form | 1 | Chosen by the user (gallery, camera or a file), resized in the browser |
+| A copy from Browse | the original's | Copied with the recipe, in its batch |
+
+- **A link's picture**: each adapter's `fetchPost` returns `pictureUrls`, best first:
+  YouTube's `maxresdefault`, then `sddefault`, built from the video id (no API call);
+  Facebook's and Instagram's `og:image` from the post page the import already fetched
+  (signed links that expire in a few days, so the picture is copied, never linked); a web
+  page's `og:image` (or `twitter:image`). A page Google opened for us (`url_context`) gives
+  none: the Worker never read it. The save stage keeps the addresses on the row
+  (`state.pictureUrls`), and the `picture` step, its own Workflow step after the save (one
+  quick retry), fetches the first one that works, resizes it, saves it, and clears `state`.
+  The fetch follows the web-page rules: `redirect: 'manual'`, `isFetchableUrl` at every hop,
+  an image type only (JPEG, PNG, WebP, GIF, AVIF; never SVG), at most 10 MB, a 15-second
+  timeout. Anything that goes wrong is logged and the recipe stays without a picture: **a
+  picture never fails an import**.
+- **Resizing a link's picture** is done by Cloudflare's **Images binding** (`env.IMAGES`,
+  `wrangler.jsonc`, also under `previews`): the Worker can't decode an image in its CPU
+  time. Free plan: 5,000 transformations a month, 2 per import; past that it fails (error
+  9422, never a bill) and the recipe has no picture. `wrangler dev` and the tests run it
+  offline on this computer (sharp), with the same results for what we use (`width`,
+  `format`, `info`). Pictures the user picks never use it: the browser resizes them with a
+  canvas (`frontend/lib/picture.js`).
+- **A re-scan** replaces a picture only when `edited` is 0 (or fills a missing one); a
+  picture the user chose stays (`savePictureStatement`, which also keeps a link's picture
+  from overwriting one the user saved at the same moment). A photo import's photo has
+  `edited` 0 too, but a photo recipe has no link, so it is never scanned again. A re-scan
+  whose link has no picture keeps the old one. "Remove picture" deletes the row, so a later
+  re-scan brings the link's picture back.
+- **A photo import**: `POST /api/imports/photo` is unchanged (the original goes to Gemini).
+  Right after its 202, the browser sends `PUT /api/imports/:id/picture`. While the import
+  runs (or failed, for a Retry) the picture waits in `import_pictures`; the save stage's
+  batch moves it to the recipe, a Retry moves it to its new row, and dismissing deletes it.
+  If the import already finished, it goes to the recipe at once (one batch either way).
+- **Size**: about 165 KB a recipe at most (70 link pictures from real recipes averaged about
+  120 KB + 22 KB). D1's free 500 MB is per database, shared with the recipes: about 3,000
+  recipes with pictures. One BLOB, and one row, is at most 2 MB. If it ever gets close,
+  `recipe_pictures` can move to a second D1 database in a one-off copy.
+- **Old recipes**: a recipe imported before pictures existed has none until the user adds
+  one or scans its link again (a re-scan fills a missing picture). Filling them in bulk is
+  left to a separate script the owner runs. On the local copy (2026-11-22) a picture was
+  found for 70 of 72 imported recipes; the two pages without one have no `og:image`.
 
 ## Users and login
 
@@ -305,6 +403,9 @@ Workflow: each stage is one retried step, and saves its result to the row
   extract  One call with the text and, if it can be sent, the video; the same call
            gives the calories and protein per serving
   save     One D1 batch: insert the recipe, or replace it on a re-scan, + mark the import done
+           (+ a photo import's waiting picture becomes the recipe's)
+  picture  After the import is done: the link's picture, fetched, resized and saved
+           (never fails the import; see Pictures)
 ```
 
 **Calories and protein.** The extract prompt asks for them per serving, as whole numbers:
@@ -390,7 +491,9 @@ There is no id to rebuild a link from, so the pasted link is fetched, and that i
   `.internal`, ...). Cloudflare's own fetch can't reach private addresses either.
 - One request with a browser's headers, a 30-second timeout, at most 5 MB, and only
   `text/html`, `application/xhtml+xml` or `text/plain`; anything else is
-  `link_unsupported`. Nothing the page links to is fetched, and no video is sent.
+  `link_unsupported`. No video is sent. The only thing the page links to that is fetched
+  is its one preview image (`og:image`), with the same checks ([Pictures](#pictures)).
+- No proxies, scraping services, logins or CAPTCHA solvers, here or for any site.
 - The text sent to the model is what a reader sees: scripts, styles, menus, footers,
   sidebars and buttons are dropped, one block per line, at most 20,000 characters. A
   schema.org `Recipe` block (JSON-LD, which many recipe sites have for search engines) goes
@@ -459,11 +562,12 @@ Workflow: meta has nothing to fetch, video is skipped, extract waits for the fil
   one call (photo prompt + image at resolution 'high'), save as for a link, then deletes the file
 ```
 
-- **The picture is never kept.** It is only ever in Gemini's file store (the same store as
-  Facebook and Instagram videos, not our database), and is deleted when the import ends:
-  after the save, when the model found no recipe, when Google refused it, and when the card
-  is dismissed. A failed import that may be retried keeps it until Google deletes it
-  (48 hours). Only its file name, type and size are logged, never its uri.
+- **A resized copy of the picture is kept as the recipe's picture. The original waits only
+  in Gemini's free file store and is deleted when the import ends**: after the save, when the
+  model found no recipe, when Google refused it, and when the card is dismissed. A failed
+  import that may be retried keeps it until Google deletes it (48 hours). Only its file
+  name, type and size are logged, never its uri. The copy is made by the browser and sent
+  right after the 202 (`PUT /api/imports/:id/picture`, see [Pictures](#pictures)).
 - **The best model first, always.** Every photo import is like `model: 'best'`: it takes
   one of the user's 5 when it calls the best model, and when the best model can't be used
   (shared count or the user's 5 used, busy, or can't run) it goes on with the import models
@@ -487,9 +591,8 @@ Workflow: meta has nothing to fetch, video is skipped, extract waits for the fil
   recognises as published and copyrighted. In testing (2026-11-18) a photo of a famous
   chef's recipe page was refused by both the best model and `gemini-3.8-flash`, so a photo
   import fails at once with `photo_copyrighted` rather than trying the other models.
-- **Later**: the random id is meant to be the R2 object key (`photos/<id>`) if a later
-  feature keeps the picture; `createPhotoImport` in `imports.js` is the one place that
-  handles the uploaded bytes, and the Workflow only knows "a file Gemini can read".
+- `createPhotoImport` in `imports.js` is the one place that handles the uploaded original,
+  and the Workflow only knows "a file Gemini can read".
 
 **Quality test (2026-11-18).** The owner's three test pictures, sent as they are (none is
 over 2048 px on its longest side, so resizing to 4096, 3072 or 2048 px would change nothing):

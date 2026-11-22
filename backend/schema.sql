@@ -125,8 +125,8 @@ END;
 -- the user uploaded. It has no list CHECK, so adding a site needs no table rebuild; the backend
 -- only ever writes the name of one of its own adapters. A photo recipe's source_url is
 -- 'photo:<random id>', not a link: it satisfies the CHECK below (only a manual recipe has
--- none), the API answers it as link '' and fromPhoto true, and the id is the key a later
--- feature may keep the picture under. The picture itself is never stored.
+-- none), and the API answers it as link '' and fromPhoto true. A resized copy of the
+-- picture is kept as the recipe's picture (recipe_pictures); the original is never stored.
 -- is_favorite is a plain column because a favorite is the owner's own mark: other users
 -- who browse a public recipe never see or change it.
 -- is_public says other users may see the recipe in Browse and copy it. Only the owner can
@@ -198,6 +198,22 @@ CREATE TABLE IF NOT EXISTS recipe_tags (
 );
 
 CREATE INDEX IF NOT EXISTS recipe_tags_tag_id ON recipe_tags (tag_id);
+
+-- "Recently deleted": deleting a recipe moves it here, and the user can restore it for 30
+-- days; a daily cron job (scheduled() in index.js) then deletes it for good.
+-- A separate table rather than a deleted flag on recipes: every query that reads recipes
+-- (lists, Browse, imports, the AI tools) stays as it is and can never show a deleted one.
+-- recipe is a JSON snapshot of the row: every column but id and user_id, plus `tags`, its
+-- tag names. Names, not ids, because a tag left on no recipe is deleted with the recipe;
+-- restoring finds or re-creates each tag by name. A restored recipe gets a new id.
+CREATE TABLE IF NOT EXISTS deleted_recipes (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  recipe     TEXT    NOT NULL CHECK (json_valid(recipe)),
+  deleted_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS deleted_recipes_user_id ON deleted_recipes (user_id, deleted_at);
 
 -- One row per request for model work: every import from a link, every Retry (a new row,
 -- not the old one restarted), every re-scan of a recipe's video, every translation and every
@@ -271,4 +287,44 @@ CREATE TABLE IF NOT EXISTS llm_usage (
   model TEXT    NOT NULL,
   calls INTEGER NOT NULL,
   PRIMARY KEY (day, model)
+);
+
+-- A recipe's one picture, stored resized (backend/src/pictures.js): `full` for the recipe's
+-- page and a small `thumb` for the Home and Browse cards. A table of its own, so the recipe
+-- lists never read the bytes. Deleting the recipe first copies its picture to
+-- deleted_recipe_pictures (below), then the cascade deletes this row.
+-- edited is 1 when the user chose the picture in the edit form. A re-scan of the link (and
+-- the backfill) replaces only a picture with edited 0: an import's thumbnail or preview
+-- image, or a photo import's photo (a photo recipe has no link, so it is never re-scanned).
+-- updated_at goes into the picture's address, so a browser can cache it for good.
+CREATE TABLE IF NOT EXISTS recipe_pictures (
+  recipe_id  INTEGER PRIMARY KEY REFERENCES recipes (id) ON DELETE CASCADE,
+  full       BLOB    NOT NULL CHECK (typeof(full) = 'blob' AND length(full) BETWEEN 1 AND 1000000),
+  thumb      BLOB    NOT NULL CHECK (typeof(thumb) = 'blob' AND length(thumb) BETWEEN 1 AND 100000),
+  type       TEXT    NOT NULL CHECK (type IN ('image/jpeg', 'image/webp')),
+  edited     INTEGER NOT NULL DEFAULT 0 CHECK (edited IN (0, 1)),
+  updated_at INTEGER NOT NULL
+);
+
+-- A photo import's picture (resized in the browser), waiting for its recipe. The save
+-- stage moves it into recipe_pictures, a Retry moves it to its new row, and dismissing the
+-- import deletes it.
+CREATE TABLE IF NOT EXISTS import_pictures (
+  request_id INTEGER PRIMARY KEY REFERENCES llm_requests (id) ON DELETE CASCADE,
+  full       BLOB    NOT NULL CHECK (typeof(full) = 'blob' AND length(full) BETWEEN 1 AND 1000000),
+  thumb      BLOB    NOT NULL CHECK (typeof(thumb) = 'blob' AND length(thumb) BETWEEN 1 AND 100000),
+  type       TEXT    NOT NULL CHECK (type IN ('image/jpeg', 'image/webp'))
+);
+
+-- The picture of a recipe in "Recently deleted" (deleted_recipes), moved here as it was, so a
+-- restore brings it back. Purging or restoring the bin row deletes it (the cascade). Created
+-- after recipe_pictures because it copies that table's columns; the checks run again there
+-- when it is restored.
+CREATE TABLE IF NOT EXISTS deleted_recipe_pictures (
+  deleted_id INTEGER PRIMARY KEY REFERENCES deleted_recipes (id) ON DELETE CASCADE,
+  full       BLOB    NOT NULL,
+  thumb      BLOB    NOT NULL,
+  type       TEXT    NOT NULL,
+  edited     INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
 );

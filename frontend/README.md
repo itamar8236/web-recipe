@@ -15,6 +15,8 @@ reordering), and a recipe has any number of them.
 Every recipe view shows a "Source" line: a clickable link (opens in a new tab) when the
 recipe has a `link`, "From a photo" when it was read from a photo (`fromPhoto`), otherwise
 plain "Added manually" text. The link is not editable in the UI; it is filled by import.
+A recipe may have one **picture** (`recipe.picture`, `{ url, thumb }` or `null`): filled in by
+itself when it is imported, and added, replaced or removed in the edit form.
 
 ## Layout
 
@@ -30,7 +32,7 @@ frontend/
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, ImportDialog, ImportCards, RecipeAiTools, SubstituteDialog
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, DeletedDialog, ImportDialog, ImportCards, RecipeAiTools, RecipePicture, SubstituteDialog
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -43,6 +45,8 @@ frontend/
 │   ├── sort.test.js       # Vitest tests for sort.js
 │   ├── photo.js           # preparePhoto(): a chosen picture, ready to send
 │   ├── photo.test.js      # Vitest tests for photo.js
+│   ├── picture.js         # makePicture(): a recipe's picture and thumb, drawn in the browser
+│   ├── picture.test.js    # Vitest tests for picture.js
 │   ├── share.js           # findSharedLink(): the link in what Android shared
 │   ├── share.test.js      # Vitest tests for share.js
 │   └── search.test.js     # Vitest tests for search.js
@@ -98,7 +102,7 @@ frontend/
 1. **Login / Sign up**: described above.
 2. **Home**: tags with recipe counts (`components/TagBar`), which filter the list. On
    phones only, they are one row of pills that scrolls sideways; on desktop, a side list
-   with no scrolling; recipes with the selected tag as cards, each showing all its tags (and "By <author>" when it has one).
+   with no scrolling; recipes with the selected tag as cards, each showing all its tags (not its author: that shows only on its page, though Search still finds it).
    "No tags" shows only while some recipe has none. The selected tag can be renamed
    inline; there is no "new tag" or "delete tag" here: tags are added and removed on each
    recipe's page, and a tag no recipe has is gone. Big "Add recipe" button. Each card has a
@@ -108,10 +112,18 @@ frontend/
    name, ingredients (both languages), who it is by (its author) or tag names (every typed word must match),
    combined with the selected tag and "Favorites". It runs in the browser on the loaded
    recipes.
+   A card whose recipe has a picture shows its thumb as a 64px square at the start side
+   (the left in English, the right in Hebrew), `loading="lazy"`; a card with none shows no
+   empty box.
    Beside Search, a small **sort** dropdown (`components/SortMenu`, a native `<select>`)
    shows "Newest first", the usual order; it can switch to oldest first, most protein,
    most calories or fewest calories (`lib/sort.js`, in the browser; a recipe with no
    calories or protein goes last). The choice is not remembered.
+   At the end of the list, a quiet "🗑 Recently deleted (N)" button shows only while the
+   logged-in user has deleted recipes from the last 30 days. It opens a popup
+   (`components/DeletedDialog`) listing each one's name and "Deleted for good in N days",
+   with a Restore button. A restored recipe leaves the popup and shows at once on Home
+   (first in "Newest first": it gets a new id). A guest has no bin: their delete is final.
 3. **Add recipe** (`components/ImportDialog`, a popup, no route): "+ Add recipe" opens it
    for a logged-in user. A guest goes straight to the manual form, since importing needs
    an account. One focused link field ("A video, a post or a recipe page"); it asks only
@@ -133,6 +145,9 @@ frontend/
      after each pick, so the same picture can be chosen again for a second read. Errors
      (`photo_invalid`, `photo_too_big`, `photo_upload_failed`, `quota`, ...) show under the
      field, like a link's. Photos always use the best model first; there is no checkbox.
+     Once the import has started, a small copy of the same photo is made in the browser
+     (`makePicture`, below) and sent in the background (`sendImportPicture`); it becomes
+     the recipe's picture. If that fails, the recipe just has no picture.
 4. **Import cards** (`components/ImportCards`, at the top of the content section, in every
    tag view, not filtered by search):
    - Running: gray with a gentle pulse, the title or link, and "Getting the
@@ -147,11 +162,17 @@ frontend/
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
 5. **Recipe view**: name, source link (opens the video or page; "From a photo" for a photo),
-   "By: <author>" under it when the recipe has one, tags, ingredients, steps, then a
+   "By: <author>" under it when the recipe has one, the picture, tags, ingredients, steps, then a
    "Per serving" card with calories and protein (only when the recipe has either) and a small note that they were calculated by AI and may be inaccurate, then the
    AI tools box (logged-in users only, below), then Edit and Delete buttons (delete asks
-   for confirmation). The heart is beside the name. Calories and protein show only here,
+   for confirmation, which tells a logged-in user they can restore it from "Recently
+   deleted" for 30 days, and a guest that it can't be undone). The heart is beside the name. Calories and protein show only here,
    never on the Home or Browse cards.
+   - **Picture** (`components/RecipePicture`, only when the recipe has one): under the
+     name, full width, 220px tall on a phone (320px on desktop), cropped to fill
+     (`object-fit: cover`), rounded like the cards. Tapping it opens a full-screen viewer on
+     a dark background with the whole picture (`contain`), where the browser's pinch-zoom
+     works; ×, Escape or a tap anywhere closes it.
    - **Tags** (`components/RecipeTags`) are changed right here, not on the edit form, and
      every tap saves at once. Each tag is a chip with an ×: tapping it removes the tag.
      "+ Add tag" opens a small panel with the user's other tags (tap one to add it), a
@@ -198,6 +219,16 @@ frontend/
      explanation and a "Make private" / "Make public" button. The button only changes the
      form; Save stores it, and Cancel leaves it as it was. A new recipe starts with the
      user's "New recipes are public" default.
+   - **Picture** (also for a guest): a small preview of the current picture, "📷 Choose a
+     picture" ("📷 Another picture" when there is one), and "Remove picture". Choosing opens
+     the same `<input type="file" accept="image/*">` as the Add dialog, so a phone offers its
+     gallery, camera and files. `makePicture` (`lib/picture.js`) draws it with a canvas, with
+     the photo's EXIF rotation: a full JPEG at most 1280px on its longer side and a thumb
+     240px on its shorter side, each under the backend's limit (1 MB and 100 KB). Like public
+     or private, it only changes the form: Save stores it (after the recipe's text), and
+     Cancel leaves the picture as it was. A file the browser can't draw (not a picture, or a
+     HEIC most browsers can't read) shows `picture_invalid`. A guest's picture is kept in
+     memory as object URLs and is gone on reload.
    - No AI tools here: they are on the recipe view, so the form stays a plain form.
 7. **Browse** (`/browse`, logged-in users only): reached with the two big tabs at the top
    of Home and Browse (`components/ModeTabs`: "My recipes" / "From others"; a guest never
@@ -220,9 +251,10 @@ frontend/
      ingredients, author and tags the same way, on the recipes loaded so far. While few match,
      the end of the list stays near the screen, so more pages keep loading by themselves
      until enough match or there are no more (then "No recipes found." if none did).
-   - Each card (`components/BrowseCard`) shows the name, "Saved by <username>", "By <author>" when it has one, the tags,
+   - Each card (`components/BrowseCard`) shows the picture's thumb (as on Home, beside the
+     name), the name, "Saved by <username>", the tags,
      the ingredient count and the source link, with two buttons side by side: **Show
-     recipe** opens the ingredients and steps inside the card, and **+ Save a copy** saves
+     recipe** opens the author (when it has one), ingredients and steps inside the card, and **+ Save a copy** saves
      the user's own copy at once (no question: it is easy to delete). The button then
      becomes "✓ Saved to your recipes" with an Open link to the copy.
    - A recipe the user already saved still shows, on a later visit with the Save button again.
@@ -297,9 +329,11 @@ frontend/
 
 `lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`, `updateAccount`,
 `logout`), tags (`getTags`, `renameTag`),
-recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `setRecipePublic`, `deleteRecipe`), browse (`getBrowse`, `copyRecipe`, `newBrowseSeed`) and imports
+recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `setRecipePublic`, `deleteRecipe`),
+pictures (`setRecipePicture`, `removeRecipePicture`; `{ full, thumb }` Blobs sent as
+multipart `FormData`), browse (`getBrowse`, `copyRecipe`, `newBrowseSeed`) and imports
 (`getImports`, `startImport`, `startPhotoImport` (the picture as the body, with its own
-`Content-Type`), `retryImport`, `dismissImport`, `rerunRecipe`) and
+`Content-Type`), `sendImportPicture`, `retryImport`, `dismissImport`, `rerunRecipe`) and
 `translateRecipe`, `estimateNutrition`, `suggestSubstitutes`. For a guest the tag and recipe functions use memory instead. They
 trim names and lines and drop blank lines like the backend, and make only some of its
 checks, with the same codes: `name_required` (a tag, or a recipe with no name in either

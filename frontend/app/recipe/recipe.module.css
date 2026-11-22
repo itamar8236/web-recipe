@@ -263,3 +263,31 @@
     flex: 0 0 auto;
   }
 }
+
+/* The edit form's picture: a small preview and its buttons, wrapping on a phone. */
+.pictureRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pictureControls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.picturePreview {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+
+.pictureButton {
+  padding-inline: 16px;
+  font-size: 16px;
+}

@@ -2,8 +2,10 @@
 // as (see getSessionUser), so nobody can change another user's data. Reading other users'
 // public recipes is only in browse.js.
 
+import { moveToBin } from './deleted.js';
 import { fail, json, readJson } from './http.js';
 import { isPhotoSource } from './import/sources/photo.js';
+import { pictureUrls, RECIPE_PICTURE_AT } from './pictures.js';
 
 const MAX_TAG_NAME = 100;
 const MAX_TAGS = 20; // per recipe
@@ -45,6 +47,7 @@ export async function existingSpelling(env, userId, name) {
 
 // A recipe as the frontend uses it: both languages side by side, `link` '' when manual or
 // from a photo (whose stored source is `photo:<id>`, not a link), and `fromPhoto` for that.
+// `picture` is null, or the addresses of its picture and thumb (pictures.js).
 export function toRecipe(row) {
   const fromPhoto = isPhotoSource(row.source_url);
   const content = (lang) => ({
@@ -63,15 +66,17 @@ export function toRecipe(row) {
     calories: row.calories,
     protein: row.protein,
     author: row.author ?? '',
+    picture: pictureUrls(row.id, row.picture_at),
     en: content('en'),
     he: content('he'),
   };
 }
 
-// tag_ids is a subquery, so the same list works in a SELECT and in RETURNING.
+// tag_ids and picture_at are subqueries, so the same list works in a SELECT and in RETURNING.
 export const RECIPE_COLUMNS = `id, is_favorite, is_public, source_url, source_model, calories, protein, author,
   name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
-  (SELECT json_group_array(tag_id) FROM recipe_tags WHERE recipe_id = recipes.id) AS tag_ids`;
+  (SELECT json_group_array(tag_id) FROM recipe_tags WHERE recipe_id = recipes.id) AS tag_ids,
+  ${RECIPE_PICTURE_AT('recipes')}`;
 
 // Returns { value } for a valid tag name, or { error } with the code to send.
 function readTagName(value) {
@@ -340,13 +345,16 @@ async function setPublic(request, env, userId, id) {
   return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');
 }
 
-// Its tags go with it, and a tag that was only on this recipe is deleted too.
+// Moves it to "Recently deleted" (deleted.js), where it can be restored for 30 days, with
+// its picture. Its tags go with it, and a tag that was only on this recipe is deleted too:
+// restoring creates it again by name.
 async function deleteRecipe(env, userId, id) {
-  const [deleted] = await env.DB.batch([
+  const results = await env.DB.batch([
+    ...moveToBin(env, userId, id, Date.now()),
     env.DB.prepare('DELETE FROM recipes WHERE id = ? AND user_id = ? RETURNING id').bind(id, userId),
     deleteUnusedTags(env, userId),
   ]);
-  return deleted.results.length ? json({ ok: true }) : fail(404, 'not_found');
+  return results.at(-2).results.length ? json({ ok: true }) : fail(404, 'not_found');
 }
 
 // Routes /api/tags[/:id] and /api/recipes[/:id[/favorite|/public|/tags]]. Returns null when the
