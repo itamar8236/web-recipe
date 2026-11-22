@@ -222,7 +222,7 @@ frontend/
      until enough match or there are no more (then "No recipes found." if none did).
    - Each card (`components/BrowseCard`) shows the name, "Saved by <username>", the tags,
      the ingredient count and the source link, with two buttons side by side: **Show
-     recipe** opens the ingredients and steps inside the card, and **+ Save a copy** saves
+     recipe** opens the author (when it has one), ingredients and steps inside the card, and **+ Save a copy** saves
      the user's own copy at once (no question: it is easy to delete). The button then
      becomes "✓ Saved to your recipes" with an Open link to the copy.
    - A recipe the user already saved still shows, on a later visit with the Save button again.
