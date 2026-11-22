@@ -30,7 +30,7 @@ const sendPicture = (path, cookie, { full = JPEG, thumb = JPEG, type = 'image/jp
 };
 
 const pictureRow = (recipeId) =>
-  env.DB.prepare('SELECT origin, type, length(full) AS full, length(thumb) AS thumb FROM recipe_pictures WHERE recipe_id = ?').bind(recipeId).first();
+  env.DB.prepare('SELECT edited, type, length(full) AS full, length(thumb) AS thumb FROM recipe_pictures WHERE recipe_id = ?').bind(recipeId).first();
 
 let dana;
 let noa;
@@ -100,7 +100,7 @@ describe('a recipe’s picture endpoints', () => {
     const { picture } = await saved.json();
     expect(picture.url).toMatch(new RegExp(`^/api/recipes/${recipe.id}/picture\\?v=\\d+$`));
     expect(picture.thumb).toBe(`${picture.url}&size=thumb`);
-    expect(await pictureRow(recipe.id)).toMatchObject({ origin: 'user', type: 'image/jpeg', full: JPEG.length });
+    expect(await pictureRow(recipe.id)).toMatchObject({ edited: 1, type: 'image/jpeg', full: JPEG.length });
 
     const [{ recipe: one }, { recipes }] = await Promise.all([
       (await as(dana).get(`/api/recipes/${recipe.id}`)).json(),
@@ -162,7 +162,7 @@ describe('a recipe’s picture endpoints', () => {
     await sendPicture(`/api/recipes/${recipe.id}/picture`, dana);
     expect((await sendPicture(`/api/recipes/${recipe.id}/picture`, noa)).status).toBe(404);
     expect((await as(noa).del(`/api/recipes/${recipe.id}/picture`)).status).toBe(404);
-    expect(await pictureRow(recipe.id)).toMatchObject({ origin: 'user' });
+    expect(await pictureRow(recipe.id)).toMatchObject({ edited: 1 });
 
     // Public, as Browse shows it: others can see it.
     expect((await as(noa).get(`/api/recipes/${recipe.id}/picture`)).status).toBe(200);
@@ -179,7 +179,7 @@ describe('a recipe’s picture endpoints', () => {
 
     const { recipe: copy } = await (await as(noa).post(`/api/browse/${recipe.id}/copy`, {})).json();
     expect(copy.picture.url).toMatch(`/api/recipes/${copy.id}/picture?v=`);
-    expect(await pictureRow(copy.id)).toMatchObject({ origin: 'user', full: JPEG.length });
+    expect(await pictureRow(copy.id)).toMatchObject({ edited: 1, full: JPEG.length });
 
     expect((await as(dana).del(`/api/recipes/${recipe.id}`)).status).toBe(200);
     expect(await pictureRow(recipe.id)).toBeNull();
@@ -212,7 +212,7 @@ describe('a photo import’s picture', () => {
     await runStage(env, row.id, row.attempt, STAGES.find(({ name }) => name === 'save'), { files: { remove: async () => {} } });
     const after = await env.DB.prepare('SELECT status, recipe_id FROM llm_requests WHERE id = ?').bind(row.id).first();
     expect(after.status).toBe('done');
-    expect(await pictureRow(after.recipe_id)).toMatchObject({ origin: 'photo', full: JPEG.length });
+    expect(await pictureRow(after.recipe_id)).toMatchObject({ edited: 0, full: JPEG.length });
     expect(await waiting(row.id)).toBeNull();
   });
 
@@ -220,7 +220,7 @@ describe('a photo import’s picture', () => {
     const recipe = await newRecipe(dana);
     const row = await photoImport(dana, { status: 'done', recipe_id: recipe.id });
     expect((await sendPicture(`/api/imports/${row.id}/picture`, dana)).status).toBe(200);
-    expect(await pictureRow(recipe.id)).toMatchObject({ origin: 'photo' });
+    expect(await pictureRow(recipe.id)).toMatchObject({ edited: 0 });
     expect(await waiting(row.id)).toBeNull();
   });
 
@@ -259,7 +259,7 @@ describe('the import’s picture step', () => {
     const recipe = await newRecipe(dana);
     const row = await finished(recipe.id);
     await savePictureForImport(env, row.id, row.attempt);
-    expect(await pictureRow(recipe.id)).toMatchObject({ origin: 'link', type: 'image/jpeg' });
+    expect(await pictureRow(recipe.id)).toMatchObject({ edited: 0, type: 'image/jpeg' });
     expect((await env.DB.prepare('SELECT state FROM llm_requests WHERE id = ?').bind(row.id).first()).state).toBe('{}');
   });
 
@@ -269,17 +269,17 @@ describe('the import’s picture step', () => {
     await sendPicture(`/api/recipes/${recipe.id}/picture`, dana, { full: WEBP, thumb: WEBP, type: 'image/webp' });
     const row = await finished(recipe.id);
     await savePictureForImport(env, row.id, row.attempt);
-    expect(await pictureRow(recipe.id)).toMatchObject({ origin: 'user', type: 'image/webp' });
+    expect(await pictureRow(recipe.id)).toMatchObject({ edited: 1, type: 'image/webp' });
     expect(fetch).not.toHaveBeenCalled();
   });
 
   it('replaces an older picture from the link', async () => {
     const recipe = await newRecipe(dana);
-    await env.DB.prepare(`INSERT INTO recipe_pictures VALUES (?, ?, ?, 'image/webp', 'link', 1)`).bind(recipe.id, WEBP, WEBP).run();
+    await env.DB.prepare(`INSERT INTO recipe_pictures VALUES (?, ?, ?, 'image/webp', 0, 1)`).bind(recipe.id, WEBP, WEBP).run();
     vi.stubGlobal('fetch', vi.fn(async () => jpegResponse()));
     const row = await finished(recipe.id);
     await savePictureForImport(env, row.id, row.attempt);
-    expect(await pictureRow(recipe.id)).toMatchObject({ origin: 'link', type: 'image/jpeg' });
+    expect(await pictureRow(recipe.id)).toMatchObject({ edited: 0, type: 'image/jpeg' });
   });
 
   it('leaves the recipe without a picture, and the import done, when the picture can’t be had', async () => {

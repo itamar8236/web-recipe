@@ -2,11 +2,12 @@
 // stored resized in D1 (recipe_pictures), a full one for the recipe's page and a small
 // thumb for the Home and Browse cards, so a view never resizes anything.
 //
-// Where a picture comes from (recipe_pictures.origin):
-//   'link'  an import's thumbnail or preview image, fetched and resized here by the
-//           Images binding. A re-scan of the link may replace it.
-//   'photo' the photo a photo import read, resized in the browser.
-//   'user'  chosen in the edit form, resized in the browser.
+// Where a picture comes from:
+//   a link import  its thumbnail or preview image, fetched and resized here by the Images
+//                  binding.
+//   a photo import a copy of the photo, resized in the browser.
+//   the edit form  chosen by the user, resized in the browser: the only one saved with
+//                  recipe_pictures.edited = 1, which a re-scan of the link never replaces.
 
 import { fail, json } from './http.js';
 import { decodeEntities } from './import/sources/meta.js';
@@ -168,23 +169,23 @@ export async function pictureForLink(env, addresses) {
 
 // ---- Storing ----
 
-// Saves a picture as the recipe's, if the recipe is the user's. A 'link' picture never
-// replaces one the user chose or a photo import's photo.
-export function savePictureStatement(env, { recipeId, userId, picture, origin, now = Date.now() }) {
+// Saves a picture as the recipe's, if the recipe is the user's. `edited` says the user chose
+// it; a picture that isn't (a link's) never replaces one that is, even if both arrive at once.
+export function savePictureStatement(env, { recipeId, userId, picture, edited, now = Date.now() }) {
   return env.DB.prepare(
-    `INSERT INTO recipe_pictures (recipe_id, full, thumb, type, origin, updated_at)
+    `INSERT INTO recipe_pictures (recipe_id, full, thumb, type, edited, updated_at)
      SELECT id, ?3, ?4, ?5, ?6, ?7 FROM recipes WHERE id = ?1 AND user_id = ?2
      ON CONFLICT (recipe_id) DO UPDATE SET full = excluded.full, thumb = excluded.thumb, type = excluded.type,
-       origin = excluded.origin, updated_at = excluded.updated_at
-     WHERE excluded.origin <> 'link' OR recipe_pictures.origin = 'link'`,
-  ).bind(recipeId, userId, picture.full, picture.thumb, picture.type, origin, now);
+       edited = excluded.edited, updated_at = excluded.updated_at
+     WHERE excluded.edited = 1 OR recipe_pictures.edited = 0`,
+  ).bind(recipeId, userId, picture.full, picture.thumb, picture.type, edited ? 1 : 0, now);
 }
 
 // Copies a picture from one recipe to another (a copy from Browse), as it is.
 export const copyPictureStatement = (env, fromRecipeId, toRecipeId, now = Date.now()) =>
   env.DB.prepare(
-    `INSERT OR REPLACE INTO recipe_pictures (recipe_id, full, thumb, type, origin, updated_at)
-     SELECT ?2, full, thumb, type, origin, ?3 FROM recipe_pictures WHERE recipe_id = ?1`,
+    `INSERT OR REPLACE INTO recipe_pictures (recipe_id, full, thumb, type, edited, updated_at)
+     SELECT ?2, full, thumb, type, edited, ?3 FROM recipe_pictures WHERE recipe_id = ?1`,
   ).bind(fromRecipeId, toRecipeId, now);
 
 // The recipe JSON's `picture`: the addresses the browser loads, which change with every
@@ -265,7 +266,7 @@ async function putPicture(request, env, userId, recipeId) {
   const picture = await readUploadedPicture(request);
   if (picture.error) return pictureError(picture.error);
   const now = Date.now();
-  const { meta } = await savePictureStatement(env, { recipeId, userId, picture: picture.value, origin: 'user', now }).run();
+  const { meta } = await savePictureStatement(env, { recipeId, userId, picture: picture.value, edited: true, now }).run();
   if (!meta.changes) return fail(404, 'not_found');
   return json({ picture: pictureUrls(recipeId, now) });
 }
@@ -298,8 +299,8 @@ async function putImportPicture(request, env, userId, importId) {
        ON CONFLICT (request_id) DO UPDATE SET full = excluded.full, thumb = excluded.thumb, type = excluded.type`,
     ).bind(importId, full, thumb, type),
     env.DB.prepare(
-      `INSERT INTO recipe_pictures (recipe_id, full, thumb, type, origin, updated_at)
-       SELECT recipe_id, ?2, ?3, ?4, 'photo', ?5 FROM llm_requests
+      `INSERT INTO recipe_pictures (recipe_id, full, thumb, type, edited, updated_at)
+       SELECT recipe_id, ?2, ?3, ?4, 0, ?5 FROM llm_requests
         WHERE id = ?1 AND status = 'done' AND recipe_id IS NOT NULL
        ON CONFLICT (recipe_id) DO NOTHING`,
     ).bind(importId, full, thumb, type, Date.now()),

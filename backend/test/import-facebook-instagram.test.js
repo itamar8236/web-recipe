@@ -675,10 +675,10 @@ describe('the Workflow, end to end, for Facebook and Instagram', () => {
 
     // The post's preview image, copied and resized, is the recipe's picture.
     expect(calls(IG_PICTURE_URL)).toHaveLength(1);
-    const picture = await env.DB.prepare('SELECT type, origin, length(full) AS full, length(thumb) AS thumb FROM recipe_pictures WHERE recipe_id = ?')
+    const picture = await env.DB.prepare('SELECT type, edited, length(full) AS full, length(thumb) AS thumb FROM recipe_pictures WHERE recipe_id = ?')
       .bind(after.recipe_id)
       .first();
-    expect(picture).toMatchObject({ type: 'image/jpeg', origin: 'link' });
+    expect(picture).toMatchObject({ type: 'image/jpeg', edited: 0 });
     expect(picture.full).toBeGreaterThan(0);
     expect(picture.thumb).toBeGreaterThan(0);
     expect(JSON.parse((await reload(row)).state)).toEqual({});

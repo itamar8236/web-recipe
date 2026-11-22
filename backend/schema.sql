@@ -276,15 +276,16 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 -- A recipe's one picture, stored resized (backend/src/pictures.js): `full` for the recipe's
 -- page and a small `thumb` for the Home and Browse cards. A table of its own, so the recipe
 -- lists never read the bytes, and deleting the recipe deletes its picture.
--- origin says where it came from: 'link' (an import's thumbnail or preview image, which a
--- re-scan may replace), 'photo' (a photo import's photo) or 'user' (chosen in the edit form).
+-- edited is 1 when the user chose the picture in the edit form. A re-scan of the link (and
+-- the backfill) replaces only a picture with edited 0: an import's thumbnail or preview
+-- image, or a photo import's photo (a photo recipe has no link, so it is never re-scanned).
 -- updated_at goes into the picture's address, so a browser can cache it for good.
 CREATE TABLE IF NOT EXISTS recipe_pictures (
   recipe_id  INTEGER PRIMARY KEY REFERENCES recipes (id) ON DELETE CASCADE,
   full       BLOB    NOT NULL CHECK (typeof(full) = 'blob' AND length(full) BETWEEN 1 AND 1000000),
   thumb      BLOB    NOT NULL CHECK (typeof(thumb) = 'blob' AND length(thumb) BETWEEN 1 AND 100000),
   type       TEXT    NOT NULL CHECK (type IN ('image/jpeg', 'image/webp')),
-  origin     TEXT    NOT NULL CHECK (origin IN ('link', 'photo', 'user')),
+  edited     INTEGER NOT NULL DEFAULT 0 CHECK (edited IN (0, 1)),
   updated_at INTEGER NOT NULL
 );
 

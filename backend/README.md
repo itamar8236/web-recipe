@@ -89,7 +89,7 @@ with the wrong method answers 405 `method_not_allowed`.
 | `PUT /api/recipes/:id/public` `{public: true\|false}` | Set (not toggle) whether other users can see and copy it | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `DELETE /api/recipes/:id` | Delete (its picture too) | 200 `{ok}` | 404 |
 | `GET /api/recipes/:id/picture[?size=thumb]` | The recipe's picture (or its thumb) as an image: yours, or anyone's public one (Browse) | 200 the bytes, `Cache-Control: private, max-age=31536000, immutable` | 404 (no picture, or another user's private recipe) |
-| `PUT /api/recipes/:id/picture`, multipart `full` + `thumb` | Set the picture the user chose (`origin` `'user'`), replacing any | 200 `{picture}` | 400 `picture_invalid`; 413 `picture_too_big`; 404 |
+| `PUT /api/recipes/:id/picture`, multipart `full` + `thumb` | Set the picture the user chose (`edited` 1), replacing any | 200 `{picture}` | 400 `picture_invalid`; 413 `picture_too_big`; 404 |
 | `DELETE /api/recipes/:id/picture` | Remove its picture | 200 `{ok}` | 404 |
 
 `recipe` is `{ id, tagIds, favorite, public, link, fromPhoto, sourceModel, calories, protein, author, picture, en, he }`, where `public` says
@@ -300,11 +300,11 @@ longer side) for the recipe's page and `thumb` (240 px on its shorter side; the 
 it to a square) for the Home and Browse cards, so no view ever resizes. Never an AI-made
 picture of the dish.
 
-| Where it comes from | `origin` | How |
+| Where it comes from | `edited` | How |
 |---|---|---|
-| A link import | `link` | The Workflow's `picture` step |
-| A photo import | `photo` | A copy of the photo, resized in the browser |
-| The edit form | `user` | Chosen by the user (gallery, camera or a file), resized in the browser |
+| A link import | 0 | The Workflow's `picture` step |
+| A photo import | 0 | A copy of the photo, resized in the browser |
+| The edit form | 1 | Chosen by the user (gallery, camera or a file), resized in the browser |
 | A copy from Browse | the original's | Copied with the recipe, in its batch |
 
 - **A link's picture**: each adapter's `fetchPost` returns `pictureUrls`, best first:
@@ -326,8 +326,12 @@ picture of the dish.
   offline on this computer (sharp), with the same results for what we use (`width`,
   `format`, `info`). Pictures the user picks never use it: the browser resizes them with a
   canvas (`frontend/lib/picture.js`).
-- **A re-scan** replaces only a `link` picture (or fills a missing one); a `user` or `photo`
-  picture stays (`savePictureStatement`). A re-scan whose link has no picture keeps the old one.
+- **A re-scan** replaces a picture only when `edited` is 0 (or fills a missing one); a
+  picture the user chose stays (`savePictureStatement`, which also keeps a link's picture
+  from overwriting one the user saved at the same moment). A photo import's photo has
+  `edited` 0 too, but a photo recipe has no link, so it is never scanned again. A re-scan
+  whose link has no picture keeps the old one. "Remove picture" deletes the row, so a later
+  re-scan brings the link's picture back.
 - **A photo import**: `POST /api/imports/photo` is unchanged (the original goes to Gemini).
   Right after its 202, the browser sends `PUT /api/imports/:id/picture`. While the import
   runs (or failed, for a Retry) the picture waits in `import_pictures`; the save stage's

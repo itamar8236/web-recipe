@@ -303,8 +303,8 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, author
     ).bind(doneState, model, now, job.user_id, job.source_url, job.id, job.attempt),
     // A photo import's picture, sent by the browser, becomes the new recipe's.
     env.DB.prepare(
-      `INSERT INTO recipe_pictures (recipe_id, full, thumb, type, origin, updated_at)
-       SELECT i.recipe_id, p.full, p.thumb, p.type, 'photo', ?2
+      `INSERT INTO recipe_pictures (recipe_id, full, thumb, type, edited, updated_at)
+       SELECT i.recipe_id, p.full, p.thumb, p.type, 0, ?2
          FROM import_pictures AS p JOIN llm_requests AS i ON i.id = p.request_id
         WHERE p.request_id = ?1 AND i.status = 'done' AND i.recipe_id IS NOT NULL
        ON CONFLICT (recipe_id) DO NOTHING`,
@@ -376,10 +376,10 @@ export async function savePictureForImport(env, importId, attempt) {
     .bind(importId, attempt)
     .first();
   if (!job?.picture_urls) return;
-  const kept = await env.DB.prepare(`SELECT 1 FROM recipe_pictures WHERE recipe_id = ? AND origin <> 'link'`).bind(job.recipe_id).first();
+  const kept = await env.DB.prepare(`SELECT 1 FROM recipe_pictures WHERE recipe_id = ? AND edited = 1`).bind(job.recipe_id).first();
   const picture = kept ? null : await pictureForLink(env, JSON.parse(job.picture_urls));
   const statements = [env.DB.prepare(`UPDATE llm_requests SET state = '{}' WHERE id = ? AND attempt = ?`).bind(importId, attempt)];
-  if (picture) statements.unshift(savePictureStatement(env, { recipeId: job.recipe_id, userId: job.user_id, picture, origin: 'link' }));
+  if (picture) statements.unshift(savePictureStatement(env, { recipeId: job.recipe_id, userId: job.user_id, picture, edited: false }));
   await env.DB.batch(statements);
 }
 
