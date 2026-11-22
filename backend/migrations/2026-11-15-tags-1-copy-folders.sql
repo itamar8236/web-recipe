@@ -5,7 +5,7 @@
 --   npx wrangler d1 execute recipes-db --remote --file=migrations/2026-11-15-tags-1-copy-folders.sql
 -- Locally, once, after a `npm run db:pull` made from a production that hasn't had it yet:
 --   npx wrangler d1 execute recipes-db --local --file=migrations/2026-11-15-tags-1-copy-folders.sql
--- Then, once the new code is deployed, run step 2 (2026-11-15-tags-2-drop-folders.sql).
+-- Then, once the new code is deployed, run step 2 (2026-11-22-drop-folders.sql).
 --
 -- What it copies:
 --   * Each folder that holds at least one recipe becomes a tag with the folder's id and
