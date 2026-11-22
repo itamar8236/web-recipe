@@ -9,7 +9,7 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 ## Status
 
 Built so far: the recipe browsing UI (tags, recipes, favorites, English/Hebrew, manual
-add/edit/delete, calories and protein per serving), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
+add/edit/delete, calories and protein per serving, who a recipe is by), the D1 binding + schema (`backend/schema.sql`), sign-up / log-in /
 log-out with remembered sessions plus a guest mode, editing your own username,
 password and defaults, the admin logging in as any user, browsing and copying other users' public recipes, sorting both lists, the tags/recipes API, so a
 logged-in user's data is stored in D1 (a guest's stays in browser memory), and creating
@@ -112,6 +112,13 @@ resolved. One short line each, linking to the README section with the details.
   no AI tools.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
+- A recipe may also have **who it is by** (its author: a chef, a channel or a site; the same
+  in both languages), shown on its page and its card, and found by Search. An import fills
+  it in by itself when it can tell: for a video, the channel or account that posted it,
+  from the site; for a web page or a photo, the name its text gives as the recipe's author,
+  if any (the model never guesses one). A manual recipe has none until the user types it,
+  and it can always be edited. An import writes a name the way the user already has it on
+  another recipe, so one source is written one way.
 - A recipe may also have **calories and protein per serving** (optional, the same in both
   languages), shown only on the recipe's own page. They are typed in the edit form, and an
   import from a link gets them from the model in the same request as the recipe; any
@@ -243,7 +250,9 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
   `.env.example` with placeholder values instead.
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
-- Run a real video import on a link the owner didn't give in the chat (`local-dev`).
+- Call a model (Gemini, Groq) without the owner's OK in the chat: a real import, AI tool or
+  script run locally spends real quota (`local-dev`). Reading any link's page locally, with
+  no model call, needs no OK.
 - Follow a redirect automatically, or fetch anything a page links to. For YouTube,
   Facebook and Instagram the Worker fetches only URLs it builds from a parsed id, on the
   site's own hosts; any other link is fetched only after `isFetchableUrl` (a public domain

@@ -1,7 +1,7 @@
 // Runs real imports through the local app, one link at a time, and prints what came back.
 // For checking by hand that imports still work after a site changes its pages or a model
 // is swapped. It is not part of `npm test`: it calls the real sites and spends real model
-// quota (the dev keys in .dev.vars), so run it only on links the owner gave.
+// quota (the dev keys in .dev.vars), so run it only with the owner's OK in the chat.
 //
 // Start the app first (`npm run dev`, from backend/), then give it the links themselves,
 // in quotes, and/or files of links:

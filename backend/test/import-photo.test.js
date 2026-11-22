@@ -155,6 +155,9 @@ describe('stages for a photo', () => {
     expect(args.prompt).toContain('handwritten recipe card');
     expect(args.prompt).toContain('never guess a recipe from how the food looks');
     expect(args.prompt).not.toContain('<description>');
+    // A photo has no site to say who it is by, so the model is asked.
+    expect(args.schema.properties.author).toEqual({ type: 'string' });
+    expect(args.prompt).toContain('"author"');
     const after = await reload(row);
     expect(after).toMatchObject({ stage: 'save', used_best: 1, model: BEST });
     // The file is deleted by the save stage, not before.

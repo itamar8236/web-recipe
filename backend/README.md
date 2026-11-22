@@ -81,14 +81,14 @@ with the wrong method answers 405 `method_not_allowed`.
 | `PUT /api/tags/:id` `{name}` | Rename a tag | 200 `{tag}` | 400 `name_required`, `too_long` (> 100 chars), 409 `tag_exists` (another tag has that name), 404 `not_found` |
 | `GET /api/recipes` | All the user's recipes, oldest first | 200 `{recipes: [recipe]}` | |
 | `GET /api/recipes/:id` | One recipe | 200 `{recipe}` | 404 |
-| `POST /api/recipes` `{en, he, calories?, protein?}` | Create a manual recipe, with no tags | 201 `{recipe}` | 400 `name_required` (no name in either language), `too_long`, `invalid_nutrition` |
-| `PUT /api/recipes/:id` `{en, he, calories?, protein?}` | Replace its text, and the calories and protein sent (one left out is kept; `null` clears it). Tags, favorite and link are kept | 200 `{recipe}` | 400 as above, 404 |
+| `POST /api/recipes` `{en, he, calories?, protein?, author?}` | Create a manual recipe, with no tags | 201 `{recipe}` | 400 `name_required` (no name in either language), `too_long`, `invalid_nutrition`, `invalid_request` |
+| `PUT /api/recipes/:id` `{en, he, calories?, protein?, author?}` | Replace its text, and the calories, protein and author sent (one left out is kept; `null` clears it, and so does `''` for the author). Tags, favorite and link are kept | 200 `{recipe}` | 400 as above, 404 |
 | `PUT /api/recipes/:id/tags` `{tags: [name]}` | Set its tags to exactly these names | 200 `{recipe, tags}` | 400 `invalid_request`, `name_required` (a blank name), `too_long` (a name > 100 chars, or > 20 tags), 404 |
 | `PUT /api/recipes/:id/favorite` `{favorite: true\|false}` | Set (not toggle) the favorite | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `PUT /api/recipes/:id/public` `{public: true\|false}` | Set (not toggle) whether other users can see and copy it | 200 `{recipe}` | 400 `invalid_request`, 404 |
 | `DELETE /api/recipes/:id` | Delete | 200 `{ok}` | 404 |
 
-`recipe` is `{ id, tagIds, favorite, public, link, fromPhoto, sourceModel, calories, protein, en, he }`, where `public` says
+`recipe` is `{ id, tagIds, favorite, public, link, fromPhoto, sourceModel, calories, protein, author, en, he }`, where `public` says
 other users can see it in Browse (a new recipe gets the user's `defaultPublic`), `en` and `he` are
 `{ name, ingredients: [string], steps: [string] }`, `link` is the source video (`''` for
 manual recipes and for one read from a photo, whose `fromPhoto` is then `true`; see
@@ -96,7 +96,10 @@ manual recipes and for one read from a photo, whose `fromPhoto` is then `true`; 
 `tagIds` is the ids of its tags, lowest first (`[]` for none). `calories` (kcal) and
 `protein` (grams) are per serving, whole numbers, `null` when not known; they are the same
 in both languages, and `invalid_nutrition` means one isn't a whole number from 0 to 10000
-(calories) or 1000 (protein). The backend trims names and
+(calories) or 1000 (protein). `author` is who the recipe is by (a chef, a channel, a site),
+`''` when not known; it is the same in both languages, at most 100 characters
+(`too_long`), and kept as the user typed it, with spaces tidied
+(see [Author](#author)). The backend trims names and
 lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ingredients
 or steps per language, 2000 chars per line. The table also keeps
 `machine_translated_lang` (which language an import's model filled in, as a translation),
@@ -111,7 +114,7 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
 | `GET /api/browse?seed=<n>[&after=<next>]` or `?sort=<order>[&after=<next>]` | One page (10) of other users' public recipes | 200 `{recipes, next}` | 400 `invalid_request` (an unknown `sort`, `seed` not a whole number from 1 to 1000002, or a bad `after`) |
 | `POST /api/browse/:id/copy` `{}` | Save your own copy of that recipe | 201 `{recipe}` (the new one, as in the recipes API) | 404 `not_found` (missing, private, or your own) |
 
-- A browsed recipe is `{ id, owner, tags, link, fromPhoto, en, he }`: `owner` is the username of who
+- A browsed recipe is `{ id, owner, tags, link, fromPhoto, author, en, he }`: `owner` is the username of who
   saved it and `tags` its tag **names** (ids mean nothing to another user). The owner's
   favorite mark is never sent, nor the calories and protein (shown only on a recipe's own
   page); a copy brings them along.
@@ -311,6 +314,34 @@ that leaves them out still gives the recipe. A value that is missing, or outside
 kcal / 0-1000 g, is stored as `null` rather than failing the import; decimals are rounded.
 A re-scan replaces them along with the text. Manual recipes don't call the model for them
 (a later feature).
+
+### Author
+
+An import also saves who the recipe is by (`recipes.author`), when it can be told. It is
+optional and never fails an import:
+
+- **A video** (YouTube, Facebook, Instagram): the channel or account that posted it, from
+  the site itself, never from the model, which isn't asked (its answer schema has no
+  `author` field). YouTube: the API's `snippet.channelTitle`. Facebook: the `owner.name`
+  of the video's own node in the page data; a page without its data (the preview-text
+  fallback) still has it as the last `" | "` part of its `<title>`. Instagram: the
+  account's `full_name` without the tagline some put after a `" | "`, or its `username`
+  when it shows no name; a preview-only page gives the name before `" on Instagram"` in
+  `og:title`. Checked on 2026-11-22 on real Facebook and Instagram pages from the local
+  copy of the database, fallbacks included. A repost credits whoever posted it.
+- **A web page**: the schema.org `Recipe` block's `author` (a name, a Person or an
+  Organization, the first of a list) when it gives a name. Otherwise, and for a page the
+  model opens itself, the answer schema gets an optional `author` field and the prompt
+  asks for the person or brand the text names as the recipe's author, never a guess.
+- **A photo**: always the model, the same way.
+- A name is tidied (invisible text-direction marks dropped, spaces collapsed), and one
+  over 100 characters is dropped. Before saving, an import reuses the spelling of the same
+  name (ignoring the case of English letters) on another of the user's recipes, so
+  searching for one source finds them all. What the user types in the edit form is kept as
+  typed.
+- "Scan the link again" replaces it with the one found, and keeps the recipe's own when
+  none is found. A copy from Browse brings it along. Translating and the calories estimate
+  never touch it.
 
 **Links.** Only the backend decides which site a link is (`sources/index.js`), from the
 link's text alone. A new platform is one adapter added to `SOURCES` (the adapter shape is

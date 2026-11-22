@@ -169,6 +169,7 @@ describe('saving a copy', () => {
     const withNutrition = await (await copy(noa, original.id)).json();
     expect(withNutrition.recipe).toMatchObject({ calories: 300, protein: 9 });
     const [browsed] = (await browse(noa)).recipes;
+    expect(browsed.author).toBe('');
     expect(browsed).not.toHaveProperty('calories');
     expect(browsed).not.toHaveProperty('protein');
 
@@ -196,8 +197,12 @@ describe('saving a copy', () => {
       .bind(danaId, link)
       .first();
 
+    await env.DB.prepare(`UPDATE recipes SET author = 'Tasty Home' WHERE id = ?`).bind(id).run();
+    const browsed = (await browse(noa)).recipes.find((r) => r.id === id);
+    expect(browsed.author).toBe('Tasty Home');
+
     const { recipe } = await (await copy(noa, id)).json();
-    expect(recipe).toMatchObject({ link, sourceModel: 'some-model' });
+    expect(recipe).toMatchObject({ link, sourceModel: 'some-model', author: 'Tasty Home' });
   });
 
   it('keeps the recipe in Browse, and saving it again makes another copy', async () => {

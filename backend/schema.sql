@@ -135,6 +135,11 @@ END;
 -- calories (kcal) and protein (grams) are per serving, whole numbers, NULL when not known.
 -- An import's model fills them in, and the user can write or change them. They are the
 -- same in both languages.
+-- author is who the recipe is by, NULL when not known (always for a manual one until the
+-- user types it): for a video the channel or account that posted it, from the site itself;
+-- for a web page or a photo the person or brand its text names, from schema.org data or the
+-- model. An import reuses the user's existing spelling of the same name (case aside), so
+-- one source is written one way. The same in both languages.
 -- source_model is the LLM that produced an imported recipe (NULL for manual recipes).
 -- machine_translated_lang names the language an import's model filled in as a translation
 -- of the post's own language. Only the backend reads it (the API doesn't return it); it is
@@ -160,6 +165,7 @@ CREATE TABLE IF NOT EXISTS recipes (
   machine_translated_lang TEXT CHECK (machine_translated_lang IN ('en', 'he')),
   calories       INTEGER CHECK (calories BETWEEN 0 AND 10000),
   protein        INTEGER CHECK (protein BETWEEN 0 AND 1000),
+  author         TEXT    CHECK (length(author) BETWEEN 1 AND 100),
   created_at     INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   updated_at     INTEGER NOT NULL DEFAULT (CAST(unixepoch('subsec') * 1000 AS INTEGER)),
   CHECK (trim(name_en) <> '' OR trim(name_he) <> ''),
