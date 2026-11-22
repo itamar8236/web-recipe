@@ -18,6 +18,32 @@ const LANGS = ['en', 'he'];
 // when nobody knows them.
 const NUTRITION_LIMITS = { calories: 10000, protein: 1000 };
 
+export const MAX_AUTHOR = 100;
+
+// Who a recipe is by, tidied so one name is written one way: no invisible text-direction
+// marks, no runs of spaces. null when there is no name left.
+export function cleanAuthor(value) {
+  if (typeof value !== 'string') return null;
+  const name = value.replace(/[‎‏‪-‮⁦-⁩]/g, '').replace(/\s+/g, ' ').trim();
+  return name || null;
+}
+
+// The name an import found, or null when it is missing or too long to be a name.
+export function importedAuthor(value) {
+  const name = cleanAuthor(value);
+  return name && name.length <= MAX_AUTHOR ? name : null;
+}
+
+// An import writes a name the way the user already has it on another recipe, if they do
+// (case aside), so searching for it finds them all. null stays null.
+export async function existingSpelling(env, userId, name) {
+  if (!name) return null;
+  const row = await env.DB.prepare('SELECT author FROM recipes WHERE user_id = ? AND author = ? COLLATE NOCASE ORDER BY id LIMIT 1')
+    .bind(userId, name)
+    .first();
+  return row?.author ?? name;
+}
+
 // A recipe as the frontend uses it: both languages side by side, `link` '' when manual or
 // from a photo (whose stored source is `photo:<id>`, not a link), and `fromPhoto` for that.
 // `picture` is null, or the addresses of its picture and thumb (pictures.js).
@@ -38,6 +64,7 @@ export function toRecipe(row) {
     sourceModel: row.source_model,
     calories: row.calories,
     protein: row.protein,
+    author: row.author ?? '',
     picture: pictureUrls(row.id, row.picture_at),
     en: content('en'),
     he: content('he'),
@@ -45,7 +72,7 @@ export function toRecipe(row) {
 }
 
 // tag_ids and picture_at are subqueries, so the same list works in a SELECT and in RETURNING.
-export const RECIPE_COLUMNS = `id, is_favorite, is_public, source_url, source_model, calories, protein,
+export const RECIPE_COLUMNS = `id, is_favorite, is_public, source_url, source_model, calories, protein, author,
   name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he,
   (SELECT json_group_array(tag_id) FROM recipe_tags WHERE recipe_id = recipes.id) AS tag_ids,
   ${RECIPE_PICTURE_AT('recipes')}`;
@@ -109,7 +136,18 @@ export function readNutrition(value) {
   return { value: nutrition };
 }
 
-// Reads { en, he, calories?, protein? }. Tags are not part of it: they have their own endpoint.
+// Reads `author` from `value`: a name ('' or null for none, which is null), or left out
+// (undefined: an update then keeps what the recipe has). The user's own spelling is kept.
+function readAuthor(value) {
+  const author = value?.author;
+  if (author === undefined) return { value: undefined };
+  if (author !== null && typeof author !== 'string') return { error: 'invalid_request' };
+  const name = cleanAuthor(author);
+  if (name && name.length > MAX_AUTHOR) return { error: 'too_long' };
+  return { value: name };
+}
+
+// Reads { en, he, calories?, protein?, author? }. Tags are not part of it: they have their own endpoint.
 async function readRecipe(request) {
   const body = await readJson(request);
   if (!body) return { error: 'invalid_request' };
@@ -123,7 +161,9 @@ async function readRecipe(request) {
   if (!recipe.en.name && !recipe.he.name) return { error: 'name_required' };
   const nutrition = readNutrition(body);
   if (nutrition.error) return nutrition;
-  return { value: { ...recipe, ...nutrition.value } };
+  const author = readAuthor(body);
+  if (author.error) return author;
+  return { value: { ...recipe, ...nutrition.value, author: author.value } };
 }
 
 // The bound values for the content columns, in RECIPE_COLUMNS order (en, then he).
@@ -225,16 +265,24 @@ async function createRecipe(request, env, userId) {
   const row = await env.DB.prepare(
     `INSERT INTO recipes (user_id, is_public,
        name_en, ingredients_en, steps_en, name_he, ingredients_he, steps_he, created_at, updated_at,
-       calories, protein)
-     VALUES (?1, (SELECT default_public FROM users WHERE id = ?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+       calories, protein, author)
+     VALUES (?1, (SELECT default_public FROM users WHERE id = ?1), ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
      RETURNING ${RECIPE_COLUMNS}`,
   )
-    .bind(userId, ...contentValues(recipe.value), now, now, recipe.value.calories ?? null, recipe.value.protein ?? null)
+    .bind(
+      userId,
+      ...contentValues(recipe.value),
+      now,
+      now,
+      recipe.value.calories ?? null,
+      recipe.value.protein ?? null,
+      recipe.value.author ?? null,
+    )
     .first();
   return json({ recipe: toRecipe(row) }, 201);
 }
 
-// Replaces the text, and the calories and protein the body has (one left out stays): the
+// Replaces the text, and the calories, protein and author the body has (one left out stays): the
 // tags, favorite, link and public flag stay. Editing a language the LLM
 // filled in makes it the user's own text, so its machine-translated label is cleared
 // (see schema.sql).
@@ -251,7 +299,8 @@ async function updateRecipe(request, env, userId, id) {
        name_he = ?5, ingredients_he = ?6, steps_he = ?7,
        updated_at = ?8,
        calories = CASE WHEN ?10 THEN ?11 ELSE calories END,
-       protein = CASE WHEN ?12 THEN ?13 ELSE protein END
+       protein = CASE WHEN ?12 THEN ?13 ELSE protein END,
+       author = CASE WHEN ?14 THEN ?15 ELSE author END
      WHERE id = ?9 AND user_id = ?1
      RETURNING ${RECIPE_COLUMNS}`,
   )
@@ -264,6 +313,8 @@ async function updateRecipe(request, env, userId, id) {
       recipe.value.calories ?? null,
       recipe.value.protein === undefined ? 0 : 1,
       recipe.value.protein ?? null,
+      recipe.value.author === undefined ? 0 : 1,
+      recipe.value.author ?? null,
     )
     .first();
   return row ? json({ recipe: toRecipe(row) }) : fail(404, 'not_found');

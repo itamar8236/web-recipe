@@ -17,6 +17,7 @@ import {
   facebookReelPage,
   IG_CAPTION,
   IG_CODE,
+  IG_OWNER,
   IG_PICTURE_URL,
   IG_VIDEO_URL,
   instagramCarouselPage,
@@ -109,7 +110,7 @@ describe('stage: meta, for a post', () => {
     const after = await reload(row);
     expect(after).toMatchObject({ title: 'Eggplant salad', stage: 'video', status: 'running', error: null, source_id: IG_CODE, source_url: IG_POST });
     expect(JSON.parse(after.state)).toEqual({
-      meta: { text: IG_CAPTION, transcript: '', video: { seconds: 37.5, isPublic: true, downloadUrl: IG_VIDEO_URL }, pictureUrls: [IG_PICTURE_URL] },
+      meta: { text: IG_CAPTION, transcript: '', video: { seconds: 37.5, isPublic: true, downloadUrl: IG_VIDEO_URL }, author: IG_OWNER, pictureUrls: [IG_PICTURE_URL] },
       done: ['meta'],
       version: 2,
     });

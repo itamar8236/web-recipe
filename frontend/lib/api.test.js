@@ -57,6 +57,16 @@ describe('guest: recipes', () => {
     ).rejects.toMatchObject({ code: 'invalid_nutrition' });
   });
 
+  it('keeps the author tidied, keeps it when left out, and checks its length like the backend', async () => {
+    const saved = await api.saveRecipe(null, { en: content('Toast'), he: content(''), author: '  Tom   Smith ' });
+    expect(saved.author).toBe('Tom Smith');
+    expect((await newRecipe('Plain')).author).toBe('');
+    expect((await api.saveRecipe(saved.id, { en: content('Toast'), he: content('') })).author).toBe('Tom Smith');
+    await expect(
+      api.saveRecipe(null, { en: content('Toast'), he: content(''), author: 'x'.repeat(101) }),
+    ).rejects.toMatchObject({ code: 'too_long' });
+  });
+
   it('updates an existing recipe and keeps its tags', async () => {
     const recipe = await newRecipe('Shakshuka');
     const { tags } = await api.setRecipeTags(recipe.id, ['Dinner']);

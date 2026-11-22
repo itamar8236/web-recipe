@@ -17,6 +17,7 @@ ${blocks.join('\n')}
 const wrap = (data) => ({ require: [['ScheduledServerJS', 'handle', null, [{ __bbox: { require: [['RelayPrepopulator', null, null, [{ __bbox: { result: { data } } }]]] } }]]] });
 
 export const FB_ID = '857300000000001';
+export const FB_OWNER = 'Kebab Kitchen';
 export const FB_OTHER_ID = '914700000000002';
 export const FB_VIDEO_URL = 'https://video.fxyz1-1.fna.fbcdn.net/o1/v/t2/f2/m412/sd-file.mp4?_nc_cat=1&oe=ABC';
 export const FB_SUBTITLES_URL = 'https://scontent.fxyz1-1.fna.fbcdn.net/v/t39.2093-6/subtitles_n.srt?_nc_cat=1';
@@ -59,7 +60,7 @@ export function facebookReelPage({ id = FB_ID, caption = FB_CAPTION, seconds = 2
           video: { id, playable_duration_in_ms: Math.round(seconds * 1000), owner: { id: '1000' } },
           playback_video: fbPlayer(id, { seconds, subtitlesUrl, videoUrl }),
         },
-        video: { id, owner: { id: '1000' } },
+        video: { id, owner: { id: '1000', name: FB_OWNER } },
       },
       id,
     },
@@ -73,7 +74,7 @@ export function facebookWatchPage({ id = FB_ID, caption = FB_CAPTION, seconds = 
   const player = { ...fbPlayer(id, { subtitlesUrl: null }), playable_duration_in_ms: Math.round(seconds * 1000), videoId: id };
   return page(
     '',
-    jsonScript(wrap({ video: { story: { attachments: [{ media: player }] }, id } })),
+    jsonScript(wrap({ video: { story: { attachments: [{ media: { ...player, owner: { id: '1000', name: FB_OWNER } } }] }, id } })),
     jsonScript(wrap({ id, title: { text: 'Oven kebab' }, creation_story: { debug_info: null, message: { text: caption } }, live_status: 'NEVER_LIVE' })),
   );
 }
@@ -82,6 +83,7 @@ export function facebookWatchPage({ id = FB_ID, caption = FB_CAPTION, seconds = 
 export const facebookGonePage = () => page('', jsonScript(wrap({ video: null, viewer: { actor: { __typename: 'LoggedOutUser', id: '0' } } })));
 
 export const IG_CODE = 'CxExampleA1';
+export const IG_OWNER = 'Maya Cohen';
 export const IG_VIDEO_URL = 'https://instagram.fxyz1-1.fna.fbcdn.net/o1/v/t2/f2/m82/reel-file.mp4?_nc_cat=1';
 export const IG_CAPTION = 'Eggplant salad\n2 large roasted eggplants, raw tahini, date syrup, salt. Spread the eggplant on a plate and drizzle everything on top.';
 
@@ -103,7 +105,7 @@ export function instagramReelPage({ code = IG_CODE, caption = IG_CAPTION, durati
     video_dash_manifest: duration === null ? null : igManifest(duration),
     video_versions: [{ type: 101, url: videoUrl }, { type: 102, url: videoUrl }],
     // The same user's other posts ride along, and must not be mistaken for this one.
-    user: { polaris_ordered_timeline_connection: { edges: [{ node: { code: 'DfOtherPost1', caption: { text: 'Another post' } } }] } },
+    user: { username: 'maya.cooks', full_name: `${IG_OWNER} | Easy salads`, polaris_ordered_timeline_connection: { edges: [{ node: { code: 'DfOtherPost1', caption: { text: 'Another post' } } }] } },
   });
 }
 
@@ -128,8 +130,8 @@ export const instagramGonePage = () => page('', `<script>{"routeConfig":{"pageID
 export const instagramLoginPage = () => page('', `<script>{"routeConfig":{"pageID":"loginPage"}}</script>`);
 
 // A page that came without its data blocks but still has the text link previews show.
-export const previewOnlyPage = (title, description) =>
-  `<!DOCTYPE html><html><head><meta property="og:title" content="${title}" /><meta property="og:description" content="${description}" /></head><body></body></html>`;
+export const previewOnlyPage = (title, description, pageTitle = '') =>
+  `<!DOCTYPE html><html><head><title>${pageTitle}</title><meta property="og:title" content="${title}" /><meta property="og:description" content="${description}" /></head><body></body></html>`;
 
 // A page with nothing a parser knows: what a block or a changed layout looks like.
 export const emptyPage = () => '<!DOCTYPE html><html><head><title>Site</title></head><body><div id="root"></div></body></html>';

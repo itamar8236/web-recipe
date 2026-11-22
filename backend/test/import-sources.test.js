@@ -12,11 +12,13 @@ import {
   facebookWatchPage,
   FB_CAPTION,
   FB_ID,
+  FB_OWNER,
   FB_PICTURE_URL,
   FB_SUBTITLES_URL,
   FB_VIDEO_URL,
   IG_CAPTION,
   IG_CODE,
+  IG_OWNER,
   IG_PICTURE_URL,
   IG_VIDEO_URL,
   instagramCarouselPage,
@@ -176,6 +178,7 @@ describe('Facebook adapter: fetchPost', () => {
       text: FB_CAPTION,
       transcript: "You tried the viral kebab? It's a quick version to make in the oven.",
       video: { seconds: 28.5, isPublic: true, downloadUrl: FB_VIDEO_URL },
+      author: FB_OWNER,
       pictureUrls: [FB_PICTURE_URL],
     });
     expect(requested()).toEqual([FB_WATCH, FB_SUBTITLES_URL]);
@@ -311,9 +314,24 @@ describe('Facebook adapter: fetchPost', () => {
 
   it('falls back to the link-preview text when the page came without its data', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    stubSite({ [FB_WATCH]: html(previewOnlyPage('39K views | &#x5e7;&#x5e8;&#x5d9;&#x5e1;&#x5e4;&#x5d9; &amp; chips | Cook', 'short')) });
+    stubSite({ [FB_WATCH]: html(previewOnlyPage('39K views | &#x5e7;&#x5e8;&#x5d9;&#x5e1;&#x5e4;&#x5d9; &amp; chips | Cook', 'short', 'Fish &amp; chips | Kebab &amp; Co')) });
     const post = await facebook.fetchPost(FB_ID);
-    expect(post).toMatchObject({ sourceId: FB_ID, text: '39K views | קריספי & chips | Cook', transcript: '', video: null });
+    expect(post).toMatchObject({ sourceId: FB_ID, text: '39K views | קריספי & chips | Cook', transcript: '', video: null, author: 'Kebab & Co' });
+  });
+
+  it('reads who posted a video from the watch page too', async () => {
+    stubSite({ [FB_WATCH]: html(facebookWatchPage()) });
+    expect((await facebook.fetchPost(FB_ID)).author).toBe(FB_OWNER);
+  });
+
+  it.each([
+    ['Fish and chips', null],
+    ['Facebook', null],
+    ['Fish and chips | Facebook', null],
+  ])('finds no author in a page titled %j', async (pageTitle, author) => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    stubSite({ [FB_WATCH]: html(previewOnlyPage('Fish and chips', 'short', pageTitle)) });
+    expect((await facebook.fetchPost(FB_ID)).author).toBe(author);
   });
 
   it('gives a caption-only post when the page has no video file', async () => {
@@ -353,6 +371,7 @@ describe('Instagram adapter: fetchPost', () => {
       text: IG_CAPTION,
       transcript: '',
       video: { seconds: 37.5, isPublic: true, downloadUrl: IG_VIDEO_URL },
+      author: IG_OWNER,
       pictureUrls: [IG_PICTURE_URL],
     });
     expect(requested()).toEqual([IG_POST]);
@@ -432,7 +451,13 @@ describe('Instagram adapter: fetchPost', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     stubSite({ [IG_POST]: html(previewOnlyPage('Cook on Instagram', 'Cook on Instagram: &quot;Eggplant salad with tahini and date syrup&quot;')) });
     const post = await instagram.fetchPost(IG_CODE);
-    expect(post).toMatchObject({ text: 'Cook on Instagram: "Eggplant salad with tahini and date syrup"', video: null });
+    expect(post).toMatchObject({ text: 'Cook on Instagram: "Eggplant salad with tahini and date syrup"', video: null, author: 'Cook' });
+  });
+
+  it('uses the username of an account that shows no name', async () => {
+    const page = instagramReelPage().replace(`"full_name":"${IG_OWNER} | Easy salads"`, '"full_name":""');
+    stubSite({ [IG_POST]: html(page) });
+    expect((await instagram.fetchPost(IG_CODE)).author).toBe('maya.cooks');
   });
 });
 

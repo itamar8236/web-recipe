@@ -17,7 +17,7 @@ function RecipeForm() {
   const params = useSearchParams();
   const id = params.get('id') ? Number(params.get('id')) : null;
 
-  const [form, setForm] = useState({ en: blankText, he: blankText, calories: '', protein: '' });
+  const [form, setForm] = useState({ en: blankText, he: blankText, calories: '', protein: '', author: '' });
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'missing' | 'error'
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [saving, setSaving] = useState(false);
@@ -58,6 +58,7 @@ function RecipeForm() {
             he: toText(recipe.he),
             calories: toNumberText(recipe.calories),
             protein: toNumberText(recipe.protein),
+            author: recipe.author ?? '',
           });
         }
         setStatus('ready');
@@ -121,6 +122,7 @@ function RecipeForm() {
         he: toContent(values.he),
         calories: toNumber(values.calories),
         protein: toNumber(values.protein),
+        author: values.author,
       });
       try {
         if (loggedIn && saved.public !== isPublic) await api.setRecipePublic(saved.id, isPublic);
@@ -190,6 +192,13 @@ function RecipeForm() {
           {t.instructions} <span className="hint">({t.instructionsHint})</span>
         </label>
         <textarea id="steps" className="field" value={current.steps} onChange={(e) => update('steps', e.target.value)} />
+      </div>
+
+      <div>
+        <label className="label" htmlFor="author">
+          {t.authorField} <span className="hint">({t.authorHint})</span>
+        </label>
+        <input id="author" className="field" maxLength={100} value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} />
       </div>
 
       <fieldset className={styles.nutritionFields}>

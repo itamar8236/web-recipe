@@ -29,15 +29,18 @@ local copy, so agents can't reach production even by accident.
   copies the main checkout's local database into a worktree on the same computer.
 - Never read `backend/.dev.vars` or `.env`. `.dev.vars` holds the owner's dev keys, which
   use a test quota, not production's.
-- You may test real imports yourself on the local app, but only on links the owner gives
-  in the chat. Don't tick "Use the best model" (or send `model: 'best'`) unless the owner
-  asks, so testing doesn't use up its 20 requests a day. A photo import always calls the best
-  model first, so run one only with the owner's OK, on pictures they gave in the chat (never
-  commit them or copy them into the repo). Automated tests always use fake keys and stubs. List in
+- You may test on the local app with any link, including the ones in the local
+  database's recipes. Fetching a page yourself (no model) needs no OK, e.g. to see where a
+  site keeps a field. **Every call to a model needs the owner's OK in the chat first**: a
+  real import, an AI tool, or a script that reaches Gemini or Groq. Ask with the links and
+  how many calls, and wait. Don't tick "Use the best model" (or send `model: 'best'`) unless
+  the owner asks, so testing doesn't use up its 20 requests a day. A photo import always
+  calls the best model first; use only pictures the owner gave in the chat (never commit
+  them or copy them into the repo). Automated tests always use fake keys and stubs. List in
   the PR the real imports you ran. `node scripts/e2e-links.mjs "<link>" ...` (from
-  `backend/`, with the app running) runs the links the owner gave in the chat, or a file of
-  them, through the local app on a test account, without the best model by default; it's the check after Facebook or Instagram change
-  their pages.
+  `backend/`, with the app running) runs links, or a file of them, through the local app on
+  a test account, without the best model by default; it's the check after Facebook or
+  Instagram change their pages.
 
 ## 1. Check the local copy
 From `backend/`:

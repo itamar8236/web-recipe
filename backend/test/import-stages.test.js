@@ -27,7 +27,7 @@ describe('test setup', () => {
 
 describe('YouTube adapter: fetchPost', () => {
   const video = {
-    snippet: { title: 'Shakshuka', description: 'A long description' },
+    snippet: { title: 'Shakshuka', description: 'A long description', channelTitle: 'Tasty Home' },
     contentDetails: { duration: 'PT2M5S' },
     status: { privacyStatus: 'public' },
   };
@@ -42,6 +42,7 @@ describe('YouTube adapter: fetchPost', () => {
       title: 'Shakshuka',
       text: 'A long description',
       transcript: '',
+      author: 'Tasty Home',
       video: { seconds: 125, isPublic: true, uri: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
       pictureUrls: ['https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg', 'https://i.ytimg.com/vi/dQw4w9WgXcQ/sddefault.jpg'],
     });
@@ -118,13 +119,13 @@ const meta = ({ description = LONG_DESCRIPTION, transcript = '', seconds = 120, 
 const stateAtExtract = (metaFields, more = {}) => JSON.stringify({ meta: meta(metaFields), done: ['meta', 'video'], version: 2, ...more });
 const atExtract = (userId, metaFields, fields = {}) =>
   insertImport(userId, { stage: 'extract', quota_day: today(), state: stateAtExtract(metaFields), ...fields });
-const atSave = (userId, recipe = ONE, fields = {}) =>
+const atSave = (userId, recipe = ONE, fields = {}, siteAuthor = undefined) =>
   insertImport(userId, {
     stage: 'save',
     quota_day: today(),
     state: JSON.stringify({
-      meta: meta(),
-      recipe: { language: recipe.language, en: recipe.en, he: recipe.he, calories: recipe.calories, protein: recipe.protein },
+      meta: { ...meta(), author: siteAuthor },
+      recipe: { language: recipe.language, en: recipe.en, he: recipe.he, calories: recipe.calories, protein: recipe.protein, author: recipe.author },
       model: FIRST,
       done: ['meta', 'video', 'extract'],
       version: 2,
@@ -171,6 +172,7 @@ describe('stage: meta', () => {
       meta: {
         text: 'desc',
         transcript: '',
+        author: null,
         video: { seconds: 120, isPublic: true, uri: VIDEO_URL },
         pictureUrls: [`https://i.ytimg.com/vi/${VIDEO_ID}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${VIDEO_ID}/sddefault.jpg`],
       },
@@ -215,10 +217,55 @@ describe('stage: extract', () => {
 
     const after = await reload(row);
     const state = JSON.parse(after.state);
-    expect(state.recipe).toEqual({ language: 'he', en: ONE.en, he: ONE.he, calories: null, protein: null });
+    expect(state.recipe).toEqual({ language: 'he', en: ONE.en, he: ONE.he, calories: null, protein: null, author: null });
+    // A video's author comes from its site, so the model is not asked for one.
+    expect(args.schema.properties).not.toHaveProperty('author');
+    expect(args.prompt).not.toContain('"author"');
     expect(state.model).toBe(FIRST);
     expect(state.done).toEqual(['meta', 'video', 'extract']);
     expect(after).toMatchObject({ stage: 'save', status: 'running', error: null, used_best: 0 });
+  });
+
+  it('drops an author the model gives for a video unasked', async () => {
+    const row = await atExtract(await insertUser());
+    await runExtract(row, fakeLlm({ ...ONE, author: 'Made Up' }));
+    expect(JSON.parse((await reload(row)).state).recipe.author).toBeNull();
+  });
+
+  describe('for a web page', () => {
+    const WEB_URL = 'https://cooking.example.com/shakshuka';
+    const atWebExtract = (userId, author) =>
+      insertImport(userId, {
+        platform: 'web',
+        source_id: WEB_URL,
+        source_url: WEB_URL,
+        stage: 'extract',
+        quota_day: today(),
+        state: JSON.stringify({ meta: { text: LONG_DESCRIPTION, transcript: '', video: null, author }, done: ['meta', 'video'], version: 2 }),
+      });
+
+    it('asks the model who the recipe is by when the page data did not say, and keeps its answer', async () => {
+      const row = await atWebExtract(await insertUser(), null);
+      const llm = fakeLlm({ ...ONE, author: '  Tom   Smith ' });
+      await runExtract(row, llm);
+      const [args] = llm.mock.calls[0];
+      expect(args.schema.properties.author).toEqual({ type: 'string' });
+      expect(args.schema.required).not.toContain('author');
+      expect(args.prompt).toContain('never guess one');
+      expect(JSON.parse((await reload(row)).state).recipe.author).toBe('Tom Smith');
+    });
+
+    it('does not ask when the page data names the author, and drops a name too long to be one', async () => {
+      const row = await atWebExtract(await insertUser(), 'Keren Agam');
+      const llm = fakeLlm({ ...ONE, author: 'Someone' });
+      await runExtract(row, llm);
+      expect(llm.mock.calls[0][0].schema.properties).not.toHaveProperty('author');
+      expect(JSON.parse((await reload(row)).state).recipe.author).toBeNull();
+
+      const other = await atWebExtract(await insertUser('noa'), null);
+      await runExtract(other, fakeLlm({ ...ONE, author: 'x'.repeat(101) }));
+      expect(JSON.parse((await reload(other)).state).recipe.author).toBeNull();
+    });
   });
 
   it('tells the model to treat the content as data and covers every prompt rule', async () => {
@@ -564,6 +611,35 @@ describe('stage: save', () => {
     expect(await reload(row)).toMatchObject({ status: 'done', state: '{}', recipe_id: recipe.id });
   });
 
+  it('writes no author when neither the site nor the model gave one', async () => {
+    const row = await atSave(await insertUser());
+    await runStage(env, row.id, row.attempt, stage('save'));
+    expect((await recipes())[0].author).toBeNull();
+  });
+
+  it('writes the site’s name for who posted it, before the model’s', async () => {
+    const row = await atSave(await insertUser(), { ...ONE, author: 'From the model' }, {}, '\u200eTasty  Home ');
+    await runStage(env, row.id, row.attempt, stage('save'));
+    expect((await recipes())[0].author).toBe('Tasty Home');
+
+    const other = await atSave(await insertUser('noa'), { ...ONE, author: 'From the model' });
+    await runStage(env, other.id, other.attempt, stage('save'));
+    expect((await recipes())[1].author).toBe('From the model');
+  });
+
+  it('writes a name the way the user already has it on another recipe', async () => {
+    const userId = await insertUser();
+    const otherUser = await insertUser('noa');
+    const add = (user, author) =>
+      env.DB.prepare(`INSERT INTO recipes (user_id, name_en, author) VALUES (?, 'Old', ?)`).bind(user, author).run();
+    await add(otherUser, 'TOM SMITH');
+    await add(userId, 'Tom Smith');
+    const row = await atSave(userId, ONE, {}, 'tom smith');
+    await runStage(env, row.id, row.attempt, stage('save'));
+    const saved = await env.DB.prepare('SELECT author FROM recipes WHERE user_id = ? ORDER BY id DESC').bind(userId).first();
+    expect(saved.author).toBe('Tom Smith');
+  });
+
   it('writes the calories and protein the model gave', async () => {
     const row = await atSave(await insertUser(), { ...ONE, calories: 420, protein: 25 });
     await runStage(env, row.id, row.attempt, stage('save'));
@@ -665,6 +741,18 @@ describe('stage: save', () => {
       expect(await reload(row)).toMatchObject({ status: 'done', state: '{}', recipe_id: recipe.id });
       const kept = await env.DB.prepare('SELECT tag_id FROM recipe_tags WHERE recipe_id = ?').bind(recipe.id).all();
       expect(kept.results).toEqual([{ tag_id: tagId }]);
+    });
+
+    it('replaces the author with the one found, and keeps it when none is', async () => {
+      const userId = await insertUser();
+      const recipe = await insertRecipe(userId, { author: 'Typed by me' });
+      const row = await atSave(userId, ONE, { replace_recipe_id: recipe.id });
+      await runStage(env, row.id, row.attempt, stage('save'));
+      expect((await recipes())[0].author).toBe('Typed by me');
+
+      const again = await atSave(userId, ONE, { replace_recipe_id: recipe.id }, 'Tasty Home');
+      await runStage(env, again.id, again.attempt, stage('save'));
+      expect((await recipes())[0].author).toBe('Tasty Home');
     });
 
     it('does not recreate a deleted recipe, and dismisses the import', async () => {

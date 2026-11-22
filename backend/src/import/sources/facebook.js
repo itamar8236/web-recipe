@@ -3,7 +3,7 @@
 
 import { ImportError } from '../errors.js';
 import { previewImageUrl } from '../../pictures.js';
-import { clipText, fetchPage, fetchSubtitles, findObject, jsonBlocks, openVideo, previewText, titleFrom } from './meta.js';
+import { clipText, decodeEntities, fetchPage, fetchSubtitles, findObject, jsonBlocks, openVideo, previewText, titleFrom } from './meta.js';
 
 const HOSTS = new Set(['facebook.com', 'www.facebook.com', 'm.facebook.com', 'web.facebook.com', 'fb.watch']);
 const VIDEO_ID = /^\d{5,20}$/;
@@ -52,6 +52,8 @@ function readPage(html, id) {
   const player = findInBlocks((node) => node.videoDeliveryLegacyFields && (node.id === id || node.videoId === id));
   const story = findInBlocks((node) => node.id === id && node.creation_story?.message);
   const timed = findInBlocks((node) => node.id === id && node.playable_duration_in_ms > 0);
+  // The video itself, as the post's attachment, says who posted it.
+  const owned = findInBlocks((node) => node.id === id && typeof node.owner?.name === 'string');
   if (!player && !story) return null;
 
   const files = player?.videoDeliveryLegacyFields;
@@ -60,8 +62,17 @@ function readPage(html, id) {
   return {
     caption: clipText(story?.creation_story.message.text),
     subtitlesUrl: player?.captions_url ?? null,
+    author: owned?.owner.name ?? null,
     video: downloadUrl ? { seconds: seconds > 0 ? seconds : null, isPublic: true, downloadUrl } : null,
   };
+}
+
+// A video page's <title> is "<caption> | <who posted it>". og:title is no use: it is cut short.
+function authorFromTitle(html) {
+  const title = /<title[^>]*>([^<]*)<\/title>/i.exec(html.slice(0, 300000))?.[1];
+  const parts = title ? decodeEntities(title).split(' | ') : [];
+  const name = parts.length > 1 ? parts.at(-1).trim() : '';
+  return name && name !== 'Facebook' ? name : null;
 }
 
 // The video a login page was asked for in its `next` parameter, or null.
@@ -106,7 +117,7 @@ async function fetchPost(sourceId) {
     const preview = clipText(previewText(html));
     if (!preview) throw new ImportError('source_blocked', { retryable: true, detail: `Facebook sent a page without the video's data (${html.length} bytes)` });
     console.log(`Facebook ${id}: no data blocks in the page, using its preview text`);
-    return { sourceId: id, sourceUrl: watchUrl(id), title: titleFrom(preview, 'Facebook'), text: preview, transcript: '', video: null, pictureUrls };
+    return { sourceId: id, sourceUrl: watchUrl(id), title: titleFrom(preview, 'Facebook'), text: preview, transcript: '', video: null, author: authorFromTitle(html), pictureUrls };
   }
 
   return {
@@ -116,6 +127,7 @@ async function fetchPost(sourceId) {
     text: page.caption,
     transcript: page.subtitlesUrl ? await fetchSubtitles(page.subtitlesUrl) : '',
     video: page.video,
+    author: page.author ?? authorFromTitle(html),
     pictureUrls,
   };
 }

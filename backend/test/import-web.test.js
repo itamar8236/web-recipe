@@ -93,8 +93,22 @@ describe('reading a web page', () => {
       ],
     };
     const html = `<html><head><script type="application/ld+json">${JSON.stringify(ld)}</script></head><body><p>Topping: 150 g pecans</p></body></html>`;
-    expect(structuredRecipe(html)).toBe('Pecan cake\nMakes: 12\nIngredients:\n140 g butter\n200 g sugar & more\nInstructions:\nCake\nCream the butter\nBake 40 minutes');
+    expect(structuredRecipe(html)).toEqual({
+      text: 'Pecan cake\nMakes: 12\nIngredients:\n140 g butter\n200 g sugar & more\nInstructions:\nCake\nCream the butter\nBake 40 minutes',
+      author: null,
+    });
     expect(pageText(html)).toBe('Topping: 150 g pecans');
+  });
+
+  it.each([
+    ['Tom Smith', 'Tom Smith'],
+    [{ '@type': 'Person', name: 'Tom Smith' }, 'Tom Smith'],
+    [[{ '@type': 'Organization', name: 'Tasty &amp; Co' }, { name: 'Someone else' }], 'Tasty & Co'],
+    [{ '@id': 'https://example.com/#/schema/person/1' }, null],
+    [undefined, null],
+  ])('reads the schema.org author %j as %j', (author, name) => {
+    const ld = { '@type': 'Recipe', name: 'Cake', author, recipeIngredient: ['flour'], recipeInstructions: ['Bake'] };
+    expect(structuredRecipe(`<script type="application/ld+json">${JSON.stringify(ld)}</script>`).author).toBe(name);
   });
 
   it('ignores a schema.org recipe with no steps', () => {

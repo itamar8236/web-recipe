@@ -51,6 +51,7 @@ async function fetchPost(sourceId, env) {
     title: video.snippet?.title ?? '',
     text: video.snippet?.description ?? '',
     transcript: '',
+    author: video.snippet?.channelTitle ?? null,
     pictureUrls: thumbnailUrls(sourceId),
     video: {
       // A live stream has no length yet (0), which counts as unknown.
