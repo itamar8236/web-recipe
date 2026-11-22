@@ -17,17 +17,26 @@ const SNAPSHOT_COLUMNS = [
   'machine_translated_lang', 'calories', 'protein', 'author', 'created_at', 'updated_at',
 ];
 
-// Copies the recipe and its tag names into the bin. Runs in the same batch as the DELETE,
-// so a recipe is never lost and never in both places. Nothing is copied when the recipe
-// isn't this user's.
-export const moveToBin = (env, userId, id, now) =>
+const PICTURE_COLUMNS = 'full, thumb, type, edited, updated_at';
+
+// The statements that copy the recipe, its tag names and its picture into the bin. They run
+// in the same batch as the DELETE, so a recipe is never lost and never in both places.
+// Nothing is copied when the recipe isn't this user's. The new bin row has the highest id
+// (see restoredId below for why).
+export const moveToBin = (env, userId, id, now) => [
   env.DB.prepare(
     `INSERT INTO deleted_recipes (user_id, recipe, deleted_at)
      SELECT user_id, json_object(${SNAPSHOT_COLUMNS.map((column) => `'${column}', ${column}`).join(', ')},
        'tags', json((SELECT json_group_array(tags.name) FROM recipe_tags JOIN tags ON tags.id = recipe_tags.tag_id
                      WHERE recipe_tags.recipe_id = recipes.id))), ?3
      FROM recipes WHERE id = ?1 AND user_id = ?2`,
-  ).bind(id, userId, now);
+  ).bind(id, userId, now),
+  env.DB.prepare(
+    `INSERT INTO deleted_recipe_pictures (deleted_id, ${PICTURE_COLUMNS})
+     SELECT (SELECT MAX(id) FROM deleted_recipes WHERE user_id = ?2), ${PICTURE_COLUMNS} FROM recipe_pictures
+     WHERE recipe_id = ?1 AND EXISTS (SELECT 1 FROM recipes WHERE id = ?1 AND user_id = ?2)`,
+  ).bind(id, userId),
+];
 
 // The user's bin, most recently deleted first. Older rows the cron job hasn't removed yet
 // are left out, so nothing shows or restores after its 30 days.
@@ -50,8 +59,8 @@ async function listDeleted(env, userId) {
   });
 }
 
-// Puts the recipe back with its text, favorite, public flag and tags (a tag that was
-// deleted meanwhile is created again), in one batch. Answers like setting tags does.
+// Puts the recipe back with its text, favorite, public flag, picture and tags (a tag that
+// was deleted meanwhile is created again), in one batch. Answers like setting tags does.
 async function restoreDeleted(env, userId, id) {
   const binRow = 'FROM deleted_recipes WHERE id = ?1 AND user_id = ?2 AND deleted_at > ?3';
   const snapshotTags = `json_each((SELECT recipe ${binRow}), '$.tags')`;
@@ -73,15 +82,21 @@ async function restoreDeleted(env, userId, id) {
       `INSERT INTO recipe_tags (recipe_id, tag_id)
        SELECT ${restoredId}, id FROM tags WHERE user_id = ?2 AND name IN (SELECT value FROM ${snapshotTags})`,
     ).bind(...values),
+    env.DB.prepare(
+      `INSERT INTO recipe_pictures (recipe_id, ${PICTURE_COLUMNS})
+       SELECT ${restoredId}, ${PICTURE_COLUMNS} FROM deleted_recipe_pictures WHERE deleted_id IN (SELECT id ${binRow})`,
+    ).bind(...values),
     env.DB.prepare(`DELETE ${binRow} RETURNING id`).bind(...values),
     env.DB.prepare(`SELECT ${RECIPE_COLUMNS} FROM recipes WHERE id = ${restoredId}`).bind(id, userId),
     selectTags(env, userId),
   ]);
-  if (!results[3].results.length) return fail(404, 'not_found');
-  return json({ recipe: toRecipe(results[4].results[0]), tags: results[5].results });
+  const [deleted, restored, tags] = results.slice(-3);
+  if (!deleted.results.length) return fail(404, 'not_found');
+  return json({ recipe: toRecipe(restored.results[0]), tags: tags.results });
 }
 
-// The daily cron job: deletes for good what has been in the bin for 30 days.
+// The daily cron job: deletes for good what has been in the bin for 30 days (its picture
+// goes with it, by the cascade).
 export async function purgeDeleted(env, now = Date.now()) {
   const { meta } = await env.DB.prepare('DELETE FROM deleted_recipes WHERE deleted_at <= ?').bind(now - KEEP_MS).run();
   console.log(`Purged ${meta.changes} deleted recipes`);

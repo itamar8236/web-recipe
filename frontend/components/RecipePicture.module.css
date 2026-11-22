@@ -1,0 +1,61 @@
+.banner {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--accent-soft);
+  box-shadow: var(--shadow);
+  cursor: zoom-in;
+}
+
+.bannerImage {
+  display: block;
+  width: 100%;
+  height: 220px;
+  object-fit: cover;
+}
+
+.viewer {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #111;
+}
+
+.viewer::backdrop {
+  background: #111;
+}
+
+.viewerImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.close {
+  position: fixed;
+  top: 12px;
+  inset-inline-end: 12px;
+  width: var(--tap);
+  height: var(--tap);
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #111;
+  font-size: 30px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (min-width: 760px) {
+  .bannerImage {
+    height: 320px;
+  }
+}

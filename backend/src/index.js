@@ -3,6 +3,7 @@ import { handleData } from './data.js';
 import { handleDeleted, purgeDeleted } from './deleted.js';
 import { handleImports } from './imports.js';
 import { handleNutrition } from './nutrition.js';
+import { handlePictures } from './pictures.js';
 import { handleSubstitute } from './substitute.js';
 import { handleTranslate } from './translate.js';
 import { fail, json, readJson } from './http.js';
@@ -179,6 +180,7 @@ async function handleApi(request, env, path) {
   if (method === 'POST' && path === '/api/admin/impersonate') return impersonate(request, env, user);
 
   return (
+    handlePictures(request, env, path, user.id) ??
     handleImports(request, env, path, user.id) ??
     handleTranslate(request, env, path, user.id) ??
     handleNutrition(request, env, path, user.id) ??

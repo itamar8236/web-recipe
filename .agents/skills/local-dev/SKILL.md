@@ -106,7 +106,9 @@ free port in its range:
 
 ## Local data
 The local DB is yours to test with: add, edit, or delete anything. Only the owner's
-`npm run db:pull` resets it. Local queries:
+`npm run db:pull` resets it. Recipes' pictures are rows of it (`recipe_pictures`), so they
+come along with `db:pull` and `db:copy-main`. The Images binding (which resizes a link
+import's picture) runs offline in `wrangler dev` and the tests, with nothing to set up. Local queries:
 `npx wrangler d1 execute recipes-db --local --command="SELECT ..."`.
 
 ## Report

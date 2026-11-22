@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import worker from '../src/index.js';
 import { purgeDeleted } from '../src/deleted.js';
 import { call, cookiesFrom, register } from './helpers.js';
+import { JPEG } from './picture-bytes.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const content = (name, ingredients = [], steps = []) => ({ name, ingredients, steps });
@@ -25,6 +26,17 @@ const newRecipe = async (who = cookie) => {
 };
 const listDeleted = async (who = cookie) => (await (await as(who).get('/api/deleted-recipes')).json()).recipes;
 const listRecipes = async (who = cookie) => (await (await as(who).get('/api/recipes')).json()).recipes;
+// Gives the recipe a picture, as the edit form does (multipart `full` + `thumb`).
+const setPicture = (recipeId, who = cookie) => {
+  const form = new FormData();
+  form.append('full', new Blob([JPEG], { type: 'image/jpeg' }), 'full');
+  form.append('thumb', new Blob([JPEG], { type: 'image/jpeg' }), 'thumb');
+  return worker.fetch(
+    new Request(`http://localhost/api/recipes/${recipeId}/picture`, { method: 'PUT', headers: { Cookie: who }, body: form }),
+    env,
+  );
+};
+const count = async (table) => (await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n;
 // Moves every bin row back in time, as if it had been deleted `days` ago.
 const ageBin = (days) =>
   env.DB.prepare('UPDATE deleted_recipes SET deleted_at = deleted_at - ?').bind(days * DAY).run();
@@ -85,6 +97,34 @@ describe('recently deleted', () => {
     expect(recipe.tagIds).toEqual([tag.id]);
   });
 
+  it('keeps the picture in the bin and brings it back with the recipe', async () => {
+    const recipe = await newRecipe();
+    expect((await setPicture(recipe.id)).status).toBe(200);
+    await as(cookie).del(`/api/recipes/${recipe.id}`);
+    expect(await count('recipe_pictures')).toBe(0);
+    expect(await count('deleted_recipe_pictures')).toBe(1);
+
+    const [row] = await listDeleted();
+    const { recipe: restored } = await (await as(cookie).post(`/api/deleted-recipes/${row.id}/restore`)).json();
+    expect(restored.picture).not.toBeNull();
+    const picture = await as(cookie).get(restored.picture.url);
+    expect(picture.status).toBe(200);
+    expect(new Uint8Array(await picture.arrayBuffer())).toEqual(new Uint8Array(JPEG));
+    expect(await count('deleted_recipe_pictures')).toBe(0);
+  });
+
+  it('restores a recipe with no picture as having none', async () => {
+    const withPicture = await newRecipe();
+    await setPicture(withPicture.id);
+    const plain = await newRecipe();
+    await as(cookie).del(`/api/recipes/${plain.id}`);
+
+    const [row] = await listDeleted();
+    const { recipe } = await (await as(cookie).post(`/api/deleted-recipes/${row.id}/restore`)).json();
+    expect(recipe.picture).toBeNull();
+    expect(await count('recipe_pictures')).toBe(1);
+  });
+
   it("never shows or restores another user's deleted recipe", async () => {
     const recipe = await newRecipe();
     await as(cookie).del(`/api/recipes/${recipe.id}`);
@@ -109,6 +149,7 @@ describe('recently deleted', () => {
 
   it('hides and refuses a recipe deleted more than 30 days ago, and the cron job removes it', async () => {
     const old = await newRecipe();
+    await setPicture(old.id);
     await as(cookie).del(`/api/recipes/${old.id}`);
     await ageBin(31);
     const recent = await newRecipe();
@@ -122,6 +163,7 @@ describe('recently deleted', () => {
     expect((await as(cookie).post(`/api/deleted-recipes/${oldRow.id}/restore`)).status).toBe(404);
 
     await purgeDeleted(env);
+    expect(await count('deleted_recipe_pictures')).toBe(0);
     const left = await env.DB.prepare('SELECT id FROM deleted_recipes').all();
     expect(left.results.map((row) => row.id)).toEqual([shown[0].id]);
   });
