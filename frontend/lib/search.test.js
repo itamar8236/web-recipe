@@ -31,6 +31,13 @@ describe('matchesSearch', () => {
     expect(matchesSearch(recipe, 'dinner')).toBe(false);
   });
 
+  it('finds a recipe by who it is by', () => {
+    const byTom = { ...recipe, author: 'Tom Smith' };
+    expect(matchesSearch(byTom, 'smith')).toBe(true);
+    expect(matchesSearch(byTom, 'smith soup')).toBe(true);
+    expect(matchesSearch(recipe, 'smith')).toBe(false);
+  });
+
   it('does not search the steps', () => {
     expect(matchesSearch(recipe, 'simmer')).toBe(false);
   });

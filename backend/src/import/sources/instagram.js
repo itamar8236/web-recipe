@@ -2,7 +2,7 @@
 // videos, and photo or carousel posts, which have only their caption to read.
 
 import { ImportError } from '../errors.js';
-import { clipText, fetchPage, findObject, jsonBlocks, openVideo, previewText, titleFrom } from './meta.js';
+import { clipText, decodeEntities, fetchPage, findObject, jsonBlocks, openVideo, previewText, titleFrom } from './meta.js';
 
 const HOSTS = new Set(['instagram.com', 'www.instagram.com', 'instagr.am']);
 const CODE = /^[A-Za-z0-9_-]{5,40}$/;
@@ -42,6 +42,20 @@ function secondsFrom(manifest) {
   return seconds > 0 ? seconds : null;
 }
 
+// The name the account shows, without the tagline some add after a "|"; its username when
+// it shows none.
+function accountName(user) {
+  const fullName = String(user?.full_name ?? '').split(' | ')[0].trim();
+  return fullName || user?.username || null;
+}
+
+// A preview's og:title is "<name> on Instagram: <caption>".
+function authorFromPreview(html) {
+  const title = /<meta[^>]+property="og:title"[^>]*content="([^"]*)"/.exec(html.slice(0, 300000))?.[1];
+  const name = title ? /^(.+?) on Instagram/.exec(decodeEntities(title))?.[1] : null;
+  return name ? accountName({ full_name: name }) : null;
+}
+
 function readPage(html, code) {
   const [block] = jsonBlocks(html, (text) => text.includes('"xig_polaris_media"'));
   const post = findObject(block, (node) => node.xig_polaris_media !== undefined)?.xig_polaris_media;
@@ -54,6 +68,7 @@ function readPage(html, code) {
   const downloadUrl = media.video_versions?.[0]?.url ?? null;
   return {
     caption: clipText(media.caption?.text),
+    author: accountName(media.user),
     video: downloadUrl ? { seconds: secondsFrom(media.video_dash_manifest), isPublic: true, downloadUrl } : null,
   };
 }
@@ -73,7 +88,7 @@ async function fetchPost(sourceId) {
     const preview = clipText(previewText(html));
     if (!preview) throw new ImportError('source_blocked', { retryable: true, detail: `Instagram sent a page without the post's data (${html.length} bytes)` });
     console.log(`Instagram ${code}: no data block in the page, using its preview text`);
-    return { sourceId: code, sourceUrl: postUrl(code), title: titleFrom(preview, 'Instagram'), text: preview, transcript: '', video: null };
+    return { sourceId: code, sourceUrl: postUrl(code), title: titleFrom(preview, 'Instagram'), text: preview, transcript: '', video: null, author: authorFromPreview(html) };
   }
 
   return {
@@ -83,6 +98,7 @@ async function fetchPost(sourceId) {
     text: page.caption,
     transcript: '',
     video: page.video,
+    author: page.author,
   };
 }
 

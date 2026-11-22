@@ -175,8 +175,17 @@ function instructionLines(value) {
 
 const list = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 
+// Who the schema.org recipe says it is by: a name, a Person or Organization, or a list of
+// them (the first counts). A reference to a node elsewhere on the page ({"@id"}) has no
+// name here, so the model looks for one in the text instead.
+function authorName(value) {
+  const [first] = list(value);
+  return plain(typeof first === 'string' ? first : first?.name) || null;
+}
+
 // Many recipe sites describe the recipe for search engines in a schema.org block, the
-// cleanest text there is. Only a block with both ingredients and steps is used.
+// cleanest text there is. Only a block with both ingredients and steps is used. Returns
+// { text, author } or null.
 export function structuredRecipe(html) {
   const blocks = html.matchAll(/<script[^>]*type=["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi);
   for (const [, block] of blocks) {
@@ -191,7 +200,7 @@ export function structuredRecipe(html) {
     const steps = instructionLines(recipe.recipeInstructions).filter(Boolean);
     if (!ingredients.length || !steps.length) return null;
     const nutrition = recipe.nutrition ?? {};
-    return [
+    const text = [
       plain(recipe.name),
       plain(recipe.description),
       list(recipe.recipeYield).length ? `Makes: ${list(recipe.recipeYield).map(plain).join(', ')}` : '',
@@ -204,6 +213,7 @@ export function structuredRecipe(html) {
     ]
       .filter(Boolean)
       .join('\n');
+    return { text, author: authorName(recipe.author) };
   }
   return null;
 }
@@ -224,7 +234,7 @@ async function fetchPost(sourceId) {
   // sites often leave a part out of it, such as a topping's ingredients.
   const structured = isHtml ? structuredRecipe(html) : null;
   const body = isHtml ? pageText(html) : html;
-  const text = structured ? `${structured}\n\nThe whole page:\n${body}` : body;
+  const text = structured ? `${structured.text}\n\nThe whole page:\n${body}` : body;
   return {
     sourceId,
     sourceUrl: sourceId,
@@ -232,6 +242,7 @@ async function fetchPost(sourceId) {
     text: text.trim().slice(0, MAX_TEXT_LENGTH),
     transcript: '',
     video: null,
+    author: structured?.author ?? null,
   };
 }
 

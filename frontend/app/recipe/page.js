@@ -133,6 +133,11 @@ function RecipeView() {
               <span>{recipe.fromPhoto ? t.photoSource : t.manualSource}</span>
             )}
           </p>
+          {recipe.author && (
+            <p className={styles.sourceRow}>
+              {t.author}: <bdi>{recipe.author}</bdi>
+            </p>
+          )}
           {loggedIn && (
             <span className={styles.visibilityLabel}>{recipe.public ? t.publicLabel : `🔒 ${t.privateLabel}`}</span>
           )}

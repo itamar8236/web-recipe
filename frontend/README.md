@@ -38,7 +38,7 @@ frontend/
 │   ├── i18n.js            # UI strings in en/he + pickLanguage()
 │   ├── recipeForm.js      # Edit form text <-> api lines
 │   ├── recipeForm.test.js # Vitest tests for recipeForm.js
-│   ├── search.js          # matchesSearch(): recipe name/ingredient/tag search
+│   ├── search.js          # matchesSearch(): recipe name/ingredient/author/tag search
 │   ├── sort.js            # SORTS, sortRecipes(): the orders the lists can be sorted in
 │   ├── sort.test.js       # Vitest tests for sort.js
 │   ├── photo.js           # preparePhoto(): a chosen picture, ready to send
@@ -98,14 +98,14 @@ frontend/
 1. **Login / Sign up**: described above.
 2. **Home**: tags with recipe counts (`components/TagBar`), which filter the list. On
    phones only, they are one row of pills that scrolls sideways; on desktop, a side list
-   with no scrolling; recipes with the selected tag as cards, each showing all its tags.
+   with no scrolling; recipes with the selected tag as cards, each showing all its tags (and "By <author>" when it has one).
    "No tags" shows only while some recipe has none. The selected tag can be renamed
    inline; there is no "new tag" or "delete tag" here: tags are added and removed on each
    recipe's page, and a tag no recipe has is gone. Big "Add recipe" button. Each card has a
    heart to mark a favorite (each user sees only their own tags, recipes, and favorites), and a "Favorites" toggle filters the list (combined with
    the selected tag). A small "Search" button above the tags opens a search box
    (× or leaving it empty closes it again) that filters the cards while typing, by recipe
-   name, ingredients (both languages) or tag names (every typed word must match),
+   name, ingredients (both languages), who it is by (its author) or tag names (every typed word must match),
    combined with the selected tag and "Favorites". It runs in the browser on the loaded
    recipes.
    Beside Search, a small **sort** dropdown (`components/SortMenu`, a native `<select>`)
@@ -146,7 +146,8 @@ frontend/
      card id) and the failed card is replaced by it.
    - `useImports` polls every 4 s only while something is running and the page is visible,
      and at once when the page becomes visible. A card turning ready reloads the recipes.
-5. **Recipe view**: name, source link (opens the video or page; "From a photo" for a photo), tags, ingredients, steps, then a
+5. **Recipe view**: name, source link (opens the video or page; "From a photo" for a photo),
+   "By: <author>" under it when the recipe has one, tags, ingredients, steps, then a
    "Per serving" card with calories and protein (only when the recipe has either) and a small note that they were calculated by AI and may be inaccurate, then the
    AI tools box (logged-in users only, below), then Edit and Delete buttons (delete asks
    for confirmation). The heart is beside the name. Calories and protein show only here,
@@ -186,7 +187,8 @@ frontend/
    - While one tool runs its tile's hint says so ("Translating...") and the other tiles are
      held; a failure shows its error under the tiles, and nothing is saved then.
 6. **Edit**: name, ingredients, and steps (one per line) in the app's current language,
-   plus two optional number fields, calories (kcal) and protein (g) per serving, which are
+   an optional "Recipe by" field (the chef, channel or site; the same in both languages,
+   at most 100 characters, empty = none), plus two optional number fields, calories (kcal) and protein (g) per serving, which are
    the same in both languages (empty = not known).
    Tags are not here (see Recipe view). A short note explains that to write the other language you
    save, switch the language, and tap Edit; the other language's text is kept as is. A name in at least one
@@ -215,10 +217,10 @@ frontend/
      the same five orders; picking one reloads the list from the top in that order (the
      backend sorts, since the list comes a page at a time).
    - The same "Search" button as on Home sits above the title and searches name,
-     ingredients and tags the same way, on the recipes loaded so far. While few match,
+     ingredients, author and tags the same way, on the recipes loaded so far. While few match,
      the end of the list stays near the screen, so more pages keep loading by themselves
      until enough match or there are no more (then "No recipes found." if none did).
-   - Each card (`components/BrowseCard`) shows the name, "Saved by <username>", the tags,
+   - Each card (`components/BrowseCard`) shows the name, "Saved by <username>", "By <author>" when it has one, the tags,
      the ingredient count and the source link, with two buttons side by side: **Show
      recipe** opens the ingredients and steps inside the card, and **+ Save a copy** saves
      the user's own copy at once (no question: it is easy to delete). The button then

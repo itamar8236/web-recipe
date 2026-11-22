@@ -109,6 +109,7 @@ describe('recipes', () => {
       tagIds: [],
       favorite: false,
       link: '',
+      author: '',
       en: content('Pancakes', ['flour', 'milk'], ['mix']),
       he: content('פנקייק', ['קמח'], ['לערבב']),
     });
@@ -159,6 +160,31 @@ describe('recipes', () => {
     expect((await kept.json()).recipe).toMatchObject({ calories: 350, protein: 12 });
     const changed = await as(cookie).put(`/api/recipes/${recipe.id}`, { ...recipeBody('Toast'), calories: null, protein: 0 });
     expect((await changed.json()).recipe).toMatchObject({ calories: null, protein: 0 });
+  });
+
+  it('saves the author as typed (tidied), keeps it when an update leaves it out, and clears it with an empty one', async () => {
+    const created = await as(cookie).post('/api/recipes', { ...recipeBody('Toast'), author: '  tom   smith ' });
+    const { recipe } = await created.json();
+    expect(recipe.author).toBe('tom smith');
+
+    const kept = await as(cookie).put(`/api/recipes/${recipe.id}`, recipeBody('Better toast'));
+    expect((await kept.json()).recipe.author).toBe('tom smith');
+    // The user's own spelling wins, even when another recipe has the name another way.
+    await as(cookie).post('/api/recipes', { ...recipeBody('Eggs'), author: 'Tom Smith' });
+    const changed = await as(cookie).put(`/api/recipes/${recipe.id}`, { ...recipeBody('Toast'), author: 'Tom SMITH' });
+    expect((await changed.json()).recipe.author).toBe('Tom SMITH');
+    const cleared = await as(cookie).put(`/api/recipes/${recipe.id}`, { ...recipeBody('Toast'), author: ' ' });
+    expect((await cleared.json()).recipe.author).toBe('');
+    const nulled = await as(cookie).put(`/api/recipes/${recipe.id}`, { ...recipeBody('Toast'), author: null });
+    expect((await nulled.json()).recipe.author).toBe('');
+  });
+
+  it('rejects an author that is not text or is too long', async () => {
+    const notText = await as(cookie).post('/api/recipes', { ...recipeBody('Toast'), author: 5 });
+    expect((await notText.json()).error).toBe('invalid_request');
+    const tooLong = await as(cookie).post('/api/recipes', { ...recipeBody('Toast'), author: 'x'.repeat(101) });
+    expect((await tooLong.json()).error).toBe('too_long');
+    expect((await as(cookie).post('/api/recipes', { ...recipeBody('Toast'), author: 'x'.repeat(100) })).status).toBe(201);
   });
 
   it.each([
