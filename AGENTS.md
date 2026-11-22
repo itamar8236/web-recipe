@@ -29,6 +29,8 @@ find a bug you don't fix or the owner accepts a trade-off, and remove it when it
 resolved. One short line each, linking to the README section with the details.
 
 - PR previews share the production database (`backend/README.md` → Database). Accepted.
+- Production keeps an empty `folders` table and an always-NULL `recipes.folder_id` from
+  before tags; dropping them needs a rebuild of recipes (`backend/schema.sql` → recipes). Accepted.
 - Builds made on Windows log harmless prefetch 404s (`frontend/README.md` → Layout).
   Accepted.
 - PR previews can't exercise the import Workflow: they use the one already deployed to
