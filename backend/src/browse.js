@@ -4,6 +4,7 @@
 
 import { RECIPE_COLUMNS, deleteUnusedTags, toRecipe } from './data.js';
 import { fail, json } from './http.js';
+import { copyPictureStatement, RECIPE_PICTURE_AT } from './pictures.js';
 
 const PAGE_SIZE = 10;
 
@@ -38,8 +39,8 @@ const TAG_NAMES = `(SELECT json_group_array(tags.name) FROM recipe_tags
 // A recipe as Browse shows it: who saved it and its tags by name (tag ids mean nothing to
 // another user), and none of the owner's own marks.
 function toBrowseRecipe(row) {
-  const { id, link, fromPhoto, en, he } = toRecipe({ ...row, tag_ids: '[]' });
-  return { id, owner: row.owner, tags: JSON.parse(row.tag_names), link, fromPhoto, en, he };
+  const { id, link, fromPhoto, picture, en, he } = toRecipe({ ...row, tag_ids: '[]' });
+  return { id, owner: row.owner, tags: JSON.parse(row.tag_names), link, fromPhoto, picture, en, he };
 }
 
 // A whole number from the query string (negative when `min` allows it), or null.
@@ -72,7 +73,7 @@ async function listBrowse(request, env, userId) {
   const { results } = await env.DB.prepare(
     `SELECT r.id, r.is_favorite, r.is_public, r.source_url, r.source_model, r.calories, r.protein,
             r.name_en, r.ingredients_en, r.steps_en, r.name_he, r.ingredients_he, r.steps_he,
-            users.username AS owner, ${TAG_NAMES} AS tag_names, ${orderKey} AS order_key
+            users.username AS owner, ${TAG_NAMES} AS tag_names, ${RECIPE_PICTURE_AT('r')}, ${orderKey} AS order_key
        FROM recipes AS r JOIN users ON users.id = r.user_id
       WHERE ${VISIBLE}
         AND (${orderKey} > ?3 OR (${orderKey} = ?3 AND r.id > ?4))
@@ -91,7 +92,7 @@ async function listBrowse(request, env, userId) {
 }
 
 // Saves the user's own copy of another user's public recipe: the same text, link,
-// calories and protein,
+// calories, protein and picture,
 // public or private as the user's default says, with no favorite. Its tags come too when
 // the user's "copy tags" default is on, as the user's own tags (found by name, or made).
 // Saving the same recipe again makes another copy.
@@ -111,8 +112,8 @@ async function copyRecipe(env, userId, id) {
     .first();
   if (!copy) return fail(404, 'not_found');
 
-  // The tags are a second step. If it fails the copy is already saved, without tags, and
-  // the user can add them on its page.
+  // The tags and the picture are a second step. If it fails the copy is already saved,
+  // without them, and the user can add them on its page.
   const source = await env.DB.prepare(
     `SELECT ${TAG_NAMES} AS tag_names, (SELECT copy_tags FROM users WHERE id = ?1) AS copy_tags
        FROM recipes AS r WHERE r.id = ?2`,
@@ -132,6 +133,7 @@ async function copyRecipe(env, userId, id) {
       ).bind(copy.id, userId, name),
     ),
     deleteUnusedTags(env, userId),
+    copyPictureStatement(env, id, copy.id),
     env.DB.prepare(`SELECT ${RECIPE_COLUMNS} FROM recipes WHERE id = ? AND user_id = ?`).bind(copy.id, userId),
   ]);
   const [saved] = results.at(-1).results;

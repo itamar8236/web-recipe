@@ -2,6 +2,7 @@
 // videos, and photo or carousel posts, which have only their caption to read.
 
 import { ImportError } from '../errors.js';
+import { previewImageUrl } from '../../pictures.js';
 import { clipText, fetchPage, findObject, jsonBlocks, openVideo, previewText, titleFrom } from './meta.js';
 
 const HOSTS = new Set(['instagram.com', 'www.instagram.com', 'instagr.am']);
@@ -66,6 +67,8 @@ async function fetchPost(sourceId) {
   if (!code) throw new ImportError('link_unsupported', { detail: `The share link led to ${url.pathname}` });
 
   const page = readPage(html, code);
+  // The post's preview image, whose address expires in a few days (the picture step copies it).
+  const pictureUrls = [previewImageUrl(html, postUrl(code))].filter(Boolean);
   if (!page) {
     if (html.includes('"pageID":"httpErrorPage"')) throw new ImportError('video_unavailable', { detail: 'Instagram has no public post with this code' });
     if (html.includes('"pageID":"loginPage"')) throw new ImportError('login_required', { detail: 'Instagram answered with its login page' });
@@ -73,7 +76,7 @@ async function fetchPost(sourceId) {
     const preview = clipText(previewText(html));
     if (!preview) throw new ImportError('source_blocked', { retryable: true, detail: `Instagram sent a page without the post's data (${html.length} bytes)` });
     console.log(`Instagram ${code}: no data block in the page, using its preview text`);
-    return { sourceId: code, sourceUrl: postUrl(code), title: titleFrom(preview, 'Instagram'), text: preview, transcript: '', video: null };
+    return { sourceId: code, sourceUrl: postUrl(code), title: titleFrom(preview, 'Instagram'), text: preview, transcript: '', video: null, pictureUrls };
   }
 
   return {
@@ -83,6 +86,7 @@ async function fetchPost(sourceId) {
     text: page.caption,
     transcript: '',
     video: page.video,
+    pictureUrls,
   };
 }
 

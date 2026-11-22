@@ -366,6 +366,7 @@ describe('guest: imports need an account', () => {
     ['estimateNutrition', () => api.estimateNutrition({ name: 'Tea', ingredients: [], steps: [] })],
     ['suggestSubstitutes', () => api.suggestSubstitutes(1, 'en', 0, 'en')],
     ['startPhotoImport', () => api.startPhotoImport(new Blob(['x'], { type: 'image/jpeg' }))],
+    ['sendImportPicture', () => api.sendImportPicture(1, { full: new Blob(['f']), thumb: new Blob(['t']) })],
   ])('%s is refused and never calls the backend', async (_, action) => {
     vi.stubGlobal('fetch', vi.fn());
     await expect(action()).rejects.toMatchObject({ code: 'import_needs_login' });
@@ -530,5 +531,50 @@ describe('browse and public recipes', () => {
     mockFetch(200, { user: { id: 1, username: 'dana', defaultPublic: false, copyTags: true } });
     expect((await api.updateAccount({ defaultPublic: false })).defaultPublic).toBe(false);
     expect(lastCall()).toEqual({ path: '/api/auth/me', method: 'PUT', body: { defaultPublic: false } });
+  });
+});
+
+describe('a recipe’s picture', () => {
+  const picture = () => ({ full: new Blob(['full'], { type: 'image/jpeg' }), thumb: new Blob(['thumb'], { type: 'image/jpeg' }) });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('guest: keeps it in memory as object URLs, and removes it', async () => {
+    let urls = 0;
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: () => `blob:${++urls}`, revokeObjectURL: vi.fn() }));
+    const recipe = await newRecipe('Toast');
+    expect(recipe.picture).toBeNull();
+    expect(await api.setRecipePicture(recipe.id, picture())).toEqual({ url: 'blob:1', thumb: 'blob:2' });
+    expect((await api.getRecipe(recipe.id)).picture).toEqual({ url: 'blob:1', thumb: 'blob:2' });
+
+    await api.setRecipePicture(recipe.id, picture());
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:1');
+    await api.removeRecipePicture(recipe.id);
+    expect((await api.getRecipe(recipe.id)).picture).toBeNull();
+    await expect(api.setRecipePicture(999, picture())).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  describe('logged in', () => {
+    const mockFetch = (status, body) => vi.stubGlobal('fetch', vi.fn(async () => ({ ok: status < 400, status, json: async () => body })));
+    beforeEach(() => api.setGuestMode(false));
+
+    it('sends the full picture and the thumb as multipart, letting the browser set the type', async () => {
+      const saved = { url: '/api/recipes/3/picture?v=1', thumb: '/api/recipes/3/picture?v=1&size=thumb' };
+      mockFetch(200, { picture: saved });
+      expect(await api.setRecipePicture(3, picture())).toEqual(saved);
+      const [path, options] = fetch.mock.calls.at(-1);
+      expect(path).toBe('/api/recipes/3/picture');
+      expect(options.method).toBe('PUT');
+      expect(options.headers).toEqual({});
+      expect(options.body).toBeInstanceOf(FormData);
+      expect([...options.body.keys()]).toEqual(['full', 'thumb']);
+    });
+
+    it('removes it, and sends a photo import’s picture to its import', async () => {
+      mockFetch(200, { ok: true });
+      await api.removeRecipePicture(3);
+      expect(fetch.mock.calls.at(-1)).toMatchObject(['/api/recipes/3/picture', { method: 'DELETE' }]);
+      await api.sendImportPicture(7, picture());
+      expect(fetch.mock.calls.at(-1)).toMatchObject(['/api/imports/7/picture', { method: 'PUT' }]);
+    });
   });
 });

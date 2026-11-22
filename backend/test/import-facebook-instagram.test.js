@@ -17,10 +17,12 @@ import {
   facebookReelPage,
   IG_CAPTION,
   IG_CODE,
+  IG_PICTURE_URL,
   IG_VIDEO_URL,
   instagramCarouselPage,
   instagramReelPage,
 } from './meta-pages.js';
+import { jpegResponse } from './picture-bytes.js';
 
 const IG_POST = `https://www.instagram.com/p/${IG_CODE}/`;
 const IG_SHARE = 'https://www.instagram.com/share/reel/BAxyz12345/';
@@ -107,7 +109,7 @@ describe('stage: meta, for a post', () => {
     const after = await reload(row);
     expect(after).toMatchObject({ title: 'Eggplant salad', stage: 'video', status: 'running', error: null, source_id: IG_CODE, source_url: IG_POST });
     expect(JSON.parse(after.state)).toEqual({
-      meta: { text: IG_CAPTION, transcript: '', video: { seconds: 37.5, isPublic: true, downloadUrl: IG_VIDEO_URL } },
+      meta: { text: IG_CAPTION, transcript: '', video: { seconds: 37.5, isPublic: true, downloadUrl: IG_VIDEO_URL }, pictureUrls: [IG_PICTURE_URL] },
       done: ['meta'],
       version: 2,
     });
@@ -628,6 +630,7 @@ describe('the Workflow, end to end, for Facebook and Instagram', () => {
     stubFetch(async (url, options = {}) => {
       const address = String(url);
       if (address.startsWith('https://www.instagram.com/') || address.startsWith('https://www.facebook.com/')) return new Response(page);
+      if (address === IG_PICTURE_URL) return jpegResponse();
       if (address.includes('.fbcdn.net/')) return video();
       if (address === 'https://generativelanguage.googleapis.com/upload/v1beta/files') return json({}, 200, { 'x-goog-upload-url': UPLOAD_URL });
       if (address === UPLOAD_URL) return json({ file: { name: FILE.name, uri: FILE.uri, state: 'PROCESSING' } });
@@ -660,7 +663,7 @@ describe('the Workflow, end to end, for Facebook and Instagram', () => {
     expect(recipe).toMatchObject({ platform: 'instagram', source_url: IG_POST, source_model: FIRST, name_en: 'Eggplant salad', name_he: 'סלט חצילים', machine_translated_lang: 'en' });
 
     expect(calls('instagram.com')).toHaveLength(1);
-    expect(calls('.fbcdn.net/')).toHaveLength(1);
+    expect(calls('.mp4')).toHaveLength(1);
     expect(calls('/v1beta/interactions')).toHaveLength(1);
     const sent = JSON.parse(calls('/v1beta/interactions')[0][1].body);
     expect(sent.input[0]).toEqual({ type: 'video', uri: FILE.uri, mime_type: 'video/mp4' });
@@ -668,6 +671,16 @@ describe('the Workflow, end to end, for Facebook and Instagram', () => {
     expect(calls(FILE.name, 'DELETE')).toHaveLength(1);
     // Far below the 50 outside requests a free Workflow may make.
     expect(fetch.mock.calls.length).toBeLessThan(10);
+
+    // The post's preview image, copied and resized, is the recipe's picture.
+    expect(calls(IG_PICTURE_URL)).toHaveLength(1);
+    const picture = await env.DB.prepare('SELECT type, origin, length(full) AS full, length(thumb) AS thumb FROM recipe_pictures WHERE recipe_id = ?')
+      .bind(after.recipe_id)
+      .first();
+    expect(picture).toMatchObject({ type: 'image/jpeg', origin: 'link' });
+    expect(picture.full).toBeGreaterThan(0);
+    expect(picture.thumb).toBeGreaterThan(0);
+    expect(JSON.parse((await reload(row)).state)).toEqual({});
   });
 
   it('imports a Facebook reel from a share link, and stores the video’s own link', async () => {
@@ -698,7 +711,7 @@ describe('the Workflow, end to end, for Facebook and Instagram', () => {
     const row = await instagramImport(await insertUser());
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'done' });
-    expect(calls('.fbcdn.net/')).toHaveLength(0);
+    expect(calls('.mp4')).toHaveLength(0);
     expect(calls('/upload/')).toHaveLength(0);
     expect(JSON.parse(calls('/v1beta/interactions')[0][1].body).input).toHaveLength(1);
   });

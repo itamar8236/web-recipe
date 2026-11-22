@@ -20,6 +20,9 @@ export const FB_ID = '857300000000001';
 export const FB_OTHER_ID = '914700000000002';
 export const FB_VIDEO_URL = 'https://video.fxyz1-1.fna.fbcdn.net/o1/v/t2/f2/m412/sd-file.mp4?_nc_cat=1&oe=ABC';
 export const FB_SUBTITLES_URL = 'https://scontent.fxyz1-1.fna.fbcdn.net/v/t39.2093-6/subtitles_n.srt?_nc_cat=1';
+// The pages' preview images, as Meta writes them: on its CDN, with &amp; in the address.
+export const FB_PICTURE_URL = 'https://scontent.fxyz1-1.fna.fbcdn.net/v/t15.5256-10/cover.jpg?_nc_cat=1&oe=ABC';
+export const IG_PICTURE_URL = 'https://instagram.fxyz1-1.fna.fbcdn.net/v/t51.2885-15/cover.jpg?stp=dst-jpg&oe=ABC';
 export const FB_CAPTION =
   'Oven kebab\nA quick oven version of a street food classic: 500 g ground beef, 1 grated onion, 3 tbsp yogurt, bake 25 minutes.';
 
@@ -61,7 +64,7 @@ export function facebookReelPage({ id = FB_ID, caption = FB_CAPTION, seconds = 2
       id,
     },
   };
-  return page('<meta property="og:title" content="1M views | Oven kebab" />', jsonScript({ extensions: { all_video_dash_prefetch_representations: [{ video_id: id }] } }), jsonScript(wrap(data)));
+  return page(`<meta property="og:title" content="1M views | Oven kebab" /><meta property="og:image" content="${FB_PICTURE_URL.replaceAll('&', '&amp;')}" />`, jsonScript({ extensions: { all_video_dash_prefetch_representations: [{ video_id: id }] } }), jsonScript(wrap(data)));
 }
 
 // The page /watch/?v=<id> redirects to: the same facts, split over two blocks, with the
@@ -86,7 +89,7 @@ const igManifest = (duration) => `<?xml version="1.0"?><MPD type="static" mediaP
 
 function instagramPage(media, gating = null) {
   const post = { __typename: 'XIGPolarisMedia', pk: '31915', code: media?.code ?? IG_CODE, if_not_gated_logged_out: media, gating_ruling: gating, id: 'POLARIS_31915' };
-  return page('<meta property="og:title" content="Cook on Instagram" />', `<script>{"pageID":"postPage"}</script>`, jsonScript(wrap({ xig_polaris_media: post })));
+  return page(`<meta property="og:title" content="Cook on Instagram" /><meta content="${IG_PICTURE_URL.replaceAll('&', '&amp;')}" property="og:image" />`, `<script>{"pageID":"postPage"}</script>`, jsonScript(wrap({ xig_polaris_media: post })));
 }
 
 // A reel (or any video post). `duration` is how the streaming manifest writes the length.

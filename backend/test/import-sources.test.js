@@ -12,10 +12,12 @@ import {
   facebookWatchPage,
   FB_CAPTION,
   FB_ID,
+  FB_PICTURE_URL,
   FB_SUBTITLES_URL,
   FB_VIDEO_URL,
   IG_CAPTION,
   IG_CODE,
+  IG_PICTURE_URL,
   IG_VIDEO_URL,
   instagramCarouselPage,
   instagramGatedPage,
@@ -174,6 +176,7 @@ describe('Facebook adapter: fetchPost', () => {
       text: FB_CAPTION,
       transcript: "You tried the viral kebab? It's a quick version to make in the oven.",
       video: { seconds: 28.5, isPublic: true, downloadUrl: FB_VIDEO_URL },
+      pictureUrls: [FB_PICTURE_URL],
     });
     expect(requested()).toEqual([FB_WATCH, FB_SUBTITLES_URL]);
   });
@@ -350,6 +353,7 @@ describe('Instagram adapter: fetchPost', () => {
       text: IG_CAPTION,
       transcript: '',
       video: { seconds: 37.5, isPublic: true, downloadUrl: IG_VIDEO_URL },
+      pictureUrls: [IG_PICTURE_URL],
     });
     expect(requested()).toEqual([IG_POST]);
   });

@@ -7,6 +7,7 @@ import { contentValues, readContent, readNutrition } from '../data.js';
 import { ImportError } from './errors.js';
 import { callModel, FileGoneError, geminiFiles, ModelBusyError, RecitationError, VideoRefusedError } from './llm.js';
 import { callChosenModel } from './models.js';
+import { pictureForLink, savePictureStatement } from '../pictures.js';
 import { sourceFor } from './sources/index.js';
 
 const MIN_TEXT_LENGTH = 80;
@@ -264,7 +265,11 @@ async function extractRecipe(job, deps) {
   throw new ImportError(refused ? 'video_unavailable' : blockedBy ?? 'no_recipe');
 }
 
-function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
+// What a finished import keeps on its row: only the picture addresses, for the picture
+// step that runs after the save (ImportWorkflow).
+const finishedState = (state) => JSON.stringify(state.meta?.pictureUrls?.length ? { pictureUrls: state.meta.pictureUrls } : {});
+
+function insertRecipeStatements(env, job, { recipe, model }, machineLang, now, doneState) {
   return [
     env.DB.prepare(
       `INSERT INTO recipes (user_id, platform, source_url, source_model,
@@ -274,10 +279,21 @@ function insertRecipeStatements(env, job, { recipe, model }, machineLang, now) {
        WHERE EXISTS (SELECT 1 FROM llm_requests ${isCurrent})`,
     ).bind(job.user_id, job.platform, job.source_url, model, ...contentValues(recipe), machineLang, ...nutritionValues(recipe), now, now, job.user_id, job.id, job.attempt),
     env.DB.prepare(
-      `UPDATE llm_requests SET status = 'done', state = '{}', model = ?, updated_at = ?,
+      `UPDATE llm_requests SET status = 'done', state = ?, model = ?, updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE user_id = ? AND source_url = ? ORDER BY id DESC LIMIT 1)
        ${isCurrent}`,
-    ).bind(model, now, job.user_id, job.source_url, job.id, job.attempt),
+    ).bind(doneState, model, now, job.user_id, job.source_url, job.id, job.attempt),
+    // A photo import's picture, sent by the browser, becomes the new recipe's.
+    env.DB.prepare(
+      `INSERT INTO recipe_pictures (recipe_id, full, thumb, type, origin, updated_at)
+       SELECT i.recipe_id, p.full, p.thumb, p.type, 'photo', ?2
+         FROM import_pictures AS p JOIN llm_requests AS i ON i.id = p.request_id
+        WHERE p.request_id = ?1 AND i.status = 'done' AND i.recipe_id IS NOT NULL
+       ON CONFLICT (recipe_id) DO NOTHING`,
+    ).bind(job.id, now),
+    env.DB.prepare(
+      `DELETE FROM import_pictures WHERE request_id = ?1 AND EXISTS (SELECT 1 FROM llm_requests WHERE id = ?1 AND status = 'done')`,
+    ).bind(job.id),
   ];
 }
 
@@ -286,7 +302,7 @@ const nutritionValues = (recipe) => [recipe.calories ?? null, recipe.protein ?? 
 
 // A re-run replaces only the text, calories, protein and which model wrote it, so the tags
 // and favorite stay. If the recipe was deleted meanwhile nothing is recreated and the card goes away.
-function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) {
+function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now, doneState) {
   const sameRecipe = 'id = ? AND user_id = ? AND source_url = ?';
   const recipeKey = [job.replace_recipe_id, job.user_id, job.source_url];
   return [
@@ -300,10 +316,10 @@ function replaceRecipeStatements(env, job, { recipe, model }, machineLang, now) 
     env.DB.prepare(
       `UPDATE llm_requests SET
          status = CASE WHEN EXISTS (SELECT 1 FROM recipes WHERE ${sameRecipe}) THEN 'done' ELSE 'dismissed' END,
-         state = '{}', model = ?, updated_at = ?,
+         state = ?, model = ?, updated_at = ?,
          recipe_id = (SELECT id FROM recipes WHERE ${sameRecipe})
        ${isCurrent}`,
-    ).bind(...recipeKey, model, now, ...recipeKey, job.id, job.attempt),
+    ).bind(...recipeKey, doneState, model, now, ...recipeKey, job.id, job.attempt),
   ];
 }
 
@@ -312,7 +328,7 @@ async function saveRecipe(job, { env, files }) {
   const machineLang = state.recipe.language === 'he' ? 'en' : 'he';
   const statements = job.replace_recipe_id === null ? insertRecipeStatements : replaceRecipeStatements;
   // One batch, so the recipe and the finished import are written together or not at all.
-  await env.DB.batch(statements(env, job, state, machineLang, Date.now()));
+  await env.DB.batch(statements(env, job, state, machineLang, Date.now(), finishedState(state)));
   const file = state.photo ?? state.file;
   if (file) await files.remove({ env, file });
   return {};
@@ -324,6 +340,26 @@ export const STAGES = [
   { name: 'extract', run: extractRecipe },
   { name: 'save', run: saveRecipe },
 ];
+
+// After the save, the link's picture (a video's thumbnail, a page's preview image) is
+// fetched, resized and saved as the recipe's. It runs as its own Workflow step after the
+// import is done, so a slow or broken image host never delays or fails the recipe: any
+// problem just leaves the recipe without a picture. A re-scan replaces only a picture that
+// came from the link, never one the user chose (savePictureStatement).
+export async function savePictureForImport(env, importId, attempt) {
+  const job = await env.DB.prepare(
+    `SELECT user_id, recipe_id, json_extract(state, '$.pictureUrls') AS picture_urls
+       FROM llm_requests WHERE id = ? AND attempt = ? AND status = 'done' AND recipe_id IS NOT NULL`,
+  )
+    .bind(importId, attempt)
+    .first();
+  if (!job?.picture_urls) return;
+  const kept = await env.DB.prepare(`SELECT 1 FROM recipe_pictures WHERE recipe_id = ? AND origin <> 'link'`).bind(job.recipe_id).first();
+  const picture = kept ? null : await pictureForLink(env, JSON.parse(job.picture_urls));
+  const statements = [env.DB.prepare(`UPDATE llm_requests SET state = '{}' WHERE id = ? AND attempt = ?`).bind(importId, attempt)];
+  if (picture) statements.unshift(savePictureStatement(env, { recipeId: job.recipe_id, userId: job.user_id, picture, origin: 'link' }));
+  await env.DB.batch(statements);
+}
 
 // Written before throwing, so nothing depends on how Workflows passes errors along.
 async function saveError(env, importId, attempt, code, detail = null) {

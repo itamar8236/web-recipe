@@ -1,12 +1,13 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
+import { makePicture } from '@/lib/picture';
 import { blankText, toContent, toNumber, toNumberText, toText } from '@/lib/recipeForm';
 import styles from '../recipe.module.css';
 
@@ -26,6 +27,21 @@ function RecipeForm() {
   const loggedIn = auth.status === 'user';
   // Saved with the form, so Cancel leaves it as it was. A new recipe starts with the default.
   const [isPublic, setIsPublic] = useState(auth.user?.defaultPublic ?? true);
+  // The picture is saved with the form too: `savedPicture` is the recipe's ({ url, thumb }
+  // or null), and `pictureChange` what Save will do: null (nothing), 'remove', or a new
+  // { full, thumb, preview } made in the browser, `preview` an object URL of `full`.
+  const [savedPicture, setSavedPicture] = useState(null);
+  const [pictureChange, setPictureChange] = useState(null);
+  const [preparingPicture, setPreparingPicture] = useState(false);
+  const fileRef = useRef(null);
+
+  // The preview's object URL is freed when it is replaced and when the form goes away.
+  useEffect(() => {
+    const preview = pictureChange?.preview ?? null;
+    return () => {
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [pictureChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,6 +52,7 @@ function RecipeForm() {
         if (id !== null && !recipe) return setStatus('missing');
         if (recipe) {
           setIsPublic(recipe.public);
+          setSavedPicture(recipe.picture);
           setForm({
             en: toText(recipe.en),
             he: toText(recipe.he),
@@ -107,9 +124,11 @@ function RecipeForm() {
       });
       try {
         if (loggedIn && saved.public !== isPublic) await api.setRecipePublic(saved.id, isPublic);
+        if (pictureChange === 'remove') await api.removeRecipePicture(saved.id);
+        else if (pictureChange) await api.setRecipePicture(saved.id, pictureChange);
       } catch (err) {
         // A new recipe is already created, so saving again here would make a second one:
-        // its page opens instead, and says whether it is public.
+        // its page opens instead, and shows whether it is public and its picture.
         if (id !== null) throw err;
       }
       router.push(`/recipe?id=${saved.id}`);
@@ -123,6 +142,25 @@ function RecipeForm() {
     event.preventDefault();
     save(form);
   }
+
+  async function pictureChosen(event) {
+    const [file] = event.target.files;
+    // Cleared, so choosing the same picture again still fires.
+    event.target.value = '';
+    if (!file) return;
+    setPreparingPicture(true);
+    setError('');
+    try {
+      const { full, thumb } = await makePicture(file);
+      setPictureChange({ full, thumb, preview: URL.createObjectURL(full) });
+    } catch (err) {
+      setError(errorMessage(t, err));
+    } finally {
+      setPreparingPicture(false);
+    }
+  }
+
+  const shownPicture = pictureChange === 'remove' ? null : (pictureChange?.preview ?? savedPicture?.thumb ?? null);
 
   // The form edits only the app's current language; the other language is kept as is.
   // Translating, like the other AI tools, is on the recipe's own page.
@@ -177,6 +215,35 @@ function RecipeForm() {
         </div>
       </fieldset>
 
+      <div className={styles.pictureRow}>
+        <span className="label">{t.picture}</span>
+        <div className={styles.pictureControls}>
+          {shownPicture && (
+            // eslint-disable-next-line @next/next/no-img-element -- static export, no image optimizer
+            <img src={shownPicture} alt="" className={styles.picturePreview} />
+          )}
+          <button
+            type="button"
+            className={`button secondary ${styles.pictureButton}`}
+            disabled={saving || preparingPicture}
+            onClick={() => fileRef.current.click()}
+          >
+            {preparingPicture ? t.preparingPicture : shownPicture ? t.changePicture : t.choosePicture}
+          </button>
+          {shownPicture && (
+            <button
+              type="button"
+              className={`button secondary ${styles.pictureButton}`}
+              disabled={saving || preparingPicture}
+              onClick={() => setPictureChange(savedPicture ? 'remove' : null)}
+            >
+              {t.removePicture}
+            </button>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" hidden onChange={pictureChosen} />
+        </div>
+      </div>
+
       {loggedIn && (
         <div className={styles.visibility}>
           <p className={styles.visibilityText}>
@@ -192,7 +259,7 @@ function RecipeForm() {
       {error && <p className="error" role="alert">{error}</p>}
 
       <div className={styles.actions}>
-        <button type="submit" className="button" disabled={saving}>{saving ? t.saving : t.save}</button>
+        <button type="submit" className="button" disabled={saving || preparingPicture}>{saving ? t.saving : t.save}</button>
         <Link href={id === null ? '/' : `/recipe?id=${id}`} className="button secondary">{t.cancel}</Link>
       </div>
     </form>

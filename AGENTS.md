@@ -16,8 +16,9 @@ logged-in user's data is stored in D1 (a guest's stays in browser memory), and c
 a recipe from a YouTube, Facebook or Instagram link, from any public recipe web page, or
 from a photo of a written recipe, in the background with a Cloudflare Workflow, plus four AI tools in a box at the
 bottom of each recipe's page (substitute an ingredient, translate a recipe, calculate its
-calories and protein, scan its link again), and importing a link
-from Android's Share menu into the installed app. The sections
+calories and protein, scan its link again), importing a link
+from Android's Share menu into the installed app, and one picture per recipe (filled in by
+an import, or chosen in the edit form). The sections
 below describe the target; the READMEs' "Current state" sections say what exists.
 
 ## Known bugs and accepted trade-offs
@@ -59,6 +60,10 @@ resolved. One short line each, linking to the README section with the details.
 - Google refuses to write out a recipe it recognises as published and copyrighted (a famous
   chef's page), so such a photo fails with `photo_copyrighted`; the user adds it manually
   (`backend/README.md` → Import from a photo).
+- A web page opened by Google (it blocked the Worker), or one with no `og:image`, gives its
+  recipe no picture; the user can add one (`backend/README.md` → Pictures). Accepted.
+- A photo import's picture is made by the browser, so a HEIC photo the browser can't draw
+  (most browsers but Safari) gives the recipe no picture (`frontend/README.md` → Screens → Add recipe).
 
 ## The product
 
@@ -81,8 +86,9 @@ resolved. One short line each, linking to the README section with the details.
   **one** picture (gallery, camera or a file) of a **written** recipe: a cookbook page, a
   screenshot or a handwritten card. It is read the same way in the background, with the
   **best model first**, and saved by itself. A photo of food with no recipe text gives no
-  recipe; the model never guesses one. **The picture is never kept**: it waits only in
-  Gemini's free file store and is deleted when the import ends. The same picture twice is
+  recipe; the model never guesses one. **A resized copy of the picture is kept as the
+  recipe's picture. The original waits only in Gemini's free file store and is deleted
+  when the import ends.** The same picture twice is
   allowed (a second recipe, for a better read). Several photos at once and sharing a
   picture from the gallery into the app may come later; don't build for them until asked.
 - **Users don't choose a model.** An import tries a fixed list of free models in order
@@ -112,6 +118,14 @@ resolved. One short line each, linking to the README section with the details.
   no AI tools.
 - Every recipe shows its **name, source link, ingredients, and instructions in both
   English and Hebrew** (Hebrew renders right-to-left).
+- A recipe may have **one picture**, filled in by itself on import: the video's thumbnail,
+  the post's or page's preview image (`og:image`), or a resized copy of the uploaded photo.
+  The user adds, replaces or removes it in the edit form (gallery, camera or a file). It
+  shows on the recipe's page (tap to see it big) and as a small square on the Home and
+  Browse cards, and a copy from Browse brings it. It is stored resized, in the same D1
+  database. A re-scan replaces only a picture that came from the link. Never an
+  AI-generated picture of the dish. A recipe imported before this has none until one is
+  added or its link is scanned again (`backend/README.md` → Pictures).
 - A recipe may also have **calories and protein per serving** (optional, the same in both
   languages), shown only on the recipe's own page. They are typed in the edit form, and an
   import from a link gets them from the model in the same request as the recipe; any
@@ -173,6 +187,7 @@ resolved. One short line each, linking to the README section with the details.
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Node-style JS on the Workers runtime (`nodejs_compat`); no web framework |
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
 | Background jobs | Cloudflare Workflows                         | Imports only; free on this plan                    |
+| Images    | Cloudflare Images binding (free plan)              | Resizes a link import's picture once, when it is saved; offline in `wrangler dev` and tests |
 | LLM       | Google's free-tier LLMs; Groq's free tier as a text-only fallback | An ordered list of import models, a translation model, a fallback and an opt-in best model, all set by config; keys in Worker secrets. Videos are handed to Gemini through its free file store |
 | Auth      | Built in, stored in D1                             | Password hashed with PBKDF2 (WebCrypto); stays logged in |
 | Testing   | Vitest                                             | Backend uses `@cloudflare/vitest-plugin`           |
@@ -187,14 +202,16 @@ Browser
    │
    ▼
 One Cloudflare Worker  (backend/)
-├── /api/*   → JSON API (login required) ──► D1 (users, tags, recipes, imports)
+├── /api/*   → JSON API (login required) ──► D1 (users, tags, recipes, pictures, imports)
 │                                        ├──► Gemini file store (an uploaded photo, until its import ends)
 │                                        └──► Workflow (import, in the background)
 │                                               ├──► YouTube Data API (video details)
 │                                               ├──► Facebook / Instagram (public post page, video file)
 │                                               ├──► Any other public web page (its text)
 │                                               ├──► Google LLMs (text + video or photo, or a blocked page's address → recipe)
-│                                               └──► Groq (text-only fallback)
+│                                               ├──► Groq (text-only fallback)
+│                                               ├──► Image hosts (the link's one picture: YouTube thumbnail, og:image)
+│                                               └──► Images binding (resizes that picture)
 └── /*       → static files built from frontend/ (frontend/out)
 ```
 
@@ -244,12 +261,6 @@ bound and has a schema; local dev never touches production (`local-dev` skill).
 - Import code across `backend/` and `frontend/`.
 - Call the LLM from the frontend. API keys exist only in the Worker.
 - Run a real video import on a link the owner didn't give in the chat (`local-dev`).
-- Follow a redirect automatically, or fetch anything a page links to. For YouTube,
-  Facebook and Instagram the Worker fetches only URLs it builds from a parsed id, on the
-  site's own hosts; any other link is fetched only after `isFetchableUrl` (a public domain
-  name, default port, no IPs or private-network names), re-checked at every hop
-  (`backend/README.md` → Links, Web pages). No proxies, scraping services, logins or
-  CAPTCHA solvers.
 - Add an API endpoint that skips the login check (only sign-up, login and logout are public).
 - Start a server on :8787 or :3000: they're the owner's, for testing PRs. Agents use
   8788-8799 and 3001-3009 (`local-dev` skill → Ports).

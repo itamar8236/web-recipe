@@ -125,8 +125,8 @@ END;
 -- the user uploaded. It has no list CHECK, so adding a site needs no table rebuild; the backend
 -- only ever writes the name of one of its own adapters. A photo recipe's source_url is
 -- 'photo:<random id>', not a link: it satisfies the CHECK below (only a manual recipe has
--- none), the API answers it as link '' and fromPhoto true, and the id is the key a later
--- feature may keep the picture under. The picture itself is never stored.
+-- none), and the API answers it as link '' and fromPhoto true. A resized copy of the
+-- picture is kept as the recipe's picture (recipe_pictures); the original is never stored.
 -- is_favorite is a plain column because a favorite is the owner's own mark: other users
 -- who browse a public recipe never see or change it.
 -- is_public says other users may see the recipe in Browse and copy it. Only the owner can
@@ -265,4 +265,29 @@ CREATE TABLE IF NOT EXISTS llm_usage (
   model TEXT    NOT NULL,
   calls INTEGER NOT NULL,
   PRIMARY KEY (day, model)
+);
+
+-- A recipe's one picture, stored resized (backend/src/pictures.js): `full` for the recipe's
+-- page and a small `thumb` for the Home and Browse cards. A table of its own, so the recipe
+-- lists never read the bytes, and deleting the recipe deletes its picture.
+-- origin says where it came from: 'link' (an import's thumbnail or preview image, which a
+-- re-scan may replace), 'photo' (a photo import's photo) or 'user' (chosen in the edit form).
+-- updated_at goes into the picture's address, so a browser can cache it for good.
+CREATE TABLE IF NOT EXISTS recipe_pictures (
+  recipe_id  INTEGER PRIMARY KEY REFERENCES recipes (id) ON DELETE CASCADE,
+  full       BLOB    NOT NULL CHECK (typeof(full) = 'blob' AND length(full) BETWEEN 1 AND 1000000),
+  thumb      BLOB    NOT NULL CHECK (typeof(thumb) = 'blob' AND length(thumb) BETWEEN 1 AND 100000),
+  type       TEXT    NOT NULL CHECK (type IN ('image/jpeg', 'image/webp')),
+  origin     TEXT    NOT NULL CHECK (origin IN ('link', 'photo', 'user')),
+  updated_at INTEGER NOT NULL
+);
+
+-- A photo import's picture (resized in the browser), waiting for its recipe. The save
+-- stage moves it into recipe_pictures, a Retry moves it to its new row, and dismissing the
+-- import deletes it.
+CREATE TABLE IF NOT EXISTS import_pictures (
+  request_id INTEGER PRIMARY KEY REFERENCES llm_requests (id) ON DELETE CASCADE,
+  full       BLOB    NOT NULL CHECK (typeof(full) = 'blob' AND length(full) BETWEEN 1 AND 1000000),
+  thumb      BLOB    NOT NULL CHECK (typeof(thumb) = 'blob' AND length(thumb) BETWEEN 1 AND 100000),
+  type       TEXT    NOT NULL CHECK (type IN ('image/jpeg', 'image/webp'))
 );

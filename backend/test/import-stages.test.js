@@ -43,6 +43,7 @@ describe('YouTube adapter: fetchPost', () => {
       text: 'A long description',
       transcript: '',
       video: { seconds: 125, isPublic: true, uri: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+      pictureUrls: ['https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg', 'https://i.ytimg.com/vi/dQw4w9WgXcQ/sddefault.jpg'],
     });
     const url = new URL(fetch.mock.calls[0][0]);
     expect(url.origin + url.pathname).toBe('https://www.googleapis.com/youtube/v3/videos');
@@ -167,7 +168,12 @@ describe('stage: meta', () => {
     expect(after).toMatchObject({ title: 'Shakshuka', stage: 'video', status: 'running', error: null });
     expect(after).toMatchObject({ source_id: VIDEO_ID, source_url: VIDEO_URL });
     expect(JSON.parse(after.state)).toEqual({
-      meta: { text: 'desc', transcript: '', video: { seconds: 120, isPublic: true, uri: VIDEO_URL } },
+      meta: {
+        text: 'desc',
+        transcript: '',
+        video: { seconds: 120, isPublic: true, uri: VIDEO_URL },
+        pictureUrls: [`https://i.ytimg.com/vi/${VIDEO_ID}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${VIDEO_ID}/sddefault.jpg`],
+      },
       done: ['meta'],
       version: 2,
     });

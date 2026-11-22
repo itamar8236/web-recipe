@@ -2,10 +2,12 @@
 // YouTube, Facebook or Instagram never gets here. Unlike the other adapters, the page has
 // no id to rebuild a link from, so the pasted link itself is fetched, which is why every
 // hop is checked by `isFetchableUrl` (backend/README.md → Web pages). Everything that
-// comes back is untrusted data, read as text only; nothing on the page is followed. A page
+// comes back is untrusted data, read as text only; nothing on the page is followed, except
+// its one preview image (og:image), which the picture step fetches with the same checks. A page
 // that turns the Worker away is left for the model to open with Google's URL tool.
 
 import { ImportError } from '../errors.js';
+import { previewImageUrl } from '../../pictures.js';
 import { BROWSER_HEADERS, decodeEntities } from './meta.js';
 
 const MAX_REDIRECTS = 5;
@@ -232,6 +234,7 @@ async function fetchPost(sourceId) {
     text: text.trim().slice(0, MAX_TEXT_LENGTH),
     transcript: '',
     video: null,
+    pictureUrls: [isHtml ? previewImageUrl(html, url) : null].filter(Boolean),
   };
 }
 

@@ -184,7 +184,8 @@ const randomId = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) =
 // type is as safe as the JSON rule (readJson): another site's form can't send one without
 // a CORS preflight, which fails. The same picture twice is allowed: each upload is a new
 // import with its own random id, and a new recipe. The picture goes straight to Gemini's
-// file store, never to the database, and is deleted when the import ends (stages.js).
+// file store, and is deleted when the import ends (stages.js). The browser then sends its own
+// resized copy, which becomes the recipe's picture (PUT /api/imports/:id/picture, pictures.js).
 // This is the one place that handles the uploaded bytes.
 async function createPhotoImport(request, env, userId, files = geminiFiles) {
   const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
@@ -302,15 +303,17 @@ async function retryImport(request, env, userId, id) {
     return fail(409, 'not_retryable');
   }
   if (!added) return fail(409, 'not_retryable');
-  // The new row holds the photo now, so dismissing the old one must not delete it.
-  await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', state = json_remove(state, '$.photo'), updated_at = ? WHERE id = ? AND status = 'failed'`)
-    .bind(now, id)
-    .run();
+  // The new row holds the photo now (in Gemini's store, and the browser's resized copy in
+  // import_pictures), so dismissing the old one must not delete it.
+  await env.DB.batch([
+    env.DB.prepare('UPDATE import_pictures SET request_id = ? WHERE request_id = ?').bind(added.id, id),
+    env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', state = json_remove(state, '$.photo'), updated_at = ? WHERE id = ? AND status = 'failed'`).bind(now, id),
+  ]);
   return startAndRespond(env, userId, added.id, added.attempt);
 }
 
 // A dismissed photo import won't need its picture again, so it is deleted from Gemini's
-// store now rather than after Google's 48 hours.
+// store now rather than after Google's 48 hours, and its resized copy with it.
 async function dismissImport(env, userId, id, files = geminiFiles) {
   const row = await env.DB.prepare(
     `SELECT json_extract(state, '$.photo') AS photo FROM llm_requests WHERE id = ? AND user_id = ? AND purpose = 'import'`,
@@ -318,9 +321,10 @@ async function dismissImport(env, userId, id, files = geminiFiles) {
     .bind(id, userId)
     .first();
   if (!row) return fail(404, 'not_found');
-  await env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', state = json_remove(state, '$.photo'), updated_at = ? WHERE id = ?`)
-    .bind(Date.now(), id)
-    .run();
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', state = json_remove(state, '$.photo'), updated_at = ? WHERE id = ?`).bind(Date.now(), id),
+    env.DB.prepare('DELETE FROM import_pictures WHERE request_id = ?').bind(id),
+  ]);
   if (row.photo) await files.remove({ env, file: JSON.parse(row.photo) });
   return json({ ok: true });
 }

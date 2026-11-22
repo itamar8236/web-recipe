@@ -8,6 +8,10 @@ const VIDEOS_API = 'https://www.googleapis.com/youtube/v3/videos';
 
 const watchUrl = (id) => `https://www.youtube.com/watch?v=${id}`;
 
+// The video's thumbnail, built from its id with no API call: the 1280 px one, or the
+// 640 px one when YouTube has no bigger one for this video.
+export const thumbnailUrls = (id) => ['maxresdefault', 'sddefault'].map((variant) => `https://i.ytimg.com/vi/${id}/${variant}.jpg`);
+
 function videoIdFrom(url) {
   const parts = url.pathname.split('/').filter(Boolean);
   if (url.hostname === 'youtu.be') return parts.length === 1 ? parts[0] : null;
@@ -47,6 +51,7 @@ async function fetchPost(sourceId, env) {
     title: video.snippet?.title ?? '',
     text: video.snippet?.description ?? '',
     transcript: '',
+    pictureUrls: thumbnailUrls(sourceId),
     video: {
       // A live stream has no length yet (0), which counts as unknown.
       seconds: durationSeconds(video.contentDetails?.duration) || null,
