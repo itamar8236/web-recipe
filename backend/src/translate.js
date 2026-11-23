@@ -1,6 +1,6 @@
-// Translating a recipe's text from one language to the other. The user waits for the
-// answer, so this is one plain request, not a Workflow. The recipe text isn't stored: it
-// comes from the edit form and goes back to it, and is saved only when the user taps Save.
+// Translating a recipe's text from one language to the other, for the recipe page's AI
+// tools. The user waits for the answer, so this is one plain request, not a Workflow. This
+// endpoint stores no recipe text: the page saves the translation with the recipe itself.
 // Each translation is an llm_requests row with purpose 'translation', like every other model
 // request, with the model that answered in its `model` column.
 
@@ -35,15 +35,16 @@ ${JSON.stringify(content)}
 
 const badResult = () => new ImportError('bad_result');
 
-// The model's answer is untrusted: it must be a valid recipe text with something in every
-// part the original had.
+// The model's answer is untrusted: it must be a valid recipe text with a name when the
+// original had one, and exactly as many ingredients and steps, so a dropped or merged line
+// is never saved.
 function readTranslation(output, source) {
   const content = readContent(output);
   if (content.error) throw badResult();
   const { name, ingredients, steps } = content.value;
   if (Boolean(source.name) !== Boolean(name)) throw badResult();
-  if (Boolean(source.ingredients.length) !== Boolean(ingredients.length)) throw badResult();
-  if (Boolean(source.steps.length) !== Boolean(steps.length)) throw badResult();
+  if (source.ingredients.length !== ingredients.length) throw badResult();
+  if (source.steps.length !== steps.length) throw badResult();
   return content.value;
 }
 
