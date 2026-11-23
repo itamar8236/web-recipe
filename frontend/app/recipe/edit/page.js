@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import BackLink from '@/components/BackLink';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
@@ -82,7 +83,7 @@ function RecipeForm() {
     return (
       <>
         <p>{t.notFound}</p>
-        <Link href="/" className="button secondary">{t.back}</Link>
+        <BackLink className="button secondary">{t.back}</BackLink>
       </>
     );
   }
@@ -102,7 +103,7 @@ function RecipeForm() {
           >
             {t.retry}
           </button>
-          <Link href="/" className="button secondary">{t.back}</Link>
+          <BackLink className="button secondary">{t.back}</BackLink>
         </div>
       </div>
     );

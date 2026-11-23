@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import BackLink from '@/components/BackLink';
 import BrowseCard from '@/components/BrowseCard';
 import ModeTabs from '@/components/ModeTabs';
 import SearchBox from '@/components/SearchBox';
@@ -160,7 +160,7 @@ export default function BrowsePage() {
     return (
       <div className={styles.empty}>
         <p className={styles.emptyTitle}>{t.errBrowseNeedsLogin}</p>
-        <Link href="/" className="button secondary">{t.back}</Link>
+        <BackLink className="button secondary">{t.back}</BackLink>
       </div>
     );
   }
