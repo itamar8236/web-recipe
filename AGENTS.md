@@ -267,6 +267,7 @@ Before every push:
   - `bug-fix`: reproduce, test, fix, verify
   - `frontend-ui`: UI work in `frontend/`
   - `local-dev`: run and test the app against a local copy of the DB, never production
+  - `repo-audit`: the periodic whole-repo audit, only when the owner asks
 - **Worktrees**: one per session; if the session already runs in one, work there and
   never make a second. Setup and removal are in `git-workflow` → reference.md.
 - **Claude Code settings**: `.claude/settings.json` (committed) denies a few `git push`
