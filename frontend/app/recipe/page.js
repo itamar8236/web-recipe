@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
+import BackLink from '@/components/BackLink';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
 import { useLanguage } from '@/components/Language';
@@ -63,7 +64,7 @@ function RecipeView() {
           >
             {t.retry}
           </button>
-          <Link href="/" className="button secondary">{t.back}</Link>
+          <BackLink className="button secondary">{t.back}</BackLink>
         </div>
       </div>
     );
@@ -73,7 +74,7 @@ function RecipeView() {
     return (
       <>
         <p>{t.notFound}</p>
-        <Link href="/" className="button secondary">{t.back}</Link>
+        <BackLink className="button secondary">{t.back}</BackLink>
       </>
     );
   }
@@ -114,9 +115,9 @@ function RecipeView() {
 
   return (
     <article className={styles.recipe}>
-      <Link href="/" className={styles.back}>
+      <BackLink className={styles.back}>
         <span aria-hidden="true" className={styles.arrow}>←</span> {t.back}
-      </Link>
+      </BackLink>
 
       <header className={styles.head} lang={contentLang} dir={contentDir}>
         <div className={styles.titleRow}>

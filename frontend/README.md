@@ -32,7 +32,7 @@ frontend/
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, DeletedDialog, ImportDialog, ImportCards, RecipeAiTools, RecipePicture, SubstituteDialog, RegisterServiceWorker (registers `public/sw.js`)
+├── components/            # Shell (login screen or app), BackLink (Back, plus the swipe), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, DeletedDialog, ImportDialog, ImportCards, RecipeAiTools, RecipePicture, SubstituteDialog, RegisterServiceWorker (registers `public/sw.js`)
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -49,6 +49,8 @@ frontend/
 │   ├── picture.test.js    # Vitest tests for picture.js
 │   ├── share.js           # findSharedLink(): the link in what Android shared
 │   ├── share.test.js      # Vitest tests for share.js
+│   ├── swipe.js           # isSwipeBack(): whether a touch was a "go back" swipe
+│   ├── swipe.test.js      # Vitest tests for swipe.js
 │   └── search.test.js     # Vitest tests for search.js
 ├── styles/globals.css     # Design tokens (CSS variables), buttons, form fields
 └── next.config.mjs
@@ -327,6 +329,11 @@ Never fix one without asking the owner.
     on failure the form stays filled in and the message shows under it.
   - The favorite heart changes at once, is disabled until the backend answers, and
     changes back with a message if saving failed.
+- **Swipe back**: wherever a Back link shows (`components/BackLink`), a quick sideways
+  swipe anywhere on the page does the same: left to right in English, right to left in
+  Hebrew (`lib/swipe.js`: at least 80px, mostly sideways, under 0.8 s). It is ignored when
+  it starts in a field, a row that scrolls sideways, or a popup, while zoomed in, and with
+  two fingers. The edit form's Cancel has no swipe, so a slip never drops what was typed.
 - Destructive actions ask for confirmation with `components/ConfirmDialog` (an in-page
   dialog). Don't use `window.confirm()`: some browsers and in-app views block it and it
   silently returns false. Known, not fixed: it asks for focus on Cancel with `autoFocus`, but
