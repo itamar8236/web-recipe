@@ -8,7 +8,8 @@ const RETRY = { retries: { limit: 2, delay: '15 seconds', backoff: 'exponential'
 
 // A stage moves on from a busy model (503) to the next one by itself. Only when every model
 // it could use was busy does it end as busy, and that can last minutes or hours, past the
-// quick retries above, so the stage is run again after these waits. Google advises a short one first, then longer
+// quick retries above, so the stage is run again after these waits. Instagram's login wall
+// from Cloudflare's network comes and goes the same way (sources/instagram.js). Google advises a short one first, then longer
 // ones. They have no jitter: there are too few users to all retry at once, and a Workflow
 // must sleep the same on every replay. Each is far below the 30 minutes after which a
 // quiet import counts as stuck (imports.js).

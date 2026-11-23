@@ -480,6 +480,10 @@ export async function runStage(env, importId, attempt, stage, { llm = callModel,
       await saveError(env, importId, attempt, 'llm_error', error.detail);
       return { busy: true };
     }
+    if (error instanceof ImportError && error.waitAndRetry) {
+      await saveError(env, importId, attempt, error.code, error.detail);
+      return { busy: true };
+    }
     if (error instanceof ImportError) await saveError(env, importId, attempt, error.code, error.detail);
     else await saveError(env, importId, attempt, 'llm_error', `${error.name}: ${error.message}`.slice(0, 500));
     if (error instanceof ImportError && !error.retryable) throw new NonRetryableError(error.code);

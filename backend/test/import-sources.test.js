@@ -413,18 +413,20 @@ describe('Instagram adapter: fetchPost', () => {
     expect(await failure(instagram.fetchPost('share/BAxyz12345'))).toMatchObject({ code: 'link_unsupported' });
   });
 
-  it('says login_required when redirected to the login page', async () => {
+  // From Cloudflare's network Instagram shows a public post's login wall only some of the
+  // time, so the import tries again later (`waitAndRetry`) instead of failing at once.
+  it('says login_required, to be tried again later, when redirected to the login page', async () => {
     stubSite({ [IG_POST]: redirect(`https://www.instagram.com/accounts/login/?next=%2Fp%2F${IG_CODE}%2F`) });
-    expect(await failure(instagram.fetchPost(IG_CODE))).toMatchObject({ code: 'login_required', retryable: false });
+    expect(await failure(instagram.fetchPost(IG_CODE))).toMatchObject({ code: 'login_required', retryable: false, waitAndRetry: true });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it.each([
     ['a post shown only after a login', instagramGatedPage],
     ['the login page itself', instagramLoginPage],
-  ])('says login_required for %s', async (_, body) => {
+  ])('says login_required, to be tried again later, for %s', async (_, body) => {
     stubSite({ [IG_POST]: html(body()) });
-    expect(await failure(instagram.fetchPost(IG_CODE))).toMatchObject({ code: 'login_required', retryable: false });
+    expect(await failure(instagram.fetchPost(IG_CODE))).toMatchObject({ code: 'login_required', retryable: false, waitAndRetry: true });
   });
 
   it('says video_unavailable for a removed post', async () => {

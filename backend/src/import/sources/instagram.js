@@ -35,6 +35,11 @@ function sharePathFrom(url) {
 
 const shareUrl = (sharePath) => `https://www.instagram.com/${sharePath}/`;
 
+// From Cloudflare's network Instagram shows a public post's login wall only some of the
+// time (seen 2026-11: the same reel failed several times, then imported), so the import
+// waits and tries again (stages.js → runStage) instead of failing at once.
+const loginWall = (detail) => new ImportError('login_required', { waitAndRetry: true, detail });
+
 // The video's length is only written in its streaming manifest, as PT1M5.3S.
 function secondsFrom(manifest) {
   const match = /mediaPresentationDuration="PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?"/.exec(manifest ?? '');
@@ -63,7 +68,7 @@ function readPage(html, code) {
   if (!post) return null;
   // The post exists but Instagram shows it only to logged-in people (e.g. an age limit).
   const media = post.if_not_gated_logged_out;
-  if (!media) throw new ImportError('login_required', { detail: 'Instagram shows this post only after a login' });
+  if (!media) throw loginWall('Instagram shows this post only after a login');
   if (media.code !== code) throw new ImportError('source_blocked', { retryable: true, detail: 'Instagram sent a different post than the one asked for' });
 
   const downloadUrl = media.video_versions?.[0]?.url ?? null;
@@ -76,7 +81,9 @@ function readPage(html, code) {
 
 async function fetchPost(sourceId) {
   const isShare = sourceId.startsWith('share/');
-  const { url, html } = await fetchPage(isShare ? shareUrl(sourceId) : postUrl(sourceId), isHost);
+  const { url, html } = await fetchPage(isShare ? shareUrl(sourceId) : postUrl(sourceId), isHost).catch((error) => {
+    throw error.code === 'login_required' ? loginWall(error.detail) : error;
+  });
   const code = isShare ? codeFrom(url) : sourceId;
   // A share link can lead to a profile, a story or anything else.
   if (!code) throw new ImportError('link_unsupported', { detail: `The share link led to ${url.pathname}` });
@@ -86,7 +93,7 @@ async function fetchPost(sourceId) {
   const pictureUrls = [previewImageUrl(html, postUrl(code))].filter(Boolean);
   if (!page) {
     if (html.includes('"pageID":"httpErrorPage"')) throw new ImportError('video_unavailable', { detail: 'Instagram has no public post with this code' });
-    if (html.includes('"pageID":"loginPage"')) throw new ImportError('login_required', { detail: 'Instagram answered with its login page' });
+    if (html.includes('"pageID":"loginPage"')) throw loginWall('Instagram answered with its login page');
     // A page without its data may still carry the caption for link previews.
     const preview = clipText(previewText(html));
     if (!preview) throw new ImportError('source_blocked', { retryable: true, detail: `Instagram sent a page without the post's data (${html.length} bytes)` });
