@@ -196,5 +196,6 @@ push, force-push or deletion). Your local checks are the only gate.
     `rm .claude/skills && cmd //c "mklink /J .claude\skills .agents\skills" && git update-index --skip-worktree .claude/skills`
 - **Claude Code settings**: `.claude/settings.json` denies a few `git push` spellings and
   reading `.env` / `.dev.vars`, and its `SessionStart` hook installs missing
-  `node_modules`. Personal overrides go in `.claude/settings.local.json` (git-ignored).
+  `node_modules`. `.claude/launch.json` has a dev-server entry for every agent port
+  (`local-dev` → Ports). Personal overrides go in `.claude/settings.local.json` (git-ignored).
 - Don't commit plans, scratch files, or debug output.
