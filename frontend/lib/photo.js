@@ -3,7 +3,9 @@
 // image down itself anyway. Only a huge file (a 100+ megapixel camera mode) is shrunk here
 // first, to a size that still holds more detail than the model looks at.
 
+import * as api from './api';
 import { ApiError } from './api';
+import { makePicture } from './picture';
 
 // Sent unchanged up to this size; the backend takes up to 20 MB.
 export const SEND_AS_IS_BYTES = 15 * 1024 * 1024;
@@ -76,4 +78,24 @@ export async function preparePhotos(files) {
   }
   if (totalSize(photos) > MAX_TOTAL_BYTES) throw new ApiError(413, 'photo_too_big');
   return photos;
+}
+
+// Starts the import of 1 to 7 chosen pictures. Returns { card, pictures }: the new card as
+// soon as the backend has the photos, and a promise that settles once the recipe's picture
+// is sent. That picture is a small copy of one of the photos, made here: one copy of each,
+// one at a time to spare a phone's memory, and the backend keeps the one the model chose.
+// It is a bonus: if it fails, the recipe just has no picture, so `pictures` never rejects.
+export async function importPhotos(files) {
+  const card = await api.startPhotoImport(await preparePhotos(files));
+  return { card, pictures: sendPictures(card.id, files) };
+}
+
+async function sendPictures(importId, files) {
+  for (const [position, file] of files.entries()) {
+    try {
+      await api.sendImportPicture(importId, await makePicture(file), position);
+    } catch {
+      // The next one may still work.
+    }
+  }
 }

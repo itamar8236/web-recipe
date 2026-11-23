@@ -28,12 +28,12 @@ frontend/
 │   ├── icon.png           # Favicon
 │   ├── page.js            # Home: tags + recipes with the selected tag
 │   ├── browse/page.js     # Browse: other users' public recipes (/browse)
-│   ├── share/page.js      # Where Android's Share menu sends a link (/share?text=...)
+│   ├── share/page.js      # Where Android's Share menu sends a link or photos (/share)
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
 ├── components/            # Shell (login screen or app), BackLink (Back, plus the swipe), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, DeletedDialog, ImportDialog, ImportCards, RecipeAiTools, RecipePicture, SubstituteDialog, RegisterServiceWorker (registers `public/sw.js`)
-├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
+├── public/                # sw.js (minimal service worker: receives shares, caches no pages), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
 │   ├── api.test.js        # Vitest tests for api.js and i18n helpers
@@ -43,11 +43,11 @@ frontend/
 │   ├── search.js          # matchesSearch(): recipe name/ingredient/author/tag search
 │   ├── sort.js            # SORTS, sortRecipes(): the orders the lists can be sorted in
 │   ├── sort.test.js       # Vitest tests for sort.js
-│   ├── photo.js           # preparePhotos(): 1 to 7 chosen pictures, ready to send
+│   ├── photo.js           # preparePhotos(), importPhotos(): 1 to 7 chosen pictures, sent with the recipe's picture
 │   ├── photo.test.js      # Vitest tests for photo.js
 │   ├── picture.js         # makePicture(): a recipe's picture and thumb, drawn in the browser
 │   ├── picture.test.js    # Vitest tests for picture.js
-│   ├── share.js           # findSharedLink(): the link in what Android shared
+│   ├── share.js           # findSharedLink(), takeSharedPhotos(): what Android shared
 │   ├── share.test.js      # Vitest tests for share.js
 │   ├── swipe.js           # isSwipeBack(): whether a touch was a "go back" swipe
 │   ├── swipe.test.js      # Vitest tests for swipe.js
@@ -283,9 +283,19 @@ frontend/
    the admin logs out and logs in as themself.
 
 9. **Share** (`/share`, no link to it in the app): where Android's Share menu opens the
-   installed app (`share_target` in `app/manifest.js`, method GET, so `sw.js` is
-   unchanged). Sharing a YouTube, Facebook or Instagram post, or a web page from Chrome,
-   to "Recipes" opens it with the shared text in `title`/`text`/`url`.
+   installed app (`share_target` in `app/manifest.js`). Sharing a YouTube, Facebook or
+   Instagram post, a web page from Chrome, or 1 to 7 photos from the gallery to "Recipes"
+   opens it.
+   - The share is a multipart POST (only a POST can carry files), which a static page
+     can't read, so `public/sw.js` receives it: a link opens `/share` with the shared text
+     in `title`/`text`/`url`; photos are kept in the `shared-photos` cache and open
+     `/share?photos=<count>`, where `takeSharedPhotos()` (`lib/share.js`) reads and
+     deletes them.
+   - Photos go through the same import as "Choose photos" in the Add recipe dialog
+     (`importPhotos()` in `lib/photo.js`): "Sending the photos..." until the photos and
+     the recipe's picture are sent, since closing the app would stop the picture, then the
+     same "Importing" and close as a link. More than 7 gives the usual "Choose up to 7
+     photos" error.
    - It takes the first link out of that text (`lib/share.js`: Android puts the link in
      `text`, often with words around it) and starts the import at once, with no question,
      like "Import" in the Add recipe dialog. It then clears the query (`replaceState`), so
@@ -299,9 +309,10 @@ frontend/
      the phone's Back button. Every outcome also has "Back to the app I came from" (the
      same close) and "Open my recipes" (`router.replace`, so Back doesn't land on `/share`).
    - Failed (an unsupported link, already imported, the quota...): the usual import error
-     message and the two buttons; it doesn't close by itself. No link: "No link was
-     shared." Logged out: the login screen first (in place, like every page), then the
-     import goes on; a guest gets "Log in to add a recipe from a link".
+     message and the two buttons; it doesn't close by itself. Nothing shared (or the page
+     opened again after its photos were taken): "No link or photo was shared." Logged
+     out: the login screen first (in place, like every page), then the import goes on (the
+     photos wait in the cache meanwhile); a guest gets "Log in to add a recipe from a link".
    - Only Chrome (and other Chromium browsers) on Android, and only once the site is
      installed as an app; nothing on iPhone. An app installed before this change gets the
      Share entry when Chrome next refreshes its manifest (about once a day, when the app is

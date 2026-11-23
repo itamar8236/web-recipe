@@ -11,12 +11,19 @@ export default function manifest() {
     display: 'standalone',
     background_color: '#fbf7f1',
     theme_color: '#c4501b',
-    // Lists the installed app in Android's Share menu. Shared links open /share, which
-    // starts the import. GET, so no service worker code is needed to read the link.
+    // Lists the installed app in Android's Share menu for links and photos. POST, since
+    // only a POST can carry files; public/sw.js receives it and opens /share, which
+    // starts the import.
     share_target: {
       action: '/share',
-      method: 'GET',
-      params: { title: 'title', text: 'text', url: 'url' },
+      method: 'POST',
+      enctype: 'multipart/form-data',
+      params: {
+        title: 'title',
+        text: 'text',
+        url: 'url',
+        files: [{ name: 'photos', accept: ['image/*', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'] }],
+      },
     },
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
