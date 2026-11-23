@@ -2,8 +2,7 @@
 
 Rules and context for every coding agent (Claude Code, Codex, ...) and human in this repo,
 and the single source of truth: `CLAUDE.md` only contains `@AGENTS.md`, so never add rules
-there. Every session loads all of this file, so keep it under 200 lines and put anything
-that matters only to one area in that area's docs.
+there.
 
 ## Known bugs and accepted trade-offs
 
