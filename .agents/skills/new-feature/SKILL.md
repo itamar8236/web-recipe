@@ -8,9 +8,10 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
 1. **Understand**: restate the feature in one or two sentences and decide which apps it
    touches. Build only that feature; keep the product goal (simple, free, few users)
    in mind but don't expand scope. Ask the owner if anything is ambiguous.
-2. **Branch**: follow the `git-workflow` skill (`feat/<description>`).
-3. **Read the docs for the area**: `backend/README.md` (data, login, video import) and/or
-   `frontend/README.md` (screens, UX, bilingual rules).
+2. **Branch**: follow the `git-workflow` skill; the PR title starts with `feat`.
+3. **Read the docs for the area**: `backend/README.md` (data, login, API), `backend/IMPORT.md`
+   (imports and models) and/or `frontend/README.md` (screens, UX, bilingual rules), each
+   with its Known gaps (never fix an accepted one without asking).
 4. **Backend** (if needed):
    - All tables live in `backend/schema.sql` (only `IF NOT EXISTS`, safe to re-run).
      New tables go there; changing an existing table also needs a one-off `ALTER` (or
@@ -29,6 +30,6 @@ description: End-to-end checklist for implementing a feature in web-recipe (back
    (`local-dev` skill, never production) and try the feature end to end in a browser.
 7. **Document**: update every `.md` file the feature makes outdated, in the same PR:
    `AGENTS.md` (product, stack, commands, rules, known bugs and trade-offs), `backend/README.md` (schema, API, auth,
-   LLM flow, env), `frontend/README.md` (screens, UX), skills (in `.agents/skills/` only).
+   env), `backend/IMPORT.md` (the import and its models), `frontend/README.md` (screens, UX), skills (in `.agents/skills/` only).
 8. **Ship**: commit and open a PR (`git-workflow`). Report what changed, how it was
    tested, and what's left.
