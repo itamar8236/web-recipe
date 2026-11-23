@@ -1,8 +1,9 @@
 // The import endpoints. Everything here is behind the login check and works only on the
 // data of the user the session acts for. The work itself happens in import/workflow.js.
 // Every start, Retry and re-scan is its own llm_requests row (purpose 'import'), so each
-// try that calls the best model counts toward the user's 5; translations are rows too, but
-// with purpose 'translation' (translate.js) or 'nutrition' (nutrition.js), and never show as cards.
+// try that calls the best model counts toward the user's 5. The AI tools' requests are rows
+// too, with purpose 'translation' (translate.js), 'nutrition' (nutrition.js) or
+// 'substitution' (substitute.js), and never show as cards.
 
 import { fail, json, readJson } from './http.js';
 import { geminiFiles } from './import/llm.js';
