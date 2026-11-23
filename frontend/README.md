@@ -4,11 +4,11 @@ Next.js app (App Router) in plain JavaScript and CSS Modules, built as a **stati
 (`output: 'export'` → `out/`) that the backend Worker serves. All data comes from the
 backend's API (see `backend/README.md`). Read the root `AGENTS.md` first.
 
-## Current state
+## Overview
 
-The recipe browsing and manual add/edit/delete screens exist, plus login, sign-up, guest
-mode and creating a recipe from a YouTube, Facebook or Instagram link, a recipe web page or a photo of a written recipe. A logged-in user's tags, recipes and favorites are loaded from and saved
-to the backend (D1). A **guest's** live only in memory in `lib/api.js`: nothing is sent
+The screens are listed under [Screens](#screens); what the product does is in the root
+`AGENTS.md` → The product. A logged-in user's tags, recipes and favorites are loaded from
+and saved to the backend (D1). A **guest's** live only in memory in `lib/api.js`: nothing is sent
 to the backend, the app starts empty and everything is gone on reload. Components call
 the same `lib/api.js` functions in both modes. Tags are a flat list (no nesting or
 reordering), and a recipe has any number of them.
@@ -32,7 +32,7 @@ frontend/
 │   └── recipe/
 │       ├── page.js        # View one recipe        (/recipe?id=12)
 │       └── edit/page.js   # Create / edit a recipe (/recipe/edit?id=12, no id = new)
-├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, DeletedDialog, ImportDialog, ImportCards, RecipeAiTools, RecipePicture, SubstituteDialog
+├── components/            # Shell (login screen or app), Auth (context), LoginScreen, Header, AccountDialog, ImpersonateSection, Language (context), ModeTabs, BrowseCard, TagBar, RecipeTags, SearchBox, SortMenu, RecipeCard, HeartButton, ConfirmDialog, DeletedDialog, ImportDialog, ImportCards, RecipeAiTools, RecipePicture, SubstituteDialog, RegisterServiceWorker (registers `public/sw.js`)
 ├── public/                # sw.js (minimal service worker, caches nothing), icons/ (app icons)
 ├── lib/
 │   ├── api.js             # The only data layer: the backend for users, memory for guests
@@ -299,6 +299,16 @@ frontend/
      Share entry when Chrome next refreshes its manifest (about once a day, when the app is
      opened), or at once by uninstalling and installing it again.
 
+## Known gaps and accepted trade-offs
+
+Never fix one without asking the owner.
+
+- Sharing to the app returns to the source app only when the app wasn't already open;
+  otherwise the user taps Back (Android only; see Screens → Share).
+- A photo import's picture is made by the browser, so a HEIC photo the browser can't draw
+  (most browsers but Safari) gives the recipe no picture (see Screens → Add recipe).
+- `ConfirmDialog` opens with focus on its confirm button, not Cancel (see UX rules).
+
 ## UX rules
 
 - Extremely simple: every action is reachable in 1-2 taps, with clear words on buttons
@@ -328,13 +338,16 @@ frontend/
 ## API client
 
 `lib/api.js` exports one function per endpoint: auth (`getMe`, `login`, `register`, `updateAccount`,
-`logout`), tags (`getTags`, `renameTag`),
+`logout`), admin (`getUsers`, `impersonate`), tags (`getTags`, `renameTag`),
 recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`, `setRecipePublic`, `deleteRecipe`),
+recently deleted (`getDeletedRecipes`, `restoreRecipe`),
 pictures (`setRecipePicture`, `removeRecipePicture`; `{ full, thumb }` Blobs sent as
 multipart `FormData`), browse (`getBrowse`, `copyRecipe`, `newBrowseSeed`) and imports
 (`getImports`, `startImport`, `startPhotoImport` (the picture as the body, with its own
 `Content-Type`), `sendImportPicture`, `retryImport`, `dismissImport`, `rerunRecipe`) and
-`translateRecipe`, `estimateNutrition`, `suggestSubstitutes`. For a guest the tag and recipe functions use memory instead. They
+`translateRecipe`, `estimateNutrition`, `suggestSubstitutes`. Two more set it up:
+`setGuestMode(on)` switches between the backend and a fresh, empty guest memory, and
+`setLoggedOutHandler(handler)` is called when the backend answers `not_logged_in`. For a guest the tag and recipe functions use memory instead. They
 trim names and lines and drop blank lines like the backend, and make only some of its
 checks, with the same codes: `name_required` (a tag, or a recipe with no name in either
 language), `tag_exists`, and `not_found` for renaming a missing tag or setting a

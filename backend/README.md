@@ -7,13 +7,14 @@ YouTube, Facebook and Instagram links, recipe web pages and photos of written re
 
 Record new files, schema and endpoints here in the same PR that adds them.
 
-## Current state
+## Overview
 
 The Worker (`src/index.js`) runs only for `/api/*` (`run_worker_first` in `wrangler.jsonc`);
-everything else is the static build from `../frontend/out`, served by Cloudflare. Run it
-locally with `npm run dev` (port 8787, after `npm run build` in `frontend/`). Never run
-`npm run deploy` (`wrangler deploy`): production is deployed only by merging a PR into
-`main`, through Workers Builds (root directory `/`), which builds with
+everything else is the static build from `../frontend/out`, served by Cloudflare. It runs
+on the Workers runtime with no `nodejs_compat` flag, so use web APIs, never `node:*`
+modules (the scripts in `scripts/` run on Node). Run it locally as the `local-dev` skill
+says. Production is deployed only by merging a PR into `main`, through Workers Builds
+(root directory `/`), which builds with
 `cd frontend && npm install && npm run build` and then:
 
 - on `main`: `cd backend && npm install && npx wrangler deploy` (production).
@@ -26,7 +27,7 @@ Code: `src/index.js` (routes, auth and the daily cron job), `src/data.js` (tags 
 ("Recently deleted": restoring and the 30-day purge), `src/browse.js`
 (other users' public recipes), `src/pictures.js` (recipes' pictures: the only file that
 touches picture bytes),
-`src/imports.js` (import endpoints), `src/translate.js` (translation), `src/nutrition.js` (calories estimate), `src/substitute.js` (ingredient substitutes), `src/http.js` (JSON helpers), `src/session.js`
+`src/imports.js` (import endpoints; the import itself is in [`IMPORT.md`](IMPORT.md)), `src/translate.js` (translation), `src/nutrition.js` (calories estimate), `src/substitute.js` (ingredient substitutes), `src/http.js` (JSON helpers), `src/session.js`
 (cookies and the `sessions` table), `src/password.js` (PBKDF2), and `src/import/`:
 `workflow.js` (the background job), `stages.js` (what each stage does), `models.js` (model
 choice, usage counting, reset time), `llm.js` (the only file that knows
@@ -36,6 +37,7 @@ adapter per site: `youtube.js`, `facebook.js`, `instagram.js`, with `meta.js` fo
 last two share, `web.js` for any other web page, and `photo.js` for an uploaded photo, which
 is never matched against a link). `scripts/e2e-links.mjs` runs real imports through the local app by hand. Tests: `npm test` (`test/`, Vitest in the Workers runtime on a
 throwaway local D1 built from `schema.sql`; never touches production or `.wrangler/state`).
+Lint: `npm run lint` (ESLint, `eslint.config.mjs`).
 
 ## Auth API
 
@@ -58,7 +60,8 @@ defaults, both `true` for a new user: a recipe they add (manually, by import or 
 starts public, and copying a recipe in Browse copies its tags too. Cookies (both HttpOnly, SameSite=Lax, 10 years,
 `Secure` on https): `device` (random id, kept across logouts) and `session` (random
 secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
-device. Not built yet: login rate limiting.
+device. There is no login rate limit, and a password may be 1 character: accepted by the
+owner (`AGENTS.md` → Known bugs and accepted trade-offs).
 
 **Admin login as a user**: `POST /api/admin/impersonate` sets `sessions.acting_as_user_id`
 on this device's row (the schema's triggers refuse it for anyone but the admin). From then
@@ -97,16 +100,16 @@ with the wrong method answers 405 `method_not_allowed`.
 
 `recipe` is `{ id, tagIds, favorite, public, link, fromPhoto, sourceModel, calories, protein, author, picture, en, he }`, where `public` says
 other users can see it in Browse (a new recipe gets the user's `defaultPublic`), `en` and `he` are
-`{ name, ingredients: [string], steps: [string] }`, `link` is the source video (`''` for
-manual recipes and for one read from a photo, whose `fromPhoto` is then `true`; see
-[Import from a photo](#import-from-a-photo)), `sourceModel` is the LLM that produced it (`null` for manual recipes) and
+`{ name, ingredients: [string], steps: [string] }`, `link` is the source link (a video,
+a post or a web page; `''` for manual recipes and for one read from a photo, whose
+`fromPhoto` is then `true`; see [Import from a photo](IMPORT.md#import-from-a-photo)), `sourceModel` is the LLM that produced it (`null` for manual recipes) and
 `tagIds` is the ids of its tags, lowest first (`[]` for none). `calories` (kcal) and
 `protein` (grams) are per serving, whole numbers, `null` when not known; they are the same
 in both languages, and `invalid_nutrition` means one isn't a whole number from 0 to 10000
 (calories) or 1000 (protein). `author` is who the recipe is by (a chef, a channel, a site),
 `''` when not known; it is the same in both languages, at most 100 characters
 (`too_long`), and kept as the user typed it, with spaces tidied
-(see [Author](#author)). The backend trims names and
+(see [Author](IMPORT.md#author)). The backend trims names and
 lines and drops blank lines. Limits (`too_long`): recipe name 200 chars, 200 ingredients
 or steps per language, 2000 chars per line. The table also keeps
 `machine_translated_lang` (which language an import's model filled in, as a translation),
@@ -178,12 +181,12 @@ except a photo's, which is the picture itself.
 | Endpoint | Purpose | Success | Errors |
 |---|---|---|---|
 | `POST /api/imports` `{url, model?}` | Start an import | 202 `{import}`, or 200 with the one already running | 400 `invalid_request`, `link_invalid`, `link_unsupported`; 409 `already_imported`; 429 `too_many_imports`, `quota` |
-| `POST /api/imports/photo`, body: the picture, `Content-Type: image/jpeg\|png\|webp\|heic\|heif` | Start an import from one photo, best model first ([Import from a photo](#import-from-a-photo)) | 202 `{import}` | 400 `photo_invalid`; 413 `photo_too_big`; 429 `too_many_imports`, `quota`; 502 `photo_upload_failed` |
+| `POST /api/imports/photo`, body: the picture, `Content-Type: image/jpeg\|png\|webp\|heic\|heif` | Start an import from one photo, best model first ([Import from a photo](IMPORT.md#import-from-a-photo)) | 202 `{import}` | 400 `photo_invalid`; 413 `photo_too_big`; 429 `too_many_imports`, `quota`; 502 `photo_upload_failed` |
 | `GET /api/imports` | Cards plus model state | 200 `{imports, models}` | |
 | `POST /api/imports/:id/retry` `{}` | Try a failed import again, as a new import | 202 `{import}` (the new one) | 400 `invalid_request`; 404; 409 `not_retryable`; 429 `too_many_imports`, `quota` |
 | `DELETE /api/imports/:id` | Dismiss the card (and a photo's waiting picture) | 200 `{ok}` | 404 |
 | `PUT /api/imports/:id/picture`, multipart `full` + `thumb` | A photo import's picture, made by the browser from the same photo ([Pictures](#pictures)) | 200 `{ok}` | 400 `picture_invalid`; 413 `picture_too_big`; 404 (not your photo import) |
-| `POST /api/recipes/:id/rerun` `{model?}` | Scan an imported recipe's video again; replaces its text when done | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_rerunnable` (manual recipe, or that video is running); 429 `too_many_imports`, `quota` |
+| `POST /api/recipes/:id/rerun` `{model?}` | Scan an imported recipe's link again; replaces its text when done | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_rerunnable` (manual or photo recipe, or that link is running); 429 `too_many_imports`, `quota` |
 
 - `import` is `{ id, status, stage, link, fromPhoto, title, error, retryable, recipeId, recipeName }`.
   `stage` is `meta`, `video`, `extract` or `save`. `link` is the stored link, which for a
@@ -199,11 +202,10 @@ except a photo's, which is the picture itself.
   count is used up or this user has used their 5; both are daily, so `bestAvailableAt` is
   then the reset, and `null` while it is available. For the admin `bestLeftForUser` is
   `null`: they have no 5, only the shared count. `resetsAt` is when every daily limit resets.
-- `model` is normally left out: the backend picks the models (see Models). `'best'` asks
+- `model` is normally left out: the backend picks the models ([Models](IMPORT.md#video-models-and-failures)). `'best'` asks
   for the best model first; the import still goes on by itself when that one can't be
   used. A Retry keeps the choice. A re-scan (`rerun`) takes the same `model` and follows
-  every rule of a new import, except `already_imported`. `'basic'` and `useBasicModel`,
-  which an older page may send, mean the normal case.
+  every rule of a new import, except `already_imported`.
 - POST checks in this order: body, link, a running duplicate, `already_imported`
   (`recipes.source_url`), caps, model state (only every import model being out stops it), then insert
   and start.
@@ -215,8 +217,7 @@ except a photo's, which is the picture itself.
   over from the first stage in its own Workflow, and the failed row becomes `dismissed`
   (a photo's waiting picture moves to the new row).
   Only a failed save keeps its `state` and stage, since it already holds the recipe. It answers `not_retryable` if the same video is already running or saved
-  (for a re-scan: if its recipe was deleted). A failed `model_approval_needed` row (from
-  before approvals were dropped) can be retried and just runs.
+  (for a re-scan: if its recipe was deleted).
 
 ## Translate API
 
@@ -226,8 +227,7 @@ except a photo's, which is the picture itself.
 
 Needs a session like the rest. `from` is `'en'` or `'he'`, `content` is
 `{ name, ingredients, steps }` (same checks and limits as a recipe), `recipeId` is the
-recipe it belongs to (omit for one not saved yet; the app now always sends it). There is no model choice; a `model`
-field from an older page is ignored. See [Translation](#translation).
+recipe it belongs to (optional). There is no model choice. See [Translation](#translation).
 
 ## Nutrition API
 
@@ -301,11 +301,16 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   applies `schema.sql`. It reads only local files and changes nothing in the main checkout.
 - **Changing an existing table** needs a one-off file in [`migrations/`](migrations), run
   once by the owner on production (each file says how at its top). `schema.sql` can't do
-  it: it only creates what is missing. It may break the site for a few moments; the PR
+  it: it only creates what is missing. Nothing records which migrations production has
+  applied, and there is no rollback step (accepted): a file's name gives its date, and the
+  PR that added it says when to run it. It may break the site for a few moments; the PR
   says when to run it relative to merging and what breaks (`AGENTS.md` → How to work here).
 - **Schema**: [`schema.sql`](schema.sql) describes every table. It only uses
   `IF NOT EXISTS`, so applying it again is safe. The owner applies it to production by
   hand: `npx wrangler d1 execute recipes-db --remote --file=schema.sql`.
+- **Leftovers on production**: an empty `folders` table and an always-NULL
+  `recipes.folder_id` from before tags. Dropping them needs a rebuild of `recipes`, so they
+  stay (accepted; `schema.sql` → recipes). New databases don't have them.
 - The production dump (`.wrangler/prod-dump.sql`) holds real user data: it's git-ignored;
   never commit or paste it.
 - PR previews (`wrangler preview`) use the same database, so a preview that someone uses
@@ -354,8 +359,8 @@ picture of the dish.
   `edited` 0 too, but a photo recipe has no link, so it is never scanned again. A re-scan
   whose link has no picture keeps the old one. "Remove picture" deletes the row, so a later
   re-scan brings the link's picture back.
-- **A photo import**: `POST /api/imports/photo` is unchanged (the original goes to Gemini).
-  Right after its 202, the browser sends `PUT /api/imports/:id/picture`. While the import
+- **A photo import**: the original goes to Gemini (`POST /api/imports/photo`). Right
+  after its 202, the browser sends `PUT /api/imports/:id/picture`. While the import
   runs (or failed, for a Retry) the picture waits in `import_pictures`; the save stage's
   batch moves it to the recipe, a Retry moves it to its new row, and dismissing deletes it.
   If the import already finished, it goes to the recipe at once (one batch either way).
@@ -365,8 +370,15 @@ picture of the dish.
   `recipe_pictures` can move to a second D1 database in a one-off copy.
 - **Old recipes**: a recipe imported before pictures existed has none until the user adds
   one or scans its link again (a re-scan fills a missing picture). Filling them in bulk is
-  left to a separate script the owner runs. On the local copy (2026-11-22) a picture was
-  found for 70 of 72 imported recipes; the two pages without one have no `og:image`.
+  left to a separate script the owner runs.
+
+**Known gaps and accepted trade-offs** (never fix one without asking the owner):
+
+- A web page opened by Google (it blocked the Worker), or one with no `og:image`, gives
+  its recipe no picture; the user can add one.
+- A photo import's picture is made by the browser, so a HEIC photo the browser can't draw
+  (most browsers but Safari) gives the recipe no picture (`frontend/README.md` → Screens →
+  Add recipe).
 
 ## Users and login
 
@@ -386,424 +398,10 @@ picture of the dish.
   row instead of adding one, so rows grow only with new devices. Logging out deletes it.
 - Every API endpoint requires a logged-in user, except sign-up, login and logout.
 
-## Import from a link
+## Import from a link or a photo
 
-Users paste a link and go back to the video, and a normal request stops when they leave, so
-imports run in a **Cloudflare Workflow**. The recipe is written once, complete, with no
-tags and no review: the user can edit or delete it afterwards.
-
-```
-POST /api/imports {url}
-  parse link → guards → choose model → insert llm_requests row → start Workflow → 202
-
-Workflow: each stage is one retried step, and saves its result to the row
-  meta     The post's details from its site: title, text, subtitles, video facts (no LLM);
-           for a web page, its title and text
-  video    Facebook and Instagram only: stream the video file into Gemini's file store
-  extract  One call with the text and, if it can be sent, the video; the same call
-           gives the calories and protein per serving
-  save     One D1 batch: insert the recipe, or replace it on a re-scan, + mark the import done
-           (+ a photo import's waiting picture becomes the recipe's)
-  picture  After the import is done: the link's picture, fetched, resized and saved
-           (never fails the import; see Pictures)
-```
-
-**Calories and protein.** The extract prompt asks for them per serving, as whole numbers:
-the post's own numbers if it gives them, otherwise the model's estimate from the
-ingredients and the number of servings. They are optional in the answer schema, so a model
-that leaves them out still gives the recipe. A value that is missing, or outside 0-10000
-kcal / 0-1000 g, is stored as `null` rather than failing the import; decimals are rounded.
-A re-scan replaces them along with the text. Manual recipes don't call the model for them
-(a later feature).
-
-### Author
-
-An import also saves who the recipe is by (`recipes.author`), when it can be told. It is
-optional and never fails an import:
-
-- **A video** (YouTube, Facebook, Instagram): the channel or account that posted it, from
-  the site itself, never from the model, which isn't asked (its answer schema has no
-  `author` field). YouTube: the API's `snippet.channelTitle`. Facebook: the `owner.name`
-  of the video's own node in the page data; a page without its data (the preview-text
-  fallback) still has it as the last `" | "` part of its `<title>`. Instagram: the
-  account's `full_name` without the tagline some put after a `" | "`, or its `username`
-  when it shows no name; a preview-only page gives the name before `" on Instagram"` in
-  `og:title`. Checked on 2026-11-22 on real Facebook and Instagram pages from the local
-  copy of the database, fallbacks included. A repost credits whoever posted it.
-- **A web page**: the schema.org `Recipe` block's `author` (a name, a Person or an
-  Organization, the first of a list) when it gives a name. Otherwise, and for a page the
-  model opens itself, the answer schema gets an optional `author` field and the prompt
-  asks for the person or brand the text names as the recipe's author, never a guess.
-- **A photo**: always the model, the same way.
-- A name is tidied (invisible text-direction marks dropped, spaces collapsed), and one
-  over 100 characters is dropped. Before saving, an import reuses the spelling of the same
-  name (ignoring the case of English letters) on another of the user's recipes, so
-  searching for one source finds them all. What the user types in the edit form is kept as
-  typed.
-- "Scan the link again" replaces it with the one found, and keeps the recipe's own when
-  none is found. A copy from Browse brings it along. Translating and the calories estimate
-  never touch it.
-
-**Links.** Only the backend decides which site a link is (`sources/index.js`), from the
-link's text alone. A new platform is one adapter added to `SOURCES` (the adapter shape is
-described at the top of that file); `stages.js` knows no site. Any other link is a web page
-(`web.js`, the last adapter), unless `isFetchableUrl` refuses it (`link_unsupported`: an IP
-address, a private-network or single-label name, another port, or a login in the link). A
-link on a known site that isn't a post answers `link_invalid`, never a web page. The stored
-link is rebuilt from the parsed id (for a web page: the link without its `#fragment` and
-tracking parameters such as `utm_*` and `fbclid`), so every form of one post is the same import.
-
-- YouTube: `watch?v=`, `youtu.be/`, `shorts/`, `live/`.
-- Facebook (`facebook.com`, `www.`, `m.`, `web.`, `fb.watch`): `/reel/<id>`,
-  `/watch?v=<id>`, `/video.php?v=<id>`, `/<page>/videos/[<title>/]<id>`, stored as
-  `https://www.facebook.com/watch/?v=<id>`. Share links: `/share/<code>`,
-  `/share/v|r|p/<code>`, `fb.watch/<code>`.
-- Instagram (`instagram.com`, `www.`, `instagr.am`): `[/<user>]/reel|reels|p|tv/<code>`,
-  stored as `https://www.instagram.com/p/<code>/`. Share links: `/share/[reel|p/]<code>`.
-
-**The Worker fetches a pasted URL as it is only for a web page** (see Web pages). For the
-three sites it fetches only URLs it builds from the parsed id, with `redirect: 'manual'`, and follows each redirect by hand only onto the
-site's own hosts (`fetchPage` in `sources/meta.js`). Video and subtitle files are fetched
-only from Meta's CDN (`*.fbcdn.net`, `*.cdninstagram.com`), and the upload address Gemini
-answers with is used only on Google's own host.
-
-**Share links.** A share link doesn't say which post it is, so it starts as its own id
-(`share/r/<code>`). The `meta` stage follows it, writes the post's real id and link on the
-row, and then does the duplicate checks a normal link gets before starting: if the user
-already has that recipe the card fails with `already_imported`, and if the same post is
-already being imported (the unique index) the newer row dismisses itself. A share link that
-leads to something that isn't a video or post fails with `link_unsupported`. From some
-networks (seen from Cloudflare's), Facebook sends a share link of a public video to its
-login page instead; when that page's `next` parameter is the video's link, the import reads
-the video from its own page (`/watch/?v=<id>`, built from the parsed id) and goes on.
-Otherwise it fails with `login_required`, and `error_detail` keeps the login page's full
-address, query included, to show what Facebook sent.
-
-### Web pages
-
-Any public page with a recipe, such as a recipe site or a blog post (`sources/web.js`).
-There is no id to rebuild a link from, so the pasted link is fetched, and that is guarded:
-
-- `isFetchableUrl` checks the link and **every redirect hop**, followed by hand (at most 5,
-  onto any public host, since a site often moves to its `www.` host): http or https, the
-  default port, no `user:pass@`, and a real domain name, never an IP address (the URL parser
-  turns every numeric form into one), `localhost` or a private-network name (`.local`,
-  `.internal`, ...). Cloudflare's own fetch can't reach private addresses either.
-- One request with a browser's headers, a 30-second timeout, at most 5 MB, and only
-  `text/html`, `application/xhtml+xml` or `text/plain`; anything else is
-  `link_unsupported`. No video is sent. The only thing the page links to that is fetched
-  is its one preview image (`og:image`), with the same checks ([Pictures](#pictures)).
-- No proxies, scraping services, logins or CAPTCHA solvers, here or for any site.
-- The text sent to the model is what a reader sees: scripts, styles, menus, footers,
-  sidebars and buttons are dropped, one block per line, at most 20,000 characters. A
-  schema.org `Recipe` block (JSON-LD, which many recipe sites have for search engines) goes
-  first when it has ingredients and steps, followed by the page text, since such blocks
-  often leave a part out (a topping's ingredients). The card's title is `og:title` or
-  `<title>`.
-- The prompt tells the model that a page's menus, ads, comments and other recipes' titles
-  are not part of the recipe. A page with no recipe ends as `no_recipe`, one with several
-  as `multiple_recipes`, and one with under 80 characters of text as `no_recipe` with no
-  model call.
-- **A page that turns the Worker away (403 or 429)** is opened by the model itself, with
-  Google's URL context tool (`url_context`): many sites' bot protection blocks Cloudflare's
-  addresses but not Google's. The Worker stops there, reads nothing of the page, and sends
-  the model only its address (the last redirect hop, which passed `isFetchableUrl`); the
-  card's title is the host name. The request goes through the usual model order, but
-  never to the fallback model, which has no such tool. Unless Google reports that it
-  opened the page, the answer is not used and the import ends as `source_blocked`, with no
-  retry and no other model, since any of them would open it the same way. Found with
-  makorrishon.co.il (behind Akamai, 403 from Cloudflare only); tested on 2026-11-20 on
-  `gemini-3.6-flash`, also with the answer schema. A `share.google` link can't be opened
-  this way, so the Worker's own redirects lead the model to the real page.
-- Failures: 404 or 410 is `video_unavailable`; 401, or a redirect to a login path, is
-  `login_required`; 5xx and a site that can't be reached (also a domain that doesn't
-  exist) are `source_blocked`, retried by the Workflow; any other 4xx is `source_blocked`
-  with no retry.
-- A site that builds its page only in JavaScript, or blocks Google too, can't be read
-  (`no_recipe` or `source_blocked`). "Scan the link again" reads the page again.
-- Tested on 2026-11-17 on four Hebrew recipe sites (kerenagam.co.il, israelhayom.co.il,
-  mako.co.il, boxfromjerus.co.il): all four gave the full recipe on `gemini-3.6-flash`.
-
-### Facebook and Instagram
-
-Both are read the way an anonymous visitor's browser reads a
-public post: one page request with the headers a browser sends (Facebook answers 400
-without them), no account, cookies, tokens, proxies or scraping services. The post's data
-is in `<script type="application/json">` blocks; only the one or two blocks that mention
-the post are parsed, and the facts are found by their field names and the post's id, not
-by a fixed path, because the layout differs between a reel page and a watch page.
-
-- Facebook gives the caption, the length, a video file and sometimes an auto-made subtitle
-  track (`.srt`, fetched as extra text). Only videos and reels: a photo or text post is
-  not supported.
-- Instagram gives the caption, a video file and its length (from the streaming manifest).
-  A photo or carousel post has no video and is read from its caption.
-- A page that came without its data blocks still gives the link-preview text
-  (`og:title`/`og:description`) as a caption-only import.
-- This was built and tested from a home connection. Cloudflare's network may be answered
-  differently (a login wall or a block), which shows as `login_required` or
-  `source_blocked` with the reason in `error_detail` and in the logs. Meta can also change
-  its pages at any time; `scripts/e2e-links.mjs` is the check.
-
-### Import from a photo
-
-A logged-in user sends **one picture** of a written recipe (a cookbook page, a screenshot,
-a handwritten card). It goes through the same Workflow as a link and is saved the same way,
-with no tags.
-
-```
-POST /api/imports/photo   body = the picture, Content-Type image/jpeg|png|webp|heic|heif
-  guards: session, type (photo_invalid), size 1 byte - 20 MB (photo_invalid, photo_too_big),
-          caps, model state (with the best model chosen)
-  upload the body, streamed, to Gemini's file store → { name, uri, mimeType }
-  insert llm_requests row: platform 'photo', source_id <random 32-hex id>,
-    source_url 'photo:<id>', state { photo: file, bestChosen: true }   → start Workflow → 202
-Workflow: meta has nothing to fetch, video is skipped, extract waits for the file and makes
-  one call (photo prompt + image at resolution 'high'), save as for a link, then deletes the file
-```
-
-- **A resized copy of the picture is kept as the recipe's picture. The original waits only
-  in Gemini's free file store and is deleted when the import ends**: after the save, when the
-  model found no recipe, when Google refused it, and when the card is dismissed. A failed
-  import that may be retried keeps it until Google deletes it (48 hours). Only its file
-  name, type and size are logged, never its uri. The copy is made by the browser and sent
-  right after the 202 (`PUT /api/imports/:id/picture`, see [Pictures](#pictures)).
-- **The best model first, always.** Every photo import is like `model: 'best'`: it takes
-  one of the user's 5 when it calls the best model, and when the best model can't be used
-  (shared count or the user's 5 used, busy, or can't run) it goes on with the import models
-  by itself. A photo never reaches the text-only fallback model.
-- **Only written recipes.** The prompt says a picture of food with no written recipe is
-  `none` (`no_recipe`): the model never guesses a recipe from how a dish looks.
-- **The same picture twice** is allowed: each upload gets its own random id and makes its
-  own recipe, for when the first read wasn't good enough. No hash, no `already_imported`.
-- **Size rule.** The backend takes up to 20 MB; the frontend sends every picture up to 15 MB
-  unchanged and shrinks only a bigger one (`frontend/lib/photo.js`). Gemini scales every
-  image down itself (about 1,100 image tokens at `high` for each test picture), so a phone
-  photo or screenshot is sent as it is, to keep small print readable.
-- **The API**: a photo recipe's `source_url` is `photo:<id>` (no schema change: `platform`
-  is free text, and the `photo:` value satisfies both CHECKs). Recipes, Browse and the
-  import cards answer `link: ''` and `fromPhoto: true` for it, and a copy from Browse keeps
-  both. `readLink` never accepts `photo:` text, so a photo recipe can't be scanned again
-  (`not_rerunnable`).
-- **Retry** keeps `state.photo` and the best model (the picture itself is no longer here).
-  After Google's 48 hours the file is gone and it fails with `photo_expired`.
-- **Google's copyright block.** Google refuses (400, `recitation`) to write out text it
-  recognises as published and copyrighted. In testing (2026-11-18) a photo of a famous
-  chef's recipe page was refused by both the best model and `gemini-3.8-flash`, so a photo
-  import fails at once with `photo_copyrighted` rather than trying the other models.
-- `createPhotoImport` in `imports.js` is the one place that handles the uploaded original,
-  and the Workflow only knows "a file Gemini can read".
-
-**Quality test (2026-11-18).** The owner's three test pictures, sent as they are (none is
-over 2048 px on its longest side, so resizing to 4096, 3072 or 2048 px would change nothing):
-
-| Picture | Size | Upload | Best model (`gemini-4-hydrogen`) | `gemini-3.8-flash` |
-|---|---|---|---|---|
-| Hebrew recipe card over a dish photo, 720×1280 | 189 KB | ~3 s | complete and correct, 38 s, 1,100 image tokens | complete and correct, 18 s (one try took 388 s on Google's side) |
-| Hebrew Instagram story screenshot, 945×2048 | 241 KB | ~2.5 s | complete and correct, 88 s, 1,078 image tokens | complete and correct, 18 s; added an oil line not in the picture |
-| Photo of a recipe web page on a monitor, at an angle, 1920×1080 | 378 KB | ~3 s | refused: `recitation` | refused: `recitation` |
-
-### Video, models and failures
-
-**Video.** A video is sent if it's public and at most `IMPORT_MAX_VIDEO_MINUTES` (3); one
-of unknown length is not sent. Gemini reads a YouTube video from its link. A Facebook or
-Instagram video is a file, so the `video` stage streams it from the CDN into Gemini's file
-store (free, deleted by Google after 48 hours) without holding it in memory, refusing a file
-over `IMPORT_MAX_VIDEO_MB` (100). `extract` waits until the file is processed and sends its
-uri. The file is deleted when the import ends: by `save` once the recipe is written, or by
-`extract` when the model found no recipe (a bad answer is asked for again and still needs
-it). If the download or upload is refused for good and there is enough text, the import
-goes on with the text and remembers why (`state.videoSkipped`); with no text it fails. A
-failure that may pass (a server error, the network) is retried by the Workflow first.
-
-**Extract.** The description counts if it's at least 80 characters, and so do subtitles.
-If neither text nor video can be sent, it fails with no LLM call. One call with whatever
-can be sent returns the recipe in both languages, with the post's own language written
-first. Everything from the site is sent as data, and everything the model returns is
-untrusted and is validated before it's stored.
-
-**Models.** Users choose nothing by default; `models.js` tries models in a fixed order and
-moves on **at once** from one that is busy (503), hit a short rate limit, is out for the
-day, or can't run (below). All of it is config (`wrangler.jsonc`), so changing a model, the order or a limit
-needs no code change:
-
-| Setting | Value | Used for |
-|---|---|---|
-| `LLM_IMPORT_MODELS` | `gemini-3.8-flash`, `gemini-3.6-flash`, `gemini-3.5-flash-lite` | Imports, Retries and re-scans, in this order |
-| `LLM_TRANSLATE_MODELS` | `gemini-3.5-flash-lite` | The AI tools (translate, calories, substitute): text work for the small model, which leaves the stronger models' few requests for videos |
-| `LLM_FALLBACK_MODEL` | `openai/gpt-oss-120b` (Groq) | After either list, for a request with **no video** |
-| `LLM_BEST_MODEL` | `gemini-4-hydrogen` | When the user asks for it, and first for every photo |
-| `LLM_DAILY_LIMITS` | 20, 20, 500, 20 and 200 a day | Every model's requests a day. A model missing from it is never called |
-| `LLM_BUSY_RETRY_MS` | `1500,3000` | The AI tools only: when every model they could use is busy, wait this long and try them all again, once per number |
-
-- **The best model** is the one choice a user has ("Use the best model" in the recipe
-  page's "Scan the link again" confirmation; `model: 'best'` in the API), and every photo import uses it by default, with no
-  checkbox. It is slower and more detailed. It is tried first,
-  once; if it is busy, out for the day, or the user has used their 5, the import goes on
-  with the import models by itself, and nobody is told or asked. Photos share its 20 a day
-  with re-scans, so on a busy day most photo imports use the import models. It runs in
-  Google's **background mode** (`background: true`): Google answers at once with an id and
-  keeps working, and the stage asks for the answer by that id (`GET /v1beta/interactions/<id>`),
-  after 5 s, then 10, 15... up to every 30 s, at most 14 minutes, so about 30 requests,
-  under the free plan's 50 per step. No request stays open long enough for Cloudflare's
-  ~100 s cut (524, below). Only the best model uses it: Google lists background mode for
-  `gemini-4-hydrogen` and `gemini-3.8-flash`, not for the other import models. Its log line
-  says `(background)`, so its times can be compared with the others'.
-- **Cloudflare's ~100 s cut (524).** A request to Google that sends nothing back for about
-  100 s is ended by Cloudflare, which Gemini's error shows as `524` (`error code: 524`).
-  Measured locally on 2026-11-18/19 (no such cut there), `gemini-3.8-flash` took 96-454 s on
-  a short video, whether or not calories were asked for, and `gemini-3.5-flash-lite` about
-  10 s, with recipes as complete. So a 524 is treated like a busy model: the next model is
-  tried at once, instead of retrying the slow one, but its request stays counted, since
-  Google ran it.
-- **The fallback model** can't watch a video, read a photo or open a web page, so a request with one never reaches it. It
-  is off until `GROQ_API_KEY` is set. Groq's free limit when checked was 1,000 requests and
-  200,000 tokens a day, 8,000 tokens a minute.
-- **A model that can't run** (`ModelUnusableError`): Google or Groq rejected the request
-  with a 4xx other than 429 that is about the model or the key, such as a retired or renamed
-  model (404) or a key that isn't accepted (400/401/403). The failure is logged, its
-  request is given back to the shared count, and the next model is tried; a best model
-  that can't run still uses up one of the user's 5, like any try that reached Google. A
-  request with no video is only our prompt, so any such 4xx counts. With a video, a 4xx
-  counts only when Google's message names the model, the key, or the API being off
-  (`SERVICE_DISABLED`), or it is a 401; any other is the video being refused
-  (`VideoRefusedError`), and the stage asks again without it (see Failures).
-- **Which model answered** is stored on the recipe (`source_model`) and on the request
-  (`llm_requests.model`).
-- When tested on the same six links (2026-11-14), `gemini-3.6-flash` and
-  `gemini-4-hydrogen` both gave full recipes; hydrogen's were the most detailed and three
-  to four times slower, and `gemini-3.8-flash` was busy most of the time. The limits (20 a
-  day each) are what AI Studio showed the owner.
-
-**The user's 5.** Only the best model has a per-user limit (`IMPORT_BEST_DAILY_PER_USER`).
-A row takes one of the 5 (`used_best = 1`, in one statement, so two rows can't take the
-last one) when it is about to call the best model, and keeps it once a request reached
-Google, even if the model was busy or answered with a quota error and another model wrote
-the recipe: trying the best model is what the 5 count. A row calls the model more than once
-(Workflow retries, busy waits, a second ask without the video) but takes the use only once.
-It is given back only when nothing was sent (the shared count was already used up). The
-choice (`state.bestChosen`) holds through Workflow retries, busy waits and a Retry.
-The admin (`users.is_admin = 1`, not while they act as another user) has no 5: their rows
-are still marked `used_best`, but only the shared count stops them using the best model.
-So every link the admin imports (`POST /api/imports`) asks for it too, as if `model: 'best'`.
-
-**Quota.** Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google offers no
-way to ask how many requests are left, so `llm_usage` counts them: every real call first
-reserves one, in one atomic statement, up to the model's limit in `LLM_DAILY_LIMITS`. A
-failed call still counts, because Google may have counted it, except a 503, a short rate
-limit, or a model that can't run: Google says a 503 is "unrelated to your quota", and a
-rejected request is never served, so its request is given back to this shared count (not to the user's 5, see above). Some users report Google counts them anyway;
-if so, Google's per-day 429 below sets the count right. A 429 naming a per-day quota sets
-the model's count to the limit, which alone keeps it unused until the reset. Any other 429
-(a per-minute limit) is treated like a busy model; nothing is remembered, so the next
-request simply tries. In every case the request moves to the next model at once.
-
-**Failures.** `error` is written to the row before a stage throws, with the reason in words
-in `error_detail` (never sent to the browser).
-
-| Case | Code | Automatic retry | User can Retry |
-|---|---|---|---|
-| Removed or private, or the video couldn't be used and nothing else had the recipe; a web page that answered 404/410 | `video_unavailable` | no | no |
-| The site redirected to a login page, or shows the post only after a login | `login_required` | no | yes |
-| The site answered 5xx (or 403/429 for Facebook and Instagram), or sent a page with none of the known parts | `source_blocked` | yes, 3 tries | yes |
-| A web page turned away the Worker (403/429) and Google couldn't open it either | `source_blocked` | no | yes |
-| A share link led to a recipe the user already has | `already_imported` | no | no |
-| A share link led to something that isn't a video or post; a web page redirected to a refused address, or isn't a page (a PDF, an image, over 5 MB) | `link_unsupported` | no | no |
-| Private or unlisted, description not enough | `video_private` | no | no |
-| Too long, description not enough | `video_too_long` | no | no |
-| No recipe | `no_recipe` | no | no |
-| Several recipes | `multiple_recipes` | no | no |
-| Every model it could use is busy (503) or was cut off by Cloudflare (524) | `llm_error` | yes, see below | yes |
-| Other 5xx, network, timeout | `llm_error` | yes, 3 tries per stage | yes |
-| Invalid output | `bad_result` | yes, 3 tries per stage | yes |
-| Every model it could use is out for the day (some may also have been unable to run) | `quota` | no | yes |
-| No model it could use can run (all retired or key refused) | `llm_error` | no | yes |
-| Stuck for 30 minutes | `timed_out` | no | yes |
-| Photo: Google refused the picture, or couldn't process it | `photo_unreadable` | no | no |
-| Photo: Google won't write out a published recipe (`recitation`) | `photo_copyrighted` | no | no |
-| Photo: the uploaded file is gone (a Retry after Google's 48 hours) | `photo_expired` | no | no |
-
-A photo is refused before any row exists, so these answer the POST and never show as cards:
-`photo_invalid` (not one of the five image types, or empty), `photo_too_big` (over 20 MB),
-`photo_upload_failed` (Google's file store wouldn't take it).
-
-Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
-overlaps a call that is still running (video calls have taken over 5 minutes).
-
-A busy model (503, "high demand") costs nothing: the stage moves on to the next model in
-the same run. Only when **every** model it could use was busy does the stage end as busy.
-That can last minutes or hours, so it skips the quick retries and follows Google's advice
-instead: back off and retry, short at first and longer after. The stage ends without
-failing, and the Workflow sleeps (`step.sleep`) **30 seconds, then 2 minutes, then 8
-minutes** before each new run, so 4 runs in all, each starting again from the first model
-(and from the best model, when the user asked for it); still busy after that, it fails with
-`llm_error`. The card shows the import as still running meanwhile. Every busy answer's
-request is given back to the shared count.
-
-No wait has jitter: there are too few users for their retries to pile up, and a Workflow
-must sleep the same on every replay. Google's Batch API is not used: its results can take
-hours, and imports should land in minutes.
-
-A Retry inserts a new row and starts a new Workflow from the first stage, keeping only the
-model choice (`state.bestChosen`). It doesn't reuse what the earlier stages left, because
-that expires: Meta's video links are signed for a limited time and Google deletes an
-uploaded video after 48 hours, and getting them again costs no model request. The one
-exception is a failed save, whose `state` holds the recipe the model already wrote: it is
-copied, so no model is called again. Within one Workflow, finished stages are skipped
-through `state.done`, so a repeated step doesn't depend on how long Workflows keeps its
-history. `state.version` says which shape the state has; a row holding
-an older shape starts again from its first stage, keeping only its model choice. Every write is guarded by `status = 'running'` and the
-attempt, so a repeated step or a dismissal writes nothing, and a recipe is never saved
-twice. (New rows always have `attempt` 1; older rows retried in place may have more.)
-
-**Provider.** Everything about Gemini's request format is in `llm.js` and everything about
-Groq's in `groq.js`; `models.js` alone decides which model runs and counts the calls.
-
-**Limits to keep in mind.** Quota is per Google project and shared by all users: 20
-requests a day on each of the three stronger models and 500 on the small one, and Google
-says the limits aren't guaranteed. PR previews
-can't exercise any of this: a preview's binding uses the Workflow already deployed to
-production, and gives `workflow.not_found` before the first deploy. A photo import fails on
-a preview at once with `photo_upload_failed`: the upload runs in the preview Worker itself,
-and previews don't inherit Worker secrets, so it has no `GEMINI_API_KEY` (the log says
-"Photo upload failed: GEMINI_API_KEY is not set"). Giving previews the key wouldn't be
-enough before a merge either, since production's Workflow code doesn't know photos yet, and
-would let any preview spend the production quota. Test photo imports locally.
-
-**Logging.** `llm.js` logs each Gemini request (the model, the video link, or only the
-type of a user's photo, and the full prompt), each answer (how long it took and the tokens
-Google counted, the image's among them), each upload (file name, type, size and time) and
-each failure (the status and Google's error text), never the key. Every prompt is logged
-in full, the AI tools' too, which hold the user's own recipe (the owner's choice, for
-debugging); `groq.js` logs the fallback model's the same way. Production keeps the logs for 3
-days (Workers Logs, `observability` in `wrangler.jsonc`), and `npx wrangler tail` shows
-them live. A failed import also keeps the reason in `llm_requests.error_detail`.
-
-**Testing.** Tests use fake keys and stubs, and `vitest.config.mjs` refuses every outbound
-request. Real imports run locally on the dev keys in `.dev.vars`, which use a test quota;
-agents don't ask for the best model unless the owner says so (`local-dev` skill).
-
-### Known small gaps
-
-All rare and harmless:
-
-- "Scan the link again" still shows while that scan is running; tapping it answers
-  `not_rerunnable`.
-- A Retry that can no longer work says so and leaves the card for the user to dismiss.
-- Home can miss one recipe-list reload if an import finishes in the instant between its first
-  two requests. Opening the ready card still works.
-- A running import dismissed through the raw API (the UI has no × on running cards) may still
-  finish its LLM call, but saves nothing.
-- An uploaded video stays in Gemini's file store until Google deletes it (48 hours) when
-  its import fails before a usable answer. A Retry uploads the video again.
-- A photo import that failed in a way Retry can help with keeps its picture in Gemini's file
-  store until the card is dismissed or Google deletes it (48 hours); after that a Retry
-  fails with `photo_expired`, and the user chooses the photo again.
-- A photo import's "Pick a link with one recipe" (`multiple_recipes`) still says "link".
-- When every import model is out for the day a new import is refused with `quota` before
-  it starts, even if the fallback model could have read its text.
-- A scan that asked for the best model doesn't say when another model answered instead;
-  the recipe's `source_model` shows it.
+The import flow (the Workflow, each site, photos, models, quota and failures) is in
+[`IMPORT.md`](IMPORT.md), with its known gaps.
 
 ## Translation
 
@@ -816,7 +414,7 @@ endpoint never writes a recipe). It works for any recipe, manual ones too, but n
   seconds. No video and no link are sent.
 - Each translation is an `llm_requests` row with `purpose = 'translation'`, inserted before the
   call (status `running`, then `done` or `failed` with its `error`), with `recipe_id` set to
-  its recipe (`NULL` for one not saved yet, from an older page) and the answering model in `model`.
+  its recipe (`NULL` when none is sent) and the answering model in `model`.
   The recipe text itself is never stored there. Translations never show as cards and don't
   count toward the import caps.
 - There is no model choice and no per-user limit. A translation takes one request from
