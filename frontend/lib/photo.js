@@ -8,6 +8,10 @@ import { ApiError } from './api';
 // Sent unchanged up to this size; the backend takes up to 20 MB.
 export const SEND_AS_IS_BYTES = 15 * 1024 * 1024;
 const MAX_BYTES = 20 * 1024 * 1024;
+// Several photos of one recipe go in one request, which the backend takes up to 50 MB;
+// this leaves room for the multipart wrapping.
+export const MAX_PHOTOS = 7;
+export const MAX_TOTAL_BYTES = 48 * 1024 * 1024;
 const RESIZE_TO_PX = 4096;
 const JPEG_QUALITY = 0.92;
 
@@ -51,4 +55,25 @@ export async function preparePhoto(file) {
   }
   if (smaller.size > MAX_BYTES) throw new ApiError(413, 'photo_too_big');
   return smaller;
+}
+
+const totalSize = (photos) => photos.reduce((sum, photo) => sum + photo.size, 0);
+
+// Gets 1 to 7 chosen pictures ready to send together, in order. Seven phone photos are far
+// below the limit; only if they're not (big camera files) is every one over a few MB
+// shrunk too, which still holds more detail than the model looks at. Throws as
+// preparePhoto does, and photo_too_many for more than 7.
+export async function preparePhotos(files) {
+  if (files.length === 0) throw new ApiError(400, 'photo_invalid');
+  if (files.length > MAX_PHOTOS) throw new ApiError(400, 'photo_too_many');
+  let photos = [];
+  for (const file of files) photos.push(await preparePhoto(file));
+  if (totalSize(photos) <= MAX_TOTAL_BYTES) return photos;
+  try {
+    photos = await Promise.all(photos.map((photo) => (photo.size > MAX_TOTAL_BYTES / MAX_PHOTOS ? shrink(photo) : photo)));
+  } catch {
+    throw new ApiError(413, 'photo_too_big');
+  }
+  if (totalSize(photos) > MAX_TOTAL_BYTES) throw new ApiError(413, 'photo_too_big');
+  return photos;
 }

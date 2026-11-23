@@ -18,13 +18,15 @@ export function setLoggedOutHandler(handler) {
   onLoggedOut = handler;
 }
 
-// `body` is sent as JSON, except a Blob (a photo), which is sent as it is, with its type,
-// and FormData (a recipe's picture), which the browser sends as multipart.
-async function request(path, method = 'GET', body) {
+// `body` is sent as JSON, except a Blob, which is sent as it is, with its type, and
+// FormData (photos, or a recipe's picture), which the browser sends as multipart.
+// `extraHeaders` are added to those.
+async function request(path, method = 'GET', body, extraHeaders = {}) {
   const isFile = body instanceof Blob || body instanceof FormData;
   let headers = {};
   if (body instanceof Blob) headers = { 'Content-Type': body.type };
   else if (body !== undefined && !isFile) headers = { 'Content-Type': 'application/json' };
+  headers = { ...headers, ...extraHeaders };
   let response;
   try {
     response = await fetch(path, {
@@ -41,9 +43,9 @@ async function request(path, method = 'GET', body) {
 }
 
 // A request for the user's data: a 401 here means the session is gone.
-async function dataRequest(path, method, body) {
+async function dataRequest(path, method, body, extraHeaders) {
   try {
-    return await request(path, method, body);
+    return await request(path, method, body, extraHeaders);
   } catch (error) {
     if (error.status === 401) onLoggedOut();
     throw error;
@@ -375,19 +377,23 @@ export async function startImport(url) {
   return (await dataRequest('/api/imports', 'POST', { url })).import;
 }
 
-// Sends one picture (a Blob with an image type, from preparePhoto in lib/photo.js) to be
-// read in the background, always with the best model first. The same picture twice makes
-// two recipes. Returns the new card.
-export async function startPhotoImport(photo) {
+// Sends 1 to 7 photos of one recipe (Blobs with an image type, in order, from
+// preparePhotos in lib/photo.js) to be read together in the background, always with the
+// best model first. The same photos twice make two recipes. Returns the new card.
+// X-Photo-Count is what tells the backend this came from the app, not another site's form.
+export async function startPhotoImport(photos) {
   refuseGuest();
-  return (await dataRequest('/api/imports/photo', 'POST', photo)).import;
+  const form = new FormData();
+  for (const photo of photos) form.append('photo', photo, 'photo');
+  return (await dataRequest('/api/imports/photo', 'POST', form, { 'X-Photo-Count': String(photos.length) })).import;
 }
 
-// Sends the photo import's picture ({ full, thumb }, made from the same photo), which
-// becomes the new recipe's picture. The photo itself goes only to the model.
-export async function sendImportPicture(importId, picture) {
+// Sends the photo import's picture ({ full, thumb }, made from the photo at `position`,
+// from 0). The backend keeps the one the model chose as the new recipe's picture. The
+// photos themselves go only to the model.
+export async function sendImportPicture(importId, picture, position = 0) {
   refuseGuest();
-  await dataRequest(`/api/imports/${importId}/picture`, 'PUT', pictureForm(picture));
+  await dataRequest(`/api/imports/${importId}/picture?position=${position}`, 'PUT', pictureForm(picture));
 }
 
 // Returns the new card: a Retry is a new import, and the failed card goes away.

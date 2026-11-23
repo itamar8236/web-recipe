@@ -5,16 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from './Language';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
-import { preparePhoto } from '@/lib/photo';
+import { preparePhotos } from '@/lib/photo';
 import { makePicture } from '@/lib/picture';
 import styles from './ImportDialog.module.css';
 
 // What "+ Add recipe" opens for a logged-in user. Its main action is the link: the backend
-// works out the site and which model reads it. Under it, "Choose a photo" opens the phone's
-// own chooser (gallery, camera or files; no `capture`, so the gallery is offered) for one
-// picture of a written recipe, which is uploaded at once. Only "Write it manually" opens
+// works out the site and which model reads it. Under it, "Choose photos" opens the phone's
+// own chooser (gallery, camera or files; no `capture`, so the gallery is offered) for 1 to 7
+// pictures of one written recipe, which are uploaded at once. Only "Write it manually" opens
 // the manual form; closing the dialog in any other way leaves the user on Home. A small copy
-// of the photo becomes the recipe's picture (sendPicture). `backAt` is
+// of each photo is sent too, and the backend keeps the one the model chose as the recipe's
+// picture (sendPictures). `backAt` is
 // when a used-up daily limit resets, for the error that mentions it.
 export default function ImportDialog({ backAt, manualHref, onClose, onStarted, onModelsStale }) {
   const { t } = useLanguage();
@@ -57,23 +58,31 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
 
   const start = () => send('link', () => api.startImport(url));
 
-  function photoChosen(event) {
-    const [file] = event.target.files;
-    // Cleared, so choosing the same picture again (for a second read) still fires.
+  function photosChosen(event) {
+    // In the order the browser lists them (usually the order they were picked); the model
+    // puts the recipe together whatever the order.
+    const files = [...event.target.files];
+    // Cleared, so choosing the same pictures again (for a second read) still fires.
     event.target.value = '';
-    if (file) send('photo', async () => {
-      const card = await api.startPhotoImport(await preparePhoto(file));
-      sendPicture(card.id, file);
+    if (files.length) send('photo', async () => {
+      const card = await api.startPhotoImport(await preparePhotos(files));
+      sendPictures(card.id, files);
       return card;
     });
   }
 
-  // The recipe's picture is a small copy of the same photo, made here and sent once the
-  // import has started. It is a bonus: if it fails, the recipe just has no picture.
-  function sendPicture(importId, file) {
-    makePicture(file)
-      .then((picture) => api.sendImportPicture(importId, picture))
-      .catch(() => {});
+  // The recipe's picture is a small copy of one of the photos, made here and sent once the
+  // import has started: one copy of each, one at a time to spare a phone's memory, and the
+  // backend keeps the one the model chose. It is a bonus: if it fails, the recipe just has no
+  // picture.
+  async function sendPictures(importId, files) {
+    for (const [position, file] of files.entries()) {
+      try {
+        await api.sendImportPicture(importId, await makePicture(file), position);
+      } catch {
+        // The next one may still work.
+      }
+    }
   }
 
   function submit(event) {
@@ -143,7 +152,7 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
           >
             {busy === 'photo' ? t.uploadingPhoto : t.choosePhoto}
           </button>
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={photoChosen} />
+          <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={photosChosen} />
         </form>
       </div>
     </dialog>

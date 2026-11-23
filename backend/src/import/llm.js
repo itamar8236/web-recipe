@@ -98,15 +98,21 @@ function quotaErrorFrom(text) {
   return new QuotaError({ daily: JSON.stringify(details).includes('PerDay'), retryDelayMs: retryDelayFrom(details) });
 }
 
-function requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, imageType, pageUrl, background }) {
-  const input = [{ type: 'text', text: prompt }];
+// A photo of a recipe is mostly small print, so it is read at high resolution, which
+// Google documents for an image part. Several pictures are numbered, so the prompt can ask
+// which one to show.
+function imageParts(images) {
+  const parts = images.map(({ uri, mimeType }) => ({ type: 'image', uri, mime_type: mimeType, resolution: 'high' }));
+  if (parts.length === 1) return parts;
+  return parts.flatMap((part, index) => [{ type: 'text', text: `Picture ${index + 1}:` }, part]);
+}
+
+function requestBody({ model, prompt, schema, videoUrl, videoType, images = [], pageUrl, background }) {
+  const input = [...imageParts(images), { type: 'text', text: prompt }];
   // No media resolution for a video: Google's docs don't say a YouTube link accepts it, and
   // a refused field would look like a refused video. An uploaded file is sent with its type,
   // a YouTube link without one, as Google's examples do.
   if (videoUrl) input.unshift({ type: 'video', uri: videoUrl, ...(videoType && { mime_type: videoType }) });
-  // A photo of a recipe is mostly small print, so it is read at high resolution, which
-  // Google documents for an image part.
-  if (imageUrl) input.unshift({ type: 'image', uri: imageUrl, mime_type: imageType, resolution: 'high' });
   return {
     model,
     input,
@@ -234,11 +240,11 @@ async function waitInBackground({ env, model, id, startedAt, pollMs }) {
 // Sends one request and returns the model's answer as parsed JSON. Throws QuotaError,
 // ModelBusyError, ModelUnusableError, VideoRefusedError, or ImportError (llm_error for other temporary
 // problems, bad_result for an answer that can't be read). `videoUrl` is a YouTube link or
-// an uploaded file's uri (then with `videoType`); `imageUrl` is an uploaded photo's uri,
-// with `imageType`. `pageUrl` is a web page Google opens itself with its URL tool (throwing
+// an uploaded file's uri (then with `videoType`); `images` are uploaded photos ({ uri,
+// mimeType }, in order). `pageUrl` is a web page Google opens itself with its URL tool (throwing
 // ImportError source_blocked when it can't). `background: true` runs it in Google's background mode (only the best
 // model, models.js); `pollMs` is swapped in tests.
-export async function callModel({ env, model, prompt, schema, videoUrl, videoType, imageUrl, imageType, pageUrl = null, background = false, pollMs = 5000 }) {
+export async function callModel({ env, model, prompt, schema, videoUrl, videoType, images = [], pageUrl = null, background = false, pollMs = 5000 }) {
   // Sending nothing without a key: a mistake must never reach Google half-configured.
   if (!env.GEMINI_API_KEY) throw new ImportError('llm_error', { detail: 'GEMINI_API_KEY is not set' });
 
@@ -246,7 +252,7 @@ export async function callModel({ env, model, prompt, schema, videoUrl, videoTyp
   // Never add the key or the headers. Every prompt is logged, the AI tools' too, which hold
   // the user's own recipe (the owner's choice, for debugging); logs are kept 3 days. A
   // user's photo is only logged by its type, never its uri.
-  const media = imageUrl ? `image=${imageType}` : pageUrl ? `page=${pageUrl}` : `video=${videoUrl ?? 'none'}`;
+  const media = images.length ? `image=${images.map((image) => image.mimeType).join(',')}` : pageUrl ? `page=${pageUrl}` : `video=${videoUrl ?? 'none'}`;
   console.log(`LLM call: model=${model} ${media}\n${prompt}`);
   const startedAt = Date.now();
 
@@ -256,7 +262,7 @@ export async function callModel({ env, model, prompt, schema, videoUrl, videoTyp
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       method: 'POST',
       headers: headersFor(env),
-      body: JSON.stringify(requestBody({ model, prompt, schema, videoUrl, videoType, imageUrl, imageType, pageUrl, background })),
+      body: JSON.stringify(requestBody({ model, prompt, schema, videoUrl, videoType, images, pageUrl, background })),
     });
   } catch (error) {
     const detail = `Gemini request failed: ${error.name}: ${error.message}`;
@@ -267,7 +273,7 @@ export async function callModel({ env, model, prompt, schema, videoUrl, videoTyp
     // Google's error text says why; it never contains the key.
     const text = await response.text().catch(() => '');
     console.log(`LLM call failed: model=${model} status=${response.status}\n${text.slice(0, 2000)}`);
-    throw failureFrom(response.status, text, { model, media: videoUrl || imageUrl });
+    throw failureFrom(response.status, text, { model, media: videoUrl || images.length > 0 });
   }
 
   let interaction = await response.json().catch(() => null);

@@ -22,7 +22,7 @@ Workflow: each stage is one retried step, and saves its result to the row
   extract  One call with the text and, if it can be sent, the video; the same call
            gives the calories and protein per serving
   save     One D1 batch: insert the recipe, or replace it on a re-scan, + mark the import done
-           (+ a photo import's waiting picture becomes the recipe's)
+           (+ the chosen one of a photo import's waiting pictures becomes the recipe's)
   picture  After the import is done: the link's picture, fetched, resized and saved
            (never fails the import; see Pictures)
 ```
@@ -161,51 +161,83 @@ by a fixed path, because the layout differs between a reel page and a watch page
 
 ## Import from a photo
 
-A logged-in user sends **one picture** of a written recipe (a cookbook page, a screenshot,
-a handwritten card). It goes through the same Workflow as a link and is saved the same way,
+A logged-in user sends **1 to 7 pictures of one written recipe** (cookbook pages, screenshots,
+a handwritten card, and maybe a photo of the dish). They go through the same Workflow as a
+link, are read together in **one** model request, and the recipe is saved the same way,
 with no tags.
 
 ```
-POST /api/imports/photo   body = the picture, Content-Type image/jpeg|png|webp|heic|heif
-  guards: session, type (photo_invalid), size 1 byte - 20 MB (photo_invalid, photo_too_big),
-          caps, model state (with the best model chosen)
-  upload the body, streamed, to Gemini's file store → { name, uri, mimeType }
+POST /api/imports/photo   multipart: `photo` parts in order, header X-Photo-Count = their number
+  guards: session, X-Photo-Count matches the parts (photo_invalid), 1-7 (photo_too_many),
+          body up to 50 MB (photo_too_big), each part: type (photo_invalid),
+          size 1 byte - 20 MB (photo_invalid, photo_too_big), caps,
+          model state (with the best model chosen)
+  upload every photo, at the same time, to Gemini's file store → [{ name, uri, mimeType }]
+    (if one fails, the others are deleted: photo_upload_failed)
   insert llm_requests row: platform 'photo', source_id <random 32-hex id>,
-    source_url 'photo:<id>', state { photo: file, bestChosen: true }   → start Workflow → 202
-Workflow: meta has nothing to fetch, video is skipped, extract waits for the file and makes
-  one call (photo prompt + image at resolution 'high'), save as for a link, then deletes the file
+    source_url 'photo:<id>', state { photos: [files], bestChosen: true }   → start Workflow → 202
+Workflow: meta has nothing to fetch, video is skipped, extract waits for every file and makes
+  one call (photo prompt + the images at resolution 'high', numbered "Picture 1:", ...),
+  save as for a link, then deletes the files
 ```
 
-- **A resized copy of the picture is kept as the recipe's picture. The original waits only
-  in Gemini's free file store and is deleted when the import ends**: after the save, when the
-  model found no recipe, when Google refused it, and when the card is dismissed. A failed
-  import that may be retried keeps it until Google deletes it (48 hours). Only its file
-  name, type and size are logged, never its uri. The copy is made by the browser and sent
-  right after the 202 (`PUT /api/imports/:id/picture`, see [Pictures](README.md#pictures)).
+- **Several photos are one recipe.** With more than one, the prompt says they should be
+  parts of one recipe (its pages, or the recipe and the dish), and the answer's `status`
+  has one more value, `unrelated`: a photo of another recipe, or of something else, fails
+  the import with `photos_unrelated` (no Retry). One photo gets the same prompt as before.
+- **Which photo is the picture.** With more than one, the answer also has `cover`, the
+  number of the picture that best shows the finished dish (1 when none does). It is stored
+  from 0 (`recipe.cover` in the state, then `{ cover }` on the finished row), and anything
+  that isn't a whole number in range means the first photo. One photo is never asked.
+  The browser's resized copy of that photo becomes the recipe's picture
+  ([Pictures](README.md#pictures)).
+- **A resized copy of one photo is kept as the recipe's picture. The originals wait only
+  in Gemini's free file store and are deleted when the import ends**: after the save, when
+  the model found no recipe or said the photos are unrelated, when Google refused them, and
+  when the card is dismissed. A failed import that may be retried keeps them until Google
+  deletes them (48 hours). Only their type is logged, never their uri. The copies are made
+  by the browser and sent right after the 202 (`PUT /api/imports/:id/picture`, see
+  [Pictures](README.md#pictures)).
 - **The best model first, always.** Every photo import is like `model: 'best'`: it takes
   one of the user's 5 when it calls the best model, and when the best model can't be used
-  (shared count or the user's 5 used, busy, or can't run) it goes on with the import models
-  by itself. A photo never reaches the text-only fallback model.
+  (shared count or the user's 5 used, busy, over its quota, or can't run) it goes on with
+  the import models by itself. A photo never reaches the text-only fallback model.
 - **Only written recipes.** The prompt says a picture of food with no written recipe is
   `none` (`no_recipe`): the model never guesses a recipe from how a dish looks.
-- **The same picture twice** is allowed: each upload gets its own random id and makes its
+- **The same pictures twice** are allowed: each upload gets its own random id and makes its
   own recipe, for when the first read wasn't good enough. No hash, no `already_imported`.
-- **Size rule.** The backend takes up to 20 MB; the frontend sends every picture up to 15 MB
-  unchanged and shrinks only a bigger one (`frontend/lib/photo.js`). Gemini scales every
-  image down itself (about 1,100 image tokens at `high` for each test picture), so a phone
+- **Size rule.** Each photo may be up to 20 MB, and all of them together up to 50 MB (the
+  Worker reads the whole multipart body into its 128 MB). The frontend sends every picture
+  up to 15 MB unchanged and shrinks a bigger one, and if they are still over 48 MB together
+  it shrinks every one over about 7 MB too (`frontend/lib/photo.js`). Gemini scales every
+  image down itself (about 1,100 image tokens at `high` for each picture), so a phone
   photo or screenshot is sent as it is, to keep small print readable.
+- **Why the header**: another site's plain HTML form can send multipart, but no form can
+  set `X-Photo-Count` without a CORS preflight, which fails. An older copy of the app may
+  still send one picture as the whole body, with its type as the Content-Type; that is
+  still taken, as one photo.
 - **The API**: a photo recipe's `source_url` is `photo:<id>` (no schema change: `platform`
   is free text, and the `photo:` value satisfies both CHECKs). Recipes, Browse and the
   import cards answer `link: ''` and `fromPhoto: true` for it, and a copy from Browse keeps
   both. `readLink` never accepts `photo:` text, so a photo recipe can't be scanned again
   (`not_rerunnable`).
-- **Retry** keeps `state.photo` and the best model (the picture itself is no longer here).
-  After Google's 48 hours the file is gone and it fails with `photo_expired`.
+- **Retry** keeps `state.photos` and the best model (the pictures themselves are no longer
+  here). After Google's 48 hours the files are gone and it fails with `photo_expired`. A row
+  started before several photos holds one, as `state.photo`; the stages read it as one
+  photo, and a Retry turns it into `photos`.
 - **Google's copyright block.** Google refuses (400, `recitation`) to write out text it
   recognises as published and copyrighted. A photo of a famous chef's recipe page is
   refused by every model the same way, so a photo import fails at once with `photo_copyrighted` rather than trying the other models.
-- `createPhotoImport` in `imports.js` is the one place that handles the uploaded original,
-  and the Workflow only knows "a file Gemini can read".
+- `createPhotoImport` in `imports.js` is the one place that handles the uploaded originals,
+  and the Workflow only knows "files Gemini can read".
+
+**Several photos (tested 2026-11-23).** The owner's 4 Instagram-story screenshots of one
+Hebrew recipe (ingredients, steps part 1, steps part 2, and the dish with a few lines of
+text, 945×2048, 88-198 KB each), sent with the dish last: the best model was over its quota,
+`gemini-3.8-flash` was busy, and `gemini-3.6-flash` read all four in one request (122 s,
+4,312 image tokens) into a complete, correct recipe, with the author, and chose picture 4,
+the dish. The same three text screenshots with a made-up picture of a pancake recipe failed
+with `photos_unrelated`, as they should.
 
 ## Video, models and failures
 
@@ -244,7 +276,10 @@ needs no code change:
   page's "Scan the link again" confirmation; `model: 'best'` in the API), and every photo import uses it by default, with no
   checkbox. It is slower and more detailed. It is tried first,
   once; if it is busy, out for the day, or the user has used their 5, the import goes on
-  with the import models by itself, and nobody is told or asked. Photos share its 20 a day
+  with the import models by itself, and nobody is told or asked. Over its quota, a
+  background request isn't refused with a 429: it fails at once (`status: failed`, with
+  `errors: [{ code: 'RESOURCE_EXHAUSTED' }]`), which is read as a short quota limit, like a
+  busy model, so the import goes on with the import models (seen 2026-11-23). Photos share its 20 a day
   with re-scans, so on a busy day most photo imports use the import models. It runs in
   Google's **background mode** (`background: true`): Google answers at once with an id and
   keeps working, and the stage asks for the answer by that id (`GET /v1beta/interactions/<id>`),
@@ -322,11 +357,13 @@ in `error_detail` (never sent to the browser).
 | Stuck for 30 minutes | `timed_out` | no | yes |
 | Photo: Google refused the picture, or couldn't process it | `photo_unreadable` | no | no |
 | Photo: Google won't write out a published recipe (`recitation`) | `photo_copyrighted` | no | no |
-| Photo: the uploaded file is gone (a Retry after Google's 48 hours) | `photo_expired` | no | no |
+| Photo: an uploaded file is gone (a Retry after Google's 48 hours) | `photo_expired` | no | no |
+| Photos: not all parts of one recipe | `photos_unrelated` | no | no |
 
-A photo is refused before any row exists, so these answer the POST and never show as cards:
-`photo_invalid` (not one of the five image types, or empty), `photo_too_big` (over 20 MB),
-`photo_upload_failed` (Google's file store wouldn't take it).
+Photos are refused before any row exists, so these answer the POST and never show as cards:
+`photo_invalid` (not one of the five image types, empty, or not the app's request),
+`photo_too_many` (more than 7), `photo_too_big` (one over 20 MB, or all over 50 MB),
+`photo_upload_failed` (Google's file store wouldn't take one).
 
 Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
 overlaps a call that is still running (video calls have taken over 5 minutes).
@@ -400,8 +437,8 @@ Never fix one without asking the owner. Accepted:
   Meta may block or change this at any time ([Facebook and Instagram](#facebook-and-instagram)).
   From Cloudflare's network a Facebook share link may be sent to the login page; that works
   only when the login page names the video. Facebook photo and text posts aren't supported.
-- A photo import's Retry works only for 48 hours, while Google keeps the uploaded picture;
-  then it fails with `photo_expired` and the user chooses the photo again.
+- A photo import's Retry works only for 48 hours, while Google keeps the uploaded pictures;
+  then it fails with `photo_expired` and the user chooses the photos again.
 - Photos share the best model's 20 a day with re-scans, so on a busy day most photo imports
   use the usual models.
 - Google refuses to write out a recipe it recognises as published and copyrighted (a famous
@@ -418,9 +455,11 @@ Small gaps, all rare and harmless:
   finish its LLM call, but saves nothing.
 - An uploaded video stays in Gemini's file store until Google deletes it (48 hours) when
   its import fails before a usable answer. A Retry uploads the video again.
-- A photo import that failed in a way Retry can help with keeps its picture in Gemini's file
-  store until the card is dismissed or Google deletes it (48 hours); after that a Retry
-  fails with `photo_expired`, and the user chooses the photo again.
+- A photo import that failed in a way Retry can help with keeps its pictures in Gemini's file
+  store until the card is dismissed or Google deletes them (48 hours); after that a Retry
+  fails with `photo_expired`, and the user chooses the photos again. Every failed photo
+  import keeps the browser's resized copies (about 165 KB each) in `import_pictures` until
+  its card is dismissed.
 - A photo import's "Pick a link with one recipe" (`multiple_recipes`) still says "link".
 - When every import model is out for the day a new import is refused with `quota` before
   it starts, even if the fallback model could have read its text.

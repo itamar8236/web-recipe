@@ -11,6 +11,7 @@
 
 import { fail, json } from './http.js';
 import { decodeEntities } from './import/sources/meta.js';
+import { PHOTOS_MAX } from './import/sources/photo.js';
 import { isFetchableUrl } from './import/sources/web.js';
 
 // The schema's CHECKs, repeated so a bad upload gets a clear answer instead of a SQL error.
@@ -278,11 +279,16 @@ async function deletePicture(env, userId, recipeId) {
   return json({ ok: true });
 }
 
-// A photo import's picture, sent by the browser right after the import started. While the
-// import runs (or failed, for a Retry) it waits in import_pictures, and the save stage
-// moves it to the recipe. If the import already finished, it goes to its recipe at once.
+// A photo import's pictures, one resized copy of each photo, sent by the browser right
+// after the import started, each with its place among the photos (`?position=`, from 0).
+// While the import runs (or failed, for a Retry) they wait in import_pictures, and the save
+// stage moves the one the model chose to the recipe and deletes the rest. If the import
+// already finished, the chosen one (state.cover, or the first) goes to its recipe at once.
 // Both are one batch, so a save running at the same moment can't lose it.
 async function putImportPicture(request, env, userId, importId) {
+  const positionText = new URL(request.url).searchParams.get('position') ?? '0';
+  const position = /^\d$/.test(positionText) ? Number(positionText) : -1;
+  if (position < 0 || position >= PHOTOS_MAX) return fail(400, 'picture_invalid');
   const picture = await readUploadedPicture(request);
   if (picture.error) return pictureError(picture.error);
   const owned = await env.DB.prepare(
@@ -294,16 +300,17 @@ async function putImportPicture(request, env, userId, importId) {
   const { full, thumb, type } = picture.value;
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO import_pictures (request_id, full, thumb, type)
-       SELECT id, ?2, ?3, ?4 FROM llm_requests WHERE id = ?1 AND status IN ('running', 'failed')
-       ON CONFLICT (request_id) DO UPDATE SET full = excluded.full, thumb = excluded.thumb, type = excluded.type`,
-    ).bind(importId, full, thumb, type),
+      `INSERT INTO import_pictures (request_id, position, full, thumb, type)
+       SELECT id, ?5, ?2, ?3, ?4 FROM llm_requests WHERE id = ?1 AND status IN ('running', 'failed')
+       ON CONFLICT (request_id, position) DO UPDATE SET full = excluded.full, thumb = excluded.thumb, type = excluded.type`,
+    ).bind(importId, full, thumb, type, position),
     env.DB.prepare(
       `INSERT INTO recipe_pictures (recipe_id, full, thumb, type, edited, updated_at)
        SELECT recipe_id, ?2, ?3, ?4, 0, ?5 FROM llm_requests
         WHERE id = ?1 AND status = 'done' AND recipe_id IS NOT NULL
+          AND COALESCE(json_extract(state, '$.cover'), 0) = ?6
        ON CONFLICT (recipe_id) DO NOTHING`,
-    ).bind(importId, full, thumb, type, Date.now()),
+    ).bind(importId, full, thumb, type, Date.now(), position),
   ]);
   return json({ ok: true });
 }
