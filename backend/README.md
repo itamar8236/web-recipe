@@ -336,6 +336,13 @@ Cloudflare D1 database `recipes-db`, bound to the Worker as `env.DB` in `wrangle
   `wrangler.jsonc` repeats the D1 binding; without it every query fails. Accepted for now: nobody else gets the preview links, and
   a separate preview database may come later. It's a concern only if a PR would change
   production data during the build or deploy itself (see the `local-dev` skill).
+- **Debugging a PR preview**: previews don't inherit the production Worker's secrets or
+  its `observability`, so a preview has no `GEMINI_API_KEY` (or other key, see
+  [Secrets](#secrets)) and keeps no logs (its Observability page in the dashboard stays
+  empty). Everything that calls a model fails there: a photo import with "Couldn't send
+  the photo" (`photo_upload_failed`, seen 2026-11-23), a link import or an AI tool with a
+  model error. Test those locally or after the merge; on a preview, test only what needs
+  no model.
 
 ## Pictures
 

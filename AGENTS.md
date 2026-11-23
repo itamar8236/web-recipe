@@ -45,10 +45,10 @@ All of this is built, except what says *may come later*; the linked sections hav
   the dish), read together in one model request; photos of different recipes fail, and a
   photo of food with no recipe text gives no recipe, since the model never guesses one. Of
   several photos, the one the model says best shows the dish becomes the recipe's picture.
-  The originals are deleted when the import ends. Sharing a picture into the app *may come
-  later* (`backend/IMPORT.md` → Import from a photo).
-- **Share to the app** (Android, installed app): sharing a post or page starts the
-  import at once and closes the app (`frontend/README.md` → Screens → Share).
+  The originals are deleted when the import ends (`backend/IMPORT.md` → Import from a photo).
+- **Share to the app** (Android, installed app): sharing a post, a page, or 1 to 7 photos
+  from the gallery starts the import at once and closes the app (`frontend/README.md` →
+  Screens → Share).
 - **Models**: users don't choose one; an import tries a fixed list of free models. The one
   choice is the **best model**: 5 a day per user (the admin has no 5), on "Scan the link
   again" and first for every photo; when it can't be used, the usual models go on with no

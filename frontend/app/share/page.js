@@ -4,7 +4,8 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/components/Language';
 import { errorMessage } from '@/lib/i18n';
-import { findSharedLink } from '@/lib/share';
+import { findSharedLink, takeSharedPhotos } from '@/lib/share';
+import { importPhotos } from '@/lib/photo';
 import * as api from '@/lib/api';
 import styles from './share.module.css';
 
@@ -20,9 +21,20 @@ function closeApp(onRefused) {
   setTimeout(onRefused, 300);
 }
 
-// Opened by Android's Share menu (`share_target` in app/manifest.js) with the shared text
-// in the query. Starts the import and then closes the app, which returns the user to the
-// app they shared from, like sharing to a chat app. The import goes on in the background
+// Waits for the recipe's picture too, since closing the app would stop sending it. No
+// photos left (the page was opened again) is the same as nothing shared.
+async function startSharedPhotos() {
+  const photos = await takeSharedPhotos();
+  if (!photos.length) return 'nolink';
+  const { pictures } = await importPhotos(photos);
+  await pictures;
+  return 'started';
+}
+
+// Opened by Android's Share menu (`share_target` in app/manifest.js, through public/sw.js)
+// with the shared text in the query, or with `photos=<count>` when photos were shared from
+// the gallery (sw.js keeps them for takeSharedPhotos). Starts the import and then closes
+// the app, which returns the user to the app they shared from, like sharing to a chat app. The import goes on in the background
 // and shows as a card on Home.
 function ShareImport() {
   const { t } = useLanguage();
@@ -32,7 +44,8 @@ function ShareImport() {
   const [link] = useState(() =>
     findSharedLink({ title: params.get('title'), text: params.get('text'), url: params.get('url') }),
   );
-  const [state, setState] = useState(link ? 'starting' : 'nolink'); // starting | started | failed | nolink
+  const [photoCount] = useState(() => (link ? 0 : Number(params.get('photos')) || 0));
+  const [state, setState] = useState(link || photoCount ? 'starting' : 'nolink'); // starting | started | failed | nolink
   const [error, setError] = useState(null);
   const [closeFailed, setCloseFailed] = useState(false);
   const started = useRef(false);
@@ -42,17 +55,16 @@ function ShareImport() {
   }
 
   useEffect(() => {
-    if (started.current || !link) return;
+    if (started.current || !(link || photoCount)) return;
     started.current = true;
     window.history.replaceState(null, '', '/share');
-    api
-      .startImport(link)
-      .then(() => setState('started'))
+    (link ? api.startImport(link).then(() => 'started') : startSharedPhotos())
+      .then(setState)
       .catch((err) => {
         setError(err);
         setState('failed');
       });
-  }, [link]);
+  }, [link, photoCount]);
 
   useEffect(() => {
     if (state !== 'started') return undefined;
@@ -65,7 +77,9 @@ function ShareImport() {
       <h1 className={styles.title}>{t.shareTitle}</h1>
       {link && <p className={styles.link} dir="ltr">{link}</p>}
 
-      {state === 'starting' && <p>{t.shareStarting}</p>}
+      {photoCount > 0 && state !== 'nolink' && <p className={styles.link}>{t.sharePhotos(photoCount)}</p>}
+
+      {state === 'starting' && <p>{photoCount ? t.shareSendingPhotos : t.shareStarting}</p>}
       {state === 'started' && <p className={styles.ok}>{t.shareStarted}</p>}
       {state === 'nolink' && <p className="error" role="alert">{t.shareNoLink}</p>}
       {state === 'failed' && <p className="error" role="alert">{errorMessage(t, error)}</p>}

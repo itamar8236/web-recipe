@@ -164,7 +164,9 @@ by a fixed path, because the layout differs between a reel page and a watch page
 A logged-in user sends **1 to 7 pictures of one written recipe** (cookbook pages, screenshots,
 a handwritten card, and maybe a photo of the dish). They go through the same Workflow as a
 link, are read together in **one** model request, and the recipe is saved the same way,
-with no tags.
+with no tags. They come from "Choose photos" in the Add recipe dialog or from the phone's
+gallery through the Share menu (`frontend/README.md` → Screens → Share); the backend can't
+tell the two apart.
 
 ```
 POST /api/imports/photo   multipart: `photo` parts in order, header X-Photo-Count = their number

@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useLanguage } from './Language';
 import { errorMessage } from '@/lib/i18n';
 import * as api from '@/lib/api';
-import { preparePhotos } from '@/lib/photo';
-import { makePicture } from '@/lib/picture';
+import { importPhotos } from '@/lib/photo';
 import styles from './ImportDialog.module.css';
 
 // What "+ Add recipe" opens for a logged-in user. Its main action is the link: the backend
@@ -15,7 +14,7 @@ import styles from './ImportDialog.module.css';
 // pictures of one written recipe, which are uploaded at once. Only "Write it manually" opens
 // the manual form; closing the dialog in any other way leaves the user on Home. A small copy
 // of each photo is sent too, and the backend keeps the one the model chose as the recipe's
-// picture (sendPictures). `backAt` is
+// picture (importPhotos in lib/photo.js). `backAt` is
 // when a used-up daily limit resets, for the error that mentions it.
 export default function ImportDialog({ backAt, manualHref, onClose, onStarted, onModelsStale }) {
   const { t } = useLanguage();
@@ -64,25 +63,7 @@ export default function ImportDialog({ backAt, manualHref, onClose, onStarted, o
     const files = [...event.target.files];
     // Cleared, so choosing the same pictures again (for a second read) still fires.
     event.target.value = '';
-    if (files.length) send('photo', async () => {
-      const card = await api.startPhotoImport(await preparePhotos(files));
-      sendPictures(card.id, files);
-      return card;
-    });
-  }
-
-  // The recipe's picture is a small copy of one of the photos, made here and sent once the
-  // import has started: one copy of each, one at a time to spare a phone's memory, and the
-  // backend keeps the one the model chose. It is a bonus: if it fails, the recipe just has no
-  // picture.
-  async function sendPictures(importId, files) {
-    for (const [position, file] of files.entries()) {
-      try {
-        await api.sendImportPicture(importId, await makePicture(file), position);
-      } catch {
-        // The next one may still work.
-      }
-    }
+    if (files.length) send('photo', async () => (await importPhotos(files)).card);
   }
 
   function submit(event) {
