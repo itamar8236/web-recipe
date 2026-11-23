@@ -15,9 +15,8 @@ const recipePage = (body = `<p>${RECIPE_TEXT}</p>`) =>
    <body><nav><a href="/">Home</a><a href="/cakes">Cakes</a></nav><article><h1>Edamame salad</h1>${body}</article>
    <footer>All rights reserved</footer></body></html>`;
 
-let log;
 beforeEach(() => {
-  log = vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'log').mockImplementation(() => {});
 });
 afterEach(() => {
   vi.unstubAllGlobals();

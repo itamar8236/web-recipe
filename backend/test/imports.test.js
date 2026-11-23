@@ -162,7 +162,6 @@ describe('import endpoints', () => {
   const MODEL = IMPORT_MODELS[0];
   const LINK = `https://youtu.be/${ID}`;
   const today = () => quotaDay(Date.now());
-  const SOON = () => Date.now() + 3600000;
 
   // A stand-in for the Workflow binding, so these tests never start one.
   let workflow;
