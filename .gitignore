@@ -39,7 +39,8 @@ desktop.ini
 # Agent worktrees made inside the repo (Claude Code's default location)
 .claude/worktrees/
 
-# Repo audit reports (repo-audit skill): local notes, never committed
+# Repo audit reports (the owner's own repo-audit skill, not in this repo): local notes,
+# never committed
 .audit/
 
 # .claude/skills is a symlink to .agents/skills. On Windows it may be a junction (a real
