@@ -17,11 +17,12 @@ free port in its range:
   error, and the browser then reaches whichever one it likes, so never rely on the start
   failing.
 - `wrangler dev` also opens an inspector port (9229 and up); it picks a free one by itself.
-- Claude desktop app: `preview_start` runs entries from the committed `.claude/launch.json`,
-  which has one entry per agent port (`frontend-3001` ... `frontend-3009`, `backend-8788`
-  ... `backend-8799`), so starting one needs no edit and no prompt. Start the entry for the
-  free port you picked; never start the `backend` / `frontend` entries, which use the
-  owner's ports.
+- Claude desktop app: start servers only with `preview_start` and the committed
+  `.claude/launch.json` (never edit it per session, never start them with Bash):
+  `backend-agent` (the Worker) or `frontend-agent` (`next dev`). Both have
+  `"autoPort": true`, so the app skips the netstat check above: it takes the next free
+  port from 8788 / 3001 and passes it on `--port` / `-p`, with no prompt. Never start
+  `backend` / `frontend`: they are the owner's ports (`"autoPort": false`).
 - A server on one of the owner's ports that you didn't start belongs to them or to
   another session: leave it alone and tell the owner if it is in the way.
 
