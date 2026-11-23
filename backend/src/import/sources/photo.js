@@ -1,9 +1,12 @@
 // A photo the user uploaded (POST /api/imports/photo), not a link. It is never matched
 // against pasted text, so `photo:<id>` can't be imported or scanned again as a link; only
-// `sourceFor('photo')` finds it, for the stages. The picture itself is already in Gemini's
-// file store (state.photo), so there is nothing to fetch.
+// `sourceFor('photo')` finds it, for the stages. The pictures themselves are already in
+// Gemini's file store (state.photos), so there is nothing to fetch.
 
 export const PHOTO_PREFIX = 'photo:';
+
+// Several photos of one recipe (its pages, or the recipe and the dish) are read together.
+export const PHOTOS_MAX = 7;
 
 export const photo = {
   platform: 'photo',

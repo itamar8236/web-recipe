@@ -43,7 +43,7 @@ frontend/
 │   ├── search.js          # matchesSearch(): recipe name/ingredient/author/tag search
 │   ├── sort.js            # SORTS, sortRecipes(): the orders the lists can be sorted in
 │   ├── sort.test.js       # Vitest tests for sort.js
-│   ├── photo.js           # preparePhoto(): a chosen picture, ready to send
+│   ├── photo.js           # preparePhotos(): 1 to 7 chosen pictures, ready to send
 │   ├── photo.test.js      # Vitest tests for photo.js
 │   ├── picture.js         # makePicture(): a recipe's picture and thumb, drawn in the browser
 │   ├── picture.test.js    # Vitest tests for picture.js
@@ -134,20 +134,26 @@ frontend/
    - **×**, **Escape** and **tapping outside** close the dialog and stay on Home.
    - An invalid or unsupported link keeps the dialog open with the error under the field.
    - There is no model choice: the backend picks the models.
-   - **"📷 Choose a photo"**, a full-width button under them, opens a hidden
-     `<input type="file" accept="image/*">` with no `capture`, so the phone offers its
-     gallery, camera and files (iPhone: Photo Library, Take Photo, Choose File; a computer:
-     the file picker). One picture of a written recipe; it is uploaded at once
-     (`preparePhoto` in `lib/photo.js` sends anything up to 15 MB unchanged and shrinks
-     only a bigger one to 4096 px, JPEG 0.92). While it uploads the dialog stays open,
-     the button says "Uploading the photo..." and every button is disabled, so a double tap
-     can't send it twice; then the dialog closes and its card shows. The input is cleared
-     after each pick, so the same picture can be chosen again for a second read. Errors
-     (`photo_invalid`, `photo_too_big`, `photo_upload_failed`, `quota`, ...) show under the
+   - **"📷 Choose photos (up to 7)"**, a full-width button under them, opens a hidden
+     `<input type="file" accept="image/*" multiple>` with no `capture`, so the phone offers
+     its gallery, camera and files (iPhone: Photo Library, Take Photo, Choose File; a
+     computer: the file picker). 1 to 7 pictures of one written recipe (its pages, and maybe
+     a photo of the dish), in the order the browser lists them; they are uploaded at once,
+     together, as one import (`preparePhotos` in `lib/photo.js` sends each up to 15 MB
+     unchanged and shrinks a bigger one to 4096 px, JPEG 0.92; if they are over 48 MB
+     together, every one over about 7 MB is shrunk too). More than 7 shows "Choose up to 7
+     photos" and sends nothing. While they upload the dialog stays open, the button says
+     "Uploading..." and every button is disabled, so a double tap can't send them twice;
+     then the dialog closes and the card shows. The input is cleared after each pick, so
+     the same pictures can be chosen again for a second read. Errors (`photo_invalid`,
+     `photo_too_big`, `photo_too_many`, `photo_upload_failed`, `quota`, ...) show under the
      field, like a link's. Photos always use the best model first; there is no checkbox.
-     Once the import has started, a small copy of the same photo is made in the browser
-     (`makePicture`, below) and sent in the background (`sendImportPicture`); it becomes
-     the recipe's picture. If that fails, the recipe just has no picture.
+     Once the import has started, a small copy of each photo is made in the browser
+     (`makePicture`, below) and sent in the background, one at a time, with its position
+     (`sendImportPicture`); the backend keeps the one the model chose (the photo of the
+     dish, or the first) as the recipe's picture. If that fails, the recipe just has no
+     picture. Photos of different recipes fail on their card with "The photos aren't all of
+     one recipe" (`photos_unrelated`).
 4. **Import cards** (`components/ImportCards`, at the top of the content section, in every
    tag view, not filtered by search):
    - Running: gray with a gentle pulse, the title or link, and "Getting the
@@ -344,8 +350,8 @@ recipes (`getRecipes`, `getRecipe`, `saveRecipe`, `setRecipeTags`, `setFavorite`
 recently deleted (`getDeletedRecipes`, `restoreRecipe`),
 pictures (`setRecipePicture`, `removeRecipePicture`; `{ full, thumb }` Blobs sent as
 multipart `FormData`), browse (`getBrowse`, `copyRecipe`, `newBrowseSeed`) and imports
-(`getImports`, `startImport`, `startPhotoImport` (the picture as the body, with its own
-`Content-Type`), `sendImportPicture`, `retryImport`, `dismissImport`, `rerunRecipe`) and
+(`getImports`, `startImport`, `startPhotoImport` (the pictures as multipart `photo` parts,
+with an `X-Photo-Count` header), `sendImportPicture` (with the photo's position), `retryImport`, `dismissImport`, `rerunRecipe`) and
 `translateRecipe`, `estimateNutrition`, `suggestSubstitutes`. Two more set it up:
 `setGuestMode(on)` switches between the backend and a fresh, empty guest memory, and
 `setLoggedOutHandler(handler)` is called when the backend answers `not_logged_in`. For a guest the tag and recipe functions use memory instead. They

@@ -231,7 +231,7 @@ async function callBest(job, deps, request) {
 // its key is set (GROQ_API_KEY). Returns null when it can't answer either.
 async function callFallback({ env, fallbackLlm = callFallbackModel }, request) {
   const model = env.LLM_FALLBACK_MODEL;
-  if (!model || !env.GROQ_API_KEY || request.videoUrl || request.imageUrl || request.pageUrl) return null;
+  if (!model || !env.GROQ_API_KEY || request.videoUrl || request.images?.length || request.pageUrl) return null;
   try {
     const fallback = await callUnlessOut({ env, llm: fallbackLlm, model, request });
     return fallback.out ? null : { output: fallback.output, model };

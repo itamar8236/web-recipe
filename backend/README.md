@@ -2,7 +2,7 @@
 
 The server side of web-recipe: one Cloudflare Worker in plain JavaScript that serves the
 JSON API, stores data in Cloudflare D1, handles login, calls Google's free LLMs to turn
-YouTube, Facebook and Instagram links, recipe web pages and photos of written recipes into recipes, and serves the frontend's static build. Read the root
+YouTube, Facebook and Instagram links, recipe web pages and photos of written recipes (1 to 7 of one recipe) into recipes, and serves the frontend's static build. Read the root
 `AGENTS.md` first.
 
 Record new files, schema and endpoints here in the same PR that adds them.
@@ -194,16 +194,16 @@ The only endpoints that read another user's recipes (`src/browse.js`). Both need
 
 All need a session, work only on the data of the user the session acts for, and answer
 404 for another user's import or recipe, like the API above. POST bodies must be JSON,
-except a photo's, which is the picture itself.
+except a photo import's, which is the photos as multipart.
 
 | Endpoint | Purpose | Success | Errors |
 |---|---|---|---|
 | `POST /api/imports` `{url, model?}` | Start an import | 202 `{import}`, or 200 with the one already running | 400 `invalid_request`, `link_invalid`, `link_unsupported`; 409 `already_imported`; 429 `too_many_imports`, `quota` |
-| `POST /api/imports/photo`, body: the picture, `Content-Type: image/jpeg\|png\|webp\|heic\|heif` | Start an import from one photo, best model first ([Import from a photo](IMPORT.md#import-from-a-photo)) | 202 `{import}` | 400 `photo_invalid`; 413 `photo_too_big`; 429 `too_many_imports`, `quota`; 502 `photo_upload_failed` |
+| `POST /api/imports/photo`, multipart: 1 to 7 `photo` parts (`image/jpeg\|png\|webp\|heic\|heif`), header `X-Photo-Count` | Start an import from photos of one recipe, best model first ([Import from a photo](IMPORT.md#import-from-a-photo)) | 202 `{import}` | 400 `photo_invalid`, `photo_too_many`; 413 `photo_too_big`; 429 `too_many_imports`, `quota`; 502 `photo_upload_failed` |
 | `GET /api/imports` | Cards plus model state | 200 `{imports, models}` | |
 | `POST /api/imports/:id/retry` `{}` | Try a failed import again, as a new import | 202 `{import}` (the new one) | 400 `invalid_request`; 404; 409 `not_retryable`; 429 `too_many_imports`, `quota` |
-| `DELETE /api/imports/:id` | Dismiss the card (and a photo's waiting picture) | 200 `{ok}` | 404 |
-| `PUT /api/imports/:id/picture`, multipart `full` + `thumb` | A photo import's picture, made by the browser from the same photo ([Pictures](#pictures)) | 200 `{ok}` | 400 `picture_invalid`; 413 `picture_too_big`; 404 (not your photo import) |
+| `DELETE /api/imports/:id` | Dismiss the card (and a photo import's waiting pictures) | 200 `{ok}` | 404 |
+| `PUT /api/imports/:id/picture[?position=0-6]`, multipart `full` + `thumb` | A copy of one of a photo import's photos (`position` from 0, in the order sent), made by the browser ([Pictures](#pictures)) | 200 `{ok}` | 400 `picture_invalid` (also a bad position); 413 `picture_too_big`; 404 (not your photo import) |
 | `POST /api/recipes/:id/rerun` `{model?}` | Scan an imported recipe's link again; replaces its text when done | 202 `{import}` | 400 `invalid_request`; 404; 409 `not_rerunnable` (manual or photo recipe, or that link is running); 429 `too_many_imports`, `quota` |
 
 - `import` is `{ id, status, stage, link, fromPhoto, title, error, retryable, recipeId, recipeName }`.
@@ -233,7 +233,7 @@ except a photo's, which is the picture itself.
   is the only per-user limit on a model.
 - A Retry is a **new row**: it copies the failed row's link, title and model choice, starts
   over from the first stage in its own Workflow, and the failed row becomes `dismissed`
-  (a photo's waiting picture moves to the new row).
+  (a photo import's waiting pictures move to the new row).
   Only a failed save keeps its `state` and stage, since it already holds the recipe. It answers `not_retryable` if the same video is already running or saved
   (for a re-scan: if its recipe was deleted).
 
@@ -293,7 +293,7 @@ into, and `lang` the language to answer in. See [Ingredient substitutes](#ingred
 - **Pictures**: at most one per recipe, stored resized as BLOBs in `recipe_pictures` (a full
   picture and a thumb, about 165 KB a recipe at most), so deleting a user deletes them and
   copying is one statement. Deleting a recipe moves its picture to `deleted_recipe_pictures`
-  with it, until it is restored or purged (see "Recently deleted"). A photo import's picture waits in `import_pictures`
+  with it, until it is restored or purged (see "Recently deleted"). A photo import's pictures (one per photo, by `position`) wait in `import_pictures`
   until its recipe is saved. See [Pictures](#pictures).
 
 Every table, column and constraint is in [`schema.sql`](schema.sql), with comments on why.
@@ -348,7 +348,7 @@ picture of the dish.
 | Where it comes from | `edited` | How |
 |---|---|---|
 | A link import | 0 | The Workflow's `picture` step |
-| A photo import | 0 | A copy of the photo, resized in the browser |
+| A photo import | 0 | A copy of the photo (of several, the one the model chose), resized in the browser |
 | The edit form | 1 | Chosen by the user (gallery, camera or a file), resized in the browser |
 | A copy from Browse | the original's | Copied with the recipe, in its batch |
 
@@ -377,11 +377,14 @@ picture of the dish.
   `edited` 0 too, but a photo recipe has no link, so it is never scanned again. A re-scan
   whose link has no picture keeps the old one. "Remove picture" deletes the row, so a later
   re-scan brings the link's picture back.
-- **A photo import**: the original goes to Gemini (`POST /api/imports/photo`). Right
-  after its 202, the browser sends `PUT /api/imports/:id/picture`. While the import
-  runs (or failed, for a Retry) the picture waits in `import_pictures`; the save stage's
-  batch moves it to the recipe, a Retry moves it to its new row, and dismissing deletes it.
-  If the import already finished, it goes to the recipe at once (one batch either way).
+- **A photo import**: the originals go only to Gemini (`POST /api/imports/photo`). Right
+  after its 202, the browser sends `PUT /api/imports/:id/picture?position=<n>` for each
+  photo, one at a time. While the import runs (or failed, for a Retry) they wait in
+  `import_pictures`; the save stage's batch moves the one at the position the model chose
+  (`recipe.cover`, see [Import from a photo](IMPORT.md#import-from-a-photo)) to the recipe
+  and deletes the rest, a Retry moves them to its new row, and dismissing deletes them. If
+  the import already finished, the chosen one (`state.cover` on the finished row, or 0)
+  goes to the recipe at once and the others are ignored (one batch either way).
 - **Size**: about 165 KB a recipe at most (70 link pictures from real recipes averaged about
   120 KB + 22 KB). D1's free 500 MB is per database, shared with the recipes: about 3,000
   recipes with pictures. One BLOB, and one row, is at most 2 MB. If it ever gets close,

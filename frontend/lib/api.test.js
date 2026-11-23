@@ -292,7 +292,7 @@ describe('errorMessage', () => {
     expect(errorMessage(strings.he, { code })).not.toBe(strings.he.errGeneric);
   });
 
-  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'model_busy', 'nothing_to_translate', 'import_needs_login', 'photo_invalid', 'photo_too_big', 'photo_unreadable', 'photo_expired', 'photo_copyrighted', 'photo_upload_failed'])(
+  it.each(['model_approval_needed', 'not_retryable', 'not_rerunnable', 'model_busy', 'nothing_to_translate', 'import_needs_login', 'photo_invalid', 'photo_too_big', 'photo_unreadable', 'photo_expired', 'photo_copyrighted', 'photo_upload_failed', 'photo_too_many', 'photos_unrelated'])(
     '%s has its own message in both languages',
     (code) => {
       expect(errorMessage(strings.en, { code })).not.toBe(strings.en.errGeneric);
@@ -375,7 +375,7 @@ describe('guest: imports need an account', () => {
     ['translateRecipe', () => api.translateRecipe('en', { name: 'Tea', ingredients: [], steps: [] })],
     ['estimateNutrition', () => api.estimateNutrition({ name: 'Tea', ingredients: [], steps: [] })],
     ['suggestSubstitutes', () => api.suggestSubstitutes(1, 'en', 0, 'en')],
-    ['startPhotoImport', () => api.startPhotoImport(new Blob(['x'], { type: 'image/jpeg' }))],
+    ['startPhotoImport', () => api.startPhotoImport([new Blob(['x'], { type: 'image/jpeg' })])],
     ['sendImportPicture', () => api.sendImportPicture(1, { full: new Blob(['f']), thumb: new Blob(['t']) })],
   ])('%s is refused and never calls the backend', async (_, action) => {
     vi.stubGlobal('fetch', vi.fn());
@@ -414,12 +414,15 @@ describe('logged in: imports', () => {
 
   it('sends a photo as it is, with its own type, and returns the card', async () => {
     mockFetch(202, { import: card });
-    const photo = new Blob(['jpeg bytes'], { type: 'image/jpeg' });
-    expect(await api.startPhotoImport(photo)).toEqual(card);
+    const photos = [new Blob(['page'], { type: 'image/jpeg' }), new Blob(['dish'], { type: 'image/png' })];
+    expect(await api.startPhotoImport(photos)).toEqual(card);
     const [path, options] = fetch.mock.calls.at(-1);
     expect(path).toBe('/api/imports/photo');
-    expect(options).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'image/jpeg' } });
-    expect(options.body).toBe(photo);
+    // The browser sets the multipart Content-Type itself; the count marks it as the app's.
+    expect(options).toMatchObject({ method: 'POST', headers: { 'X-Photo-Count': '2' } });
+    expect(options.headers['Content-Type']).toBeUndefined();
+    const sent = options.body.getAll('photo');
+    expect(await Promise.all(sent.map((part) => part.text()))).toEqual(['page', 'dish']);
   });
 
   it('retries and returns the new card', async () => {
@@ -584,7 +587,9 @@ describe('a recipe’s picture', () => {
       await api.removeRecipePicture(3);
       expect(fetch.mock.calls.at(-1)).toMatchObject(['/api/recipes/3/picture', { method: 'DELETE' }]);
       await api.sendImportPicture(7, picture());
-      expect(fetch.mock.calls.at(-1)).toMatchObject(['/api/imports/7/picture', { method: 'PUT' }]);
+      expect(fetch.mock.calls.at(-1)).toMatchObject(['/api/imports/7/picture?position=0', { method: 'PUT' }]);
+      await api.sendImportPicture(7, picture(), 3);
+      expect(fetch.mock.calls.at(-1)).toMatchObject(['/api/imports/7/picture?position=3', { method: 'PUT' }]);
     });
   });
 });

@@ -310,14 +310,17 @@ CREATE TABLE IF NOT EXISTS recipe_pictures (
   updated_at INTEGER NOT NULL
 );
 
--- A photo import's picture (resized in the browser), waiting for its recipe. The save
--- stage moves it into recipe_pictures, a Retry moves it to its new row, and dismissing the
--- import deletes it.
+-- A photo import's pictures (one per photo, resized in the browser, `position` from 0 in
+-- the order the photos were sent), waiting for its recipe. The save stage moves the one the
+-- model chose into recipe_pictures and deletes the rest, a Retry moves them to its new row,
+-- and dismissing the import deletes them.
 CREATE TABLE IF NOT EXISTS import_pictures (
-  request_id INTEGER PRIMARY KEY REFERENCES llm_requests (id) ON DELETE CASCADE,
+  request_id INTEGER NOT NULL REFERENCES llm_requests (id) ON DELETE CASCADE,
+  position   INTEGER NOT NULL DEFAULT 0 CHECK (position BETWEEN 0 AND 6),
   full       BLOB    NOT NULL CHECK (typeof(full) = 'blob' AND length(full) BETWEEN 1 AND 1000000),
   thumb      BLOB    NOT NULL CHECK (typeof(thumb) = 'blob' AND length(thumb) BETWEEN 1 AND 100000),
-  type       TEXT    NOT NULL CHECK (type IN ('image/jpeg', 'image/webp'))
+  type       TEXT    NOT NULL CHECK (type IN ('image/jpeg', 'image/webp')),
+  PRIMARY KEY (request_id, position)
 );
 
 -- The picture of a recipe in "Recently deleted" (deleted_recipes), moved here as it was, so a

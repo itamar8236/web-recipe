@@ -41,10 +41,12 @@ All of this is built, except what says *may come later*; the linked sections hav
   photo posts by their caption), public posts only, and any other public **web page**.
   It runs in the background and saves the recipe by itself, with no tags. Other platforms
   (TikTok, ...) *may come later*: don't build for them until asked (`backend/IMPORT.md`).
-- **Import from a photo**: one picture of a **written** recipe; a photo of food with no
-  recipe text gives no recipe, since the model never guesses one. The original is deleted
-  when the import ends. Several photos at once, and sharing a picture into the app, *may come later*
-  (`backend/IMPORT.md` → Import from a photo).
+- **Import from photos**: 1 to 7 pictures of **one written** recipe (its pages, and maybe
+  the dish), read together in one model request; photos of different recipes fail, and a
+  photo of food with no recipe text gives no recipe, since the model never guesses one. Of
+  several photos, the one the model says best shows the dish becomes the recipe's picture.
+  The originals are deleted when the import ends. Sharing a picture into the app *may come
+  later* (`backend/IMPORT.md` → Import from a photo).
 - **Share to the app** (Android, installed app): sharing a post or page starts the
   import at once and closes the app (`frontend/README.md` → Screens → Share).
 - **Models**: users don't choose one; an import tries a fixed list of free models. The one

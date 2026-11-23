@@ -9,8 +9,8 @@ import { fail, json, readJson } from './http.js';
 import { geminiFiles } from './import/llm.js';
 import { quotaDay, readModelState, startRefusal } from './import/models.js';
 import { readLink } from './import/sources/index.js';
-import { isPhotoSource, PHOTO_PREFIX, photo as photoSource } from './import/sources/photo.js';
-import { markFailed } from './import/stages.js';
+import { isPhotoSource, PHOTO_PREFIX, PHOTOS_MAX, photo as photoSource } from './import/sources/photo.js';
+import { markFailed, photosOf } from './import/stages.js';
 
 const STUCK_AFTER_MS = 30 * 60 * 1000;
 
@@ -172,48 +172,90 @@ async function createImport(request, env, userId) {
   return other ? json({ import: toImport(other) }) : fail(409, 'already_imported');
 }
 
-// ---- Starting from a photo ----
+// ---- Starting from photos ----
 
 // What Gemini reads as an image and phones hand a browser (iPhones usually convert HEIC
 // to JPEG themselves). The app's own frontend shrinks anything bigger than the limit first.
 const PHOTO_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
 const PHOTO_MAX_BYTES = 20 * 1024 * 1024;
+// The whole multipart body is read into memory (a Worker has 128 MB), so it has a cap of
+// its own; the frontend shrinks photos to keep under it.
+const PHOTOS_MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
 const randomId = () => [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('');
 
-// The body is the picture itself, with its type as the Content-Type. Requiring an image
+const photoType = (value) => (value ?? '').split(';')[0].trim().toLowerCase();
+
+// One photo is the whole body, with its type as the Content-Type (what the app sent before
+// several photos, kept for an older copy of it still open on a phone). Requiring an image
 // type is as safe as the JSON rule (readJson): another site's form can't send one without
-// a CORS preflight, which fails. The same picture twice is allowed: each upload is a new
-// import with its own random id, and a new recipe. The picture goes straight to Gemini's
-// file store, and is deleted when the import ends (stages.js). The browser then sends its own
-// resized copy, which becomes the recipe's picture (PUT /api/imports/:id/picture, pictures.js).
-// This is the one place that handles the uploaded bytes.
-async function createPhotoImport(request, env, userId, files = geminiFiles) {
-  const type = (request.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
-  if (!PHOTO_TYPES.has(type) || !request.body) return fail(400, 'photo_invalid');
+// a CORS preflight, which fails.
+function readOnePhoto(request) {
+  const type = photoType(request.headers.get('Content-Type'));
+  if (!PHOTO_TYPES.has(type) || !request.body) return { error: 'photo_invalid' };
   // Google's upload needs the size up front; a browser always sends it for a file.
   const bytes = Number(request.headers.get('Content-Length'));
-  if (!Number.isInteger(bytes) || bytes <= 0) return fail(400, 'photo_invalid');
-  if (bytes > PHOTO_MAX_BYTES) return fail(413, 'photo_too_big');
+  if (!Number.isInteger(bytes) || bytes <= 0) return { error: 'photo_invalid' };
+  if (bytes > PHOTO_MAX_BYTES) return { error: 'photo_too_big' };
+  return { photos: [{ body: request.body, bytes, mimeType: type }] };
+}
+
+// Several photos are a multipart body of `photo` parts, in order. Another site's form can
+// send multipart, so it also needs the X-Photo-Count header, which no form can set without
+// a CORS preflight; it must match the number of parts.
+async function readPhotos(request) {
+  const count = Number(request.headers.get('X-Photo-Count'));
+  if (!Number.isInteger(count) || count < 1) return { error: 'photo_invalid' };
+  if (count > PHOTOS_MAX) return { error: 'photo_too_many' };
+  if (Number(request.headers.get('Content-Length')) > PHOTOS_MAX_TOTAL_BYTES) return { error: 'photo_too_big' };
+  let parts;
+  try {
+    parts = (await request.formData()).getAll('photo');
+  } catch {
+    return { error: 'photo_invalid' };
+  }
+  if (parts.length !== count) return { error: 'photo_invalid' };
+  const photos = [];
+  for (const part of parts) {
+    const mimeType = photoType(part?.type);
+    if (typeof part === 'string' || !PHOTO_TYPES.has(mimeType) || part.size === 0) return { error: 'photo_invalid' };
+    if (part.size > PHOTO_MAX_BYTES) return { error: 'photo_too_big' };
+    photos.push({ body: part.stream(), bytes: part.size, mimeType });
+  }
+  return { photos };
+}
+
+const isMultipart = (request) => photoType(request.headers.get('Content-Type')) === 'multipart/form-data';
+
+// The same photos twice are allowed: each upload is a new import with its own random id,
+// and a new recipe. The photos go straight to Gemini's file store, and are deleted when the
+// import ends (stages.js). The browser then sends its own resized copy of each, and the one
+// the model chose becomes the recipe's picture (PUT /api/imports/:id/picture, pictures.js).
+// This is the one place that handles the uploaded bytes.
+async function createPhotoImport(request, env, userId, files = geminiFiles) {
+  const read = isMultipart(request) ? await readPhotos(request) : readOnePhoto(request);
+  if (read.error) return fail(read.error === 'photo_too_big' ? 413 : 400, read.error);
 
   // Photos always ask for the best model first, and go on with the usual ones without it.
   const choice = { bestChosen: true };
   const refusal = await startRefusalResponse(env, userId, choice);
   if (refusal) return refusal;
 
-  let file;
-  try {
-    file = await files.upload({ env, body: request.body, bytes, mimeType: type });
-  } catch (error) {
-    console.log(`Photo upload failed: ${error.detail ?? error.message}`);
+  const uploads = await Promise.allSettled(read.photos.map(({ body, bytes, mimeType }) => files.upload({ env, body, bytes, mimeType })));
+  const photos = uploads.filter((upload) => upload.status === 'fulfilled').map((upload) => upload.value);
+  const removeAll = () => Promise.all(photos.map((file) => files.remove({ env, file })));
+  const failed = uploads.find((upload) => upload.status === 'rejected');
+  if (failed) {
+    console.log(`Photo upload failed: ${failed.reason.detail ?? failed.reason.message}`);
+    await removeAll();
     return fail(502, 'photo_upload_failed');
   }
 
   const id = randomId();
   const source = { platform: photoSource.platform, sourceId: id, sourceUrl: `${PHOTO_PREFIX}${id}` };
-  const response = await insertAndStart(env, userId, source, { photo: file, ...choice });
+  const response = await insertAndStart(env, userId, source, { photos, ...choice });
   // Only the caps (another import took the last slot meanwhile) can stop it now.
-  if (response?.status !== 202) await files.remove({ env, file });
+  if (response?.status !== 202) await removeAll();
   return response ?? fail(429, 'too_many_imports');
 }
 
@@ -258,12 +300,18 @@ async function retryRefusal(env, userId, row, now) {
 // It starts over from the first stage, keeping only the model choice: what the earlier
 // stages left (a site's signed video link, an uploaded video file) expires, and getting it
 // again costs no model request. A failed save keeps its state, because it holds the
-// recipe the model already wrote, and a photo keeps its uploaded file, because the picture
-// itself is no longer here (after Google's 48 hours it fails with photo_expired).
+// recipe the model already wrote, and a photo import keeps its uploaded files, because the
+// pictures themselves are no longer here (after Google's 48 hours it fails with
+// photo_expired). A row from before several photos holds one, as `photo`.
+// A row that let go of its photos (another row holds them now, or they were deleted).
+const WITHOUT_PHOTOS = `state = json_remove(state, '$.photo', '$.photos')`;
+
 const RETRY_STAGE = `CASE WHEN json_extract(state, '$.model') IS NOT NULL THEN stage ELSE 'meta' END`;
 const RETRY_STATE = `CASE WHEN json_extract(state, '$.model') IS NOT NULL THEN state
+  WHEN json_extract(state, '$.photos') IS NOT NULL
+    THEN json_object('photos', json(json_extract(state, '$.photos')), 'bestChosen', json('true'))
   WHEN json_extract(state, '$.photo') IS NOT NULL
-    THEN json_object('photo', json(json_extract(state, '$.photo')), 'bestChosen', json('true'))
+    THEN json_object('photos', json_array(json(json_extract(state, '$.photo'))), 'bestChosen', json('true'))
   WHEN json_extract(state, '$.bestChosen') THEN '{"bestChosen":true}' ELSE '{}' END`;
 
 async function retryImport(request, env, userId, id) {
@@ -304,29 +352,28 @@ async function retryImport(request, env, userId, id) {
     return fail(409, 'not_retryable');
   }
   if (!added) return fail(409, 'not_retryable');
-  // The new row holds the photo now (in Gemini's store, and the browser's resized copy in
-  // import_pictures), so dismissing the old one must not delete it.
+  // The new row holds the photos now (in Gemini's store, and the browser's resized copies in
+  // import_pictures), so dismissing the old one must not delete them.
   await env.DB.batch([
     env.DB.prepare('UPDATE import_pictures SET request_id = ? WHERE request_id = ?').bind(added.id, id),
-    env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', state = json_remove(state, '$.photo'), updated_at = ? WHERE id = ? AND status = 'failed'`).bind(now, id),
+    env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', ${WITHOUT_PHOTOS}, updated_at = ? WHERE id = ? AND status = 'failed'`).bind(now, id),
   ]);
   return startAndRespond(env, userId, added.id, added.attempt);
 }
 
-// A dismissed photo import won't need its picture again, so it is deleted from Gemini's
-// store now rather than after Google's 48 hours, and its resized copy with it.
+// A dismissed photo import won't need its pictures again, so they are deleted from Gemini's
+// store now rather than after Google's 48 hours, and their resized copies with them.
 async function dismissImport(env, userId, id, files = geminiFiles) {
-  const row = await env.DB.prepare(
-    `SELECT json_extract(state, '$.photo') AS photo FROM llm_requests WHERE id = ? AND user_id = ? AND purpose = 'import'`,
-  )
+  const row = await env.DB.prepare(`SELECT state FROM llm_requests WHERE id = ? AND user_id = ? AND purpose = 'import'`)
     .bind(id, userId)
     .first();
   if (!row) return fail(404, 'not_found');
   await env.DB.batch([
-    env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', state = json_remove(state, '$.photo'), updated_at = ? WHERE id = ?`).bind(Date.now(), id),
+    env.DB.prepare(`UPDATE llm_requests SET status = 'dismissed', ${WITHOUT_PHOTOS}, updated_at = ? WHERE id = ?`).bind(Date.now(), id),
     env.DB.prepare('DELETE FROM import_pictures WHERE request_id = ?').bind(id),
   ]);
-  if (row.photo) await files.remove({ env, file: JSON.parse(row.photo) });
+  const photos = photosOf(JSON.parse(row.state)) ?? [];
+  await Promise.all(photos.map((file) => files.remove({ env, file })));
   return json({ ok: true });
 }
 

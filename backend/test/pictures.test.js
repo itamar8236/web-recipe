@@ -226,7 +226,7 @@ describe('a photo import’s picture', () => {
 
   it('moves to a Retry’s new row, and is deleted when the import is dismissed', async () => {
     const testEnv = { ...env, IMPORT_WORKFLOW: { create: async () => ({}) } };
-    const row = await photoImport(dana, { status: 'failed', error: 'llm_error', quota_day: '2099-01-01', state: JSON.stringify({ photo: { name: 'files/x', uri: 'u', mimeType: 'image/jpeg' } }) });
+    const row = await photoImport(dana, { status: 'failed', error: 'llm_error', quota_day: '2099-01-01', state: JSON.stringify({ photos: [{ name: 'files/x', uri: 'u', mimeType: 'image/jpeg' }] }) });
     await sendPicture(`/api/imports/${row.id}/picture`, dana);
     const retried = await call(`/api/imports/${row.id}/retry`, { method: 'POST', body: {}, cookie: dana, env: testEnv });
     expect(retried.status).toBe(202);
@@ -237,6 +237,42 @@ describe('a photo import’s picture', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}')));
     expect((await call(`/api/imports/${card.id}`, { method: 'DELETE', cookie: dana })).status).toBe(200);
     expect(await waiting(card.id)).toBeNull();
+  });
+
+  describe('of several photos', () => {
+    // Each photo's copy a different length, to tell them apart.
+    const copyOf = (position) => new Uint8Array([...JPEG, ...new Uint8Array(position + 1)]);
+    const sendCopy = (id, position) => sendPicture(`/api/imports/${id}/picture?position=${position}`, dana, { full: copyOf(position) });
+    const waitingCount = async (id) => (await env.DB.prepare('SELECT COUNT(*) AS n FROM import_pictures WHERE request_id = ?').bind(id).first()).n;
+
+    it('keeps every copy while the import runs, then the save keeps only the one the model chose', async () => {
+      const row = await photoImport(dana, { stage: 'save', state: JSON.stringify({ recipe: { ...ONE, cover: 2 }, model: 'm', done: ['meta', 'video', 'extract'], version: 2 }) });
+      for (const position of [0, 1, 2]) expect((await sendCopy(row.id, position)).status).toBe(200);
+      expect(await waitingCount(row.id)).toBe(3);
+
+      await runStage(env, row.id, row.attempt, STAGES.find(({ name }) => name === 'save'), { files: { remove: async () => {} } });
+      const after = await env.DB.prepare('SELECT recipe_id, state FROM llm_requests WHERE id = ?').bind(row.id).first();
+      expect(await pictureRow(after.recipe_id)).toMatchObject({ full: copyOf(2).length });
+      expect(await waitingCount(row.id)).toBe(0);
+      expect(JSON.parse(after.state)).toEqual({ cover: 2 });
+    });
+
+    it('takes only the chosen copy when it arrives after the save', async () => {
+      const recipe = await newRecipe(dana);
+      const row = await photoImport(dana, { status: 'done', recipe_id: recipe.id, state: JSON.stringify({ cover: 1 }) });
+      expect((await sendCopy(row.id, 0)).status).toBe(200);
+      expect(await pictureRow(recipe.id)).toBeNull();
+      expect((await sendCopy(row.id, 1)).status).toBe(200);
+      expect(await pictureRow(recipe.id)).toMatchObject({ full: copyOf(1).length });
+      expect(await waitingCount(row.id)).toBe(0);
+    });
+
+    it.each(['7', '-1', 'x', '1.5', '10'])('refuses position %s as picture_invalid', async (position) => {
+      const row = await photoImport(dana);
+      const response = await sendPicture(`/api/imports/${row.id}/picture?position=${position}`, dana);
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe('picture_invalid');
+    });
   });
 
   it('is refused for another user’s import, or an import from a link', async () => {
