@@ -145,6 +145,8 @@ describe('POST /api/translate', () => {
     ['not a recipe', { text: 'hi' }],
     ['a dropped part', { ...HEBREW, steps: [] }],
     ['a dropped name', { ...HEBREW, name: '' }],
+    ['a dropped ingredient', { ...HEBREW, ingredients: HEBREW.ingredients.slice(1) }],
+    ['an extra step', { ...HEBREW, steps: [...HEBREW.steps, 'מגישים'] }],
   ])('answers 502 bad_result for an answer with %s', async (_, output) => {
     const response = await translate({ from: 'en', content: SOURCE }, answering(output));
     expect(response.status).toBe(502);

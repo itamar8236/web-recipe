@@ -366,12 +366,13 @@ export const STAGES = [
 // After the save, the link's picture (a video's thumbnail, a page's preview image) is
 // fetched, resized and saved as the recipe's. It runs as its own Workflow step after the
 // import is done, so a slow or broken image host never delays or fails the recipe: any
-// problem just leaves the recipe without a picture. A re-scan replaces only a picture that
+// problem just leaves the recipe without a picture. The card may already be dismissed by then
+// ("Open recipe" dismisses it), which must not cost the recipe its picture. A re-scan replaces only a picture that
 // came from the link, never one the user chose (savePictureStatement).
 export async function savePictureForImport(env, importId, attempt) {
   const job = await env.DB.prepare(
     `SELECT user_id, recipe_id, json_extract(state, '$.pictureUrls') AS picture_urls
-       FROM llm_requests WHERE id = ? AND attempt = ? AND status = 'done' AND recipe_id IS NOT NULL`,
+       FROM llm_requests WHERE id = ? AND attempt = ? AND status IN ('done', 'dismissed') AND recipe_id IS NOT NULL`,
   )
     .bind(importId, attempt)
     .first();

@@ -98,7 +98,6 @@ const stage = (name) => STAGES.find((s) => s.name === name);
 const today = () => quotaDay(Date.now());
 // The import models, in the order they are tried.
 const [FIRST, SECOND, LAST] = env.LLM_IMPORT_MODELS.split(',');
-const SOON = () => Date.now() + 100000;
 
 const ONE = {
   status: 'one',

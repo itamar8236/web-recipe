@@ -56,8 +56,8 @@ CREATE TABLE IF NOT EXISTS users (
 -- At most one admin, enforced by the database rather than trusted to the backend.
 CREATE UNIQUE INDEX IF NOT EXISTS users_single_admin ON users (is_admin) WHERE is_admin = 1;
 
--- Once the admin exists it stays: a bug or a mistaken tap in the Users screen must not
--- leave the app with nobody able to manage users. To hand over the role, drop these two
+-- Once the admin exists it stays: a bug must not leave the app with nobody able to
+-- manage users. To hand over the role, drop these two
 -- triggers, change the rows, and run this file again to recreate them.
 CREATE TRIGGER IF NOT EXISTS users_admin_not_deleted
 BEFORE DELETE ON users

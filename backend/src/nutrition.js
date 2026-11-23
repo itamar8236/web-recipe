@@ -1,7 +1,7 @@
-// Estimating a recipe's calories and protein per serving from its text, for the edit form.
-// Like a translation: the user waits for the answer, so this is one plain request to the
-// small text models, nothing is stored but its llm_requests row (purpose 'nutrition'), and
-// the edit form saves the numbers with the recipe.
+// Estimating a recipe's calories and protein per serving from its text, for the recipe
+// page's AI tools. Like a translation: the user waits for the answer, so this is one plain
+// request to the small text models, nothing is stored but its llm_requests row (purpose
+// 'nutrition'), and the page saves the numbers with the recipe.
 
 import { readContent } from './data.js';
 import { fail, json, readJson } from './http.js';

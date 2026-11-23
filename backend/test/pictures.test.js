@@ -263,6 +263,15 @@ describe('the import’s picture step', () => {
     expect((await env.DB.prepare('SELECT state FROM llm_requests WHERE id = ?').bind(row.id).first()).state).toBe('{}');
   });
 
+  it('still saves the picture when the ready card was dismissed (opened) first', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jpegResponse()));
+    const recipe = await newRecipe(dana);
+    const row = await finished(recipe.id);
+    expect((await call(`/api/imports/${row.id}`, { method: 'DELETE', cookie: dana })).status).toBe(200);
+    await savePictureForImport(env, row.id, row.attempt);
+    expect(await pictureRow(recipe.id)).toMatchObject({ edited: 0, type: 'image/jpeg' });
+  });
+
   it('keeps a picture the user chose on a re-scan, fetching nothing', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jpegResponse()));
     const recipe = await newRecipe(dana);

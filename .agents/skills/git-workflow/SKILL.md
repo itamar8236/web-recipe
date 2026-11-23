@@ -5,56 +5,33 @@ description: Branch, commit, push and open a PR following this repo's convention
 
 # Git workflow for web-recipe
 
-All work lands in `main` through a Pull Request. This skill is the full workflow.
+All work lands in `main` through a Pull Request. This skill is the workflow;
+[`reference.md`](reference.md) has the details (worktree setup and removal, how the owner
+tests a PR).
 
 ## 1. Start a task
 Every task (every agent session) runs in its **own git worktree**, so parallel sessions
 never edit, build or switch branches in each other's files. Never work in the main
 checkout or directly on `main`.
 
-First check where you are: `git rev-parse --git-dir --git-common-dir` prints two
-different paths inside a worktree and the same path in the main checkout.
+Check where you are: `git rev-parse --git-dir --git-common-dir` prints two different
+paths inside a worktree and the same path in the main checkout.
 
-**Already in a worktree** (the usual case: the desktop app's **Worktree** option, Claude
-Code `--worktree`, Codex): never create a second one. Start your branch here from the
-latest `origin/main` and delete the branch the tool made for the session (e.g.
-`claude/<name>`), so it isn't left behind:
-```bash
-git fetch origin main
-git switch --no-track -c <type>/<short-kebab-description> origin/main
-git branch -d @{-1}
-```
-(`--no-track` keeps the new branch from tracking `main`; `git push -u` sets its own upstream.)
+- **Already in a worktree** (the usual case: the desktop app's **Worktree** option, Claude
+  Code `--worktree`, Codex): never create a second one. Keep the branch the tool made
+  (e.g. `claude/<name>`); just make sure it starts from the latest `origin/main`:
+  `git fetch origin main && git rebase origin/main`.
+- **In the main checkout** (no worktree yet), create one, outside OneDrive
+  (`reference.md` → Set up a new worktree):
+  ```bash
+  git fetch origin main
+  git worktree add -b <type>/<short-kebab-description> <path> origin/main
+  ```
+  Branch name: lowercase, hyphens, ≤ 5 words (e.g. `feat/recipe-import`).
 
-**In the main checkout** (no worktree yet), create one (outside OneDrive is better, see below):
-```bash
-git fetch origin main
-git worktree add -b <type>/<short-kebab-description> <path> origin/main
-cd <path>
-```
-Branch name: lowercase, hyphens, ≤ 5 words (e.g. `feat/recipe-import`, `fix/rtl-ingredients`).
-Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `style`.
-Always branch from a freshly fetched `origin/main`, not from whatever `HEAD` the worktree
-started on. A branch can be checked out in only one worktree at a time.
-
-### Set up a new worktree
-A worktree holds only tracked files:
-- Packages: in Claude Code a `SessionStart` hook (`.claude/hooks/install-deps.mjs`, set in
-  `.claude/settings.json`) runs `npm ci` in `backend/` and `frontend/` when their
-  `node_modules` is missing, so a new session can test at once (the first start takes about
-  a minute). Elsewhere (Codex, `git worktree add`), or if the hook reports a failure, run
-  `npm ci` in both folders yourself before running anything.
-- `backend/.dev.vars` (dev keys) is git-ignored, so it isn't there. Never read or copy it
-  yourself. Claude Code and Codex copy the files listed in `.worktreeinclude` into the
-  worktrees they create; for a worktree made with `git worktree add`, ask the owner to
-  copy it in. Tests don't need it; only real imports do.
-- The local DB (`backend/.wrangler/state`) is per worktree and starts empty: follow the
-  `local-dev` skill (`npm run db:copy-main` in `backend/` copies the main checkout's one).
-- Windows: if `.claude/skills` is a small text file instead of a link, apply the fix in
-  `AGENTS.md` → Agent setup in this worktree.
-- The repo lives in OneDrive, so worktrees inside it (Claude Code's default
-  `.claude/worktrees/`) get each `node_modules` synced too. Prefer a worktree location
-  outside OneDrive (desktop app: Settings → Worktree location; Codex: its own folder).
+Types: `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, `style`. The PR title carries
+the type, whatever the branch is called. A branch can be checked out in only one
+worktree at a time.
 
 ## 2. Commit
 - Stage only files related to the change (`git add <paths>`, avoid `git add -A` blindly).
@@ -71,9 +48,9 @@ A worktree holds only tracked files:
 
 ## 3. Before pushing
 - Update every `.md` file whose content your change affects (`AGENTS.md`,
-  `backend/README.md`, `frontend/README.md`, skills) in the same branch.
+  `backend/README.md`, `backend/IMPORT.md`, `frontend/README.md`, skills) in the same branch.
 - Run lint and tests for each app you touched (`AGENTS.md` → Commands); never push
-  failing checks.
+  failing checks. There is no CI: these are the only checks.
 
 ## 4. Push and open a PR
 ```bash
@@ -86,40 +63,20 @@ PR title = Conventional Commit format. Body:
 ```
 ## Summary
 ## Changes
-## How to test      (owner's steps first: see "Let the owner test it")
+## How to test      (owner's steps first: reference.md → Let the owner test it)
 ## Notes / follow-ups
 ```
-Add screenshots for visible UI changes and `Closes #N` for linked issues. Keep PRs
-small and focused; the branch is deleted after the owner merges.
+Add screenshots for visible UI changes.
+
+**Size**: aim for a PR under ~400 changed lines (tests and docs included). If a feature
+is bigger, split it (for example backend + schema first, then the UI) and say so in the PR.
+
 If the PR breaks anything, say under Notes (and in chat) what the owner must do and
 when relative to merging, and what breaks and for how long (`AGENTS.md` → How to work here).
 
-Never force-push to shared branches, never push to `main`, never merge your own PR
-without the owner's approval.
-
-### Let the owner test it
-The owner tests PRs in their main checkout, which has their packages, `.dev.vars` and
-local DB. A branch can be checked out in only one folder, so the owner checks the PR out
-**detached** (`--detach`): the branch itself stays in your worktree, and you can keep
-committing and pushing to it while they test.
-Start **How to test** in the PR body with the owner's steps, saying only the extra
-setup this PR needs:
-```
-1. `gh pr checkout <number> --detach`
-2. (only if needed) `npm install` in `frontend/` or `backend/`; `npm --prefix backend run db:schema:local`
-3. `npm --prefix frontend run build; if ($?) { npm --prefix backend run dev }`, open http://localhost:8787
-4. When done: Ctrl+C, then `git switch main`
-```
-Running `gh pr checkout <number> --detach` again picks up newer commits. If the owner did
-check the branch out by name, don't wait for them: commit on a detached `HEAD` in your
-worktree and push with `git push origin HEAD:<branch>`.
+Never force-push to shared branches, never push to `main`, and never merge a PR: only
+the owner merges. GitHub deletes the branch after the merge.
 
 ## 5. After the merge
-Remove the worktree (Claude Code and Codex usually do this when the session is closed or
-archived; commit anything you want to keep first):
-```bash
-git worktree list
-git worktree remove <path>      # refuses if it has changes; unlock it first if locked
-git worktree prune              # forgets worktrees whose folder was deleted by hand
-git branch -d <branch>
-```
+Remove the worktree (`reference.md` → Remove a worktree); Claude Code and Codex usually do
+it when the session is closed or archived.
