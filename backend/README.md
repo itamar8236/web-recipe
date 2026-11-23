@@ -426,8 +426,9 @@ endpoint never writes a recipe). It works for any recipe, manual ones too, but n
   3 s), so the user waits a few seconds instead of getting an error at once. Calories and
   substitutes do the same. Only every model staying busy (`model_busy`), out (`quota`), or
   unable to run (`llm_error`) fails.
-- The answer is untrusted: it must pass the same checks as a recipe's text, and must keep
-  each part (name, ingredients, steps) the original had, or it's `bad_result`.
+- The answer is untrusted: it must pass the same checks as a recipe's text, have a name
+  when the original had one, and have exactly as many ingredients and steps, so a dropped
+  or merged line is never saved; otherwise it's `bad_result`.
 
 ## Calories estimate
 

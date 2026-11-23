@@ -9,7 +9,8 @@ Every tracked `.md` file: `AGENTS.md`, `CLAUDE.md`, `backend/README.md`,
 
 **Accuracy** (docs that mislead are the worst kind):
 - Every command in `AGENTS.md` → Commands and in skills exists in a `package.json`.
-- Every file path and markdown link points to something that exists.
+- Every file path and markdown link points to something that exists, and so does every
+  doc pointer in a code comment (`grep -rn "README\|IMPORT.md" backend/src frontend`).
 - `backend/schema.sql` (and `backend/migrations/`) matches `backend/README.md` → Data.
 - Every route in `backend/src/` is in the README's API sections, and the reverse. Same
   for the request/response shapes `frontend/lib/api.js` relies on.
@@ -39,7 +40,7 @@ Every tracked `.md` file: `AGENTS.md`, `CLAUDE.md`, `backend/README.md`,
   run and test it, or what it must never do. Any `backend/src` or `frontend/` area no doc
   points to.
 - Too long: text an agent could read straight from the code, history of how something
-  came to be, finished plans, long examples. Rough limits: `AGENTS.md` ~200 lines (every
+  came to be, finished plans, long examples. Rough limits: `AGENTS.md` ~250 lines (every
   session loads all of it), a README ~400 lines (split by topic past that), a skill
   ~80 lines (details in a `reference.md` beside it).
 - **Code map**: from any feature in "The product" you reach its docs and files in one hop.

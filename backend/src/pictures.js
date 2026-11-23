@@ -97,7 +97,7 @@ async function readCapped(response) {
 }
 
 // The picture's bytes, or null with the reason logged. Redirects are followed by hand and
-// every hop must pass isFetchableUrl, like a web page's (backend/README.md → Web pages).
+// every hop must pass isFetchableUrl, like a web page's (backend/IMPORT.md → Web pages).
 async function fetchPicture(address) {
   let url = new URL(address);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {

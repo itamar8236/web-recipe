@@ -10,7 +10,7 @@ layout, or conventions, update it in the same PR. Never add rules to `CLAUDE.md`
 
 There is no issue tracker, so these lists are how the next agent learns about them. Never
 "fix" an accepted trade-off without asking the owner. **Before changing a feature, read
-the Known gaps of its docs**:
+its area's Known gaps**:
 
 - Imports (links, photos, models, quota, Facebook/Instagram, web pages):
   `backend/IMPORT.md` → Known gaps and accepted trade-offs.
@@ -26,10 +26,6 @@ area's list. One short line each, linking to the section with the details.
 - Production keeps an empty `folders` table and an always-NULL `recipes.folder_id` from
   before tags; dropping them needs a rebuild of recipes (`backend/README.md` → Database). Accepted.
 - Builds made on Windows log harmless prefetch 404s (`frontend/README.md` → Layout). Accepted.
-- Browse shows a recipe the user already saved, and other users' public copies of one
-  recipe, since a copy keeps no link to its original (`backend/README.md` → Browse API). Accepted.
-- `ConfirmDialog` opens with focus on its confirm button, not Cancel (`frontend/README.md` →
-  UX rules).
 - No login rate limit, and a password may be 1 character (`backend/README.md` → Auth API). Accepted.
 - Nothing records which migrations production has applied, and there is no rollback step
   (`backend/README.md` → Database). Accepted.
@@ -40,20 +36,15 @@ area's list. One short line each, linking to the section with the details.
 All of this is built, except what says *may come later*. Each line is the decision; the
 linked section has the details.
 
-- **Users**: up to 50, each with their own tags, recipes and favorites; nobody can change
-  another user's data. Anyone can sign up (username + password) until 50 exist. A login
-  is remembered on the device until the user logs out, and changing one's own username,
-  password or defaults keeps every login (`backend/README.md` → Users and login).
-- **Guest mode** ("Continue as guest"): fully usable, but nothing is read from or written
-  to the database, and it's all gone on reload. Imports, the AI tools and Browse need an
-  account, and the backend refuses them (`frontend/README.md` → Login flow).
+- **Users**: up to 50, each with their own data; nobody can change another user's. Anyone
+  can sign up (username + password) until 50 exist, and a login is remembered on the
+  device until the user logs out (`backend/README.md` → Users and login).
+- **Guest mode**: fully usable, but nothing reaches the database. Imports, the AI tools
+  and Browse need an account, and the backend refuses them (`frontend/README.md` → Login flow).
 - **Admin**: one, set in the database, never by sign-up. In "My account" they can log in
   as any other user with no password, until that device logs out (`backend/README.md` → Auth API).
-- **Recipes**: a name, source link, ingredients and instructions in **both English and
-  Hebrew** (Hebrew right-to-left), optional calories and protein per serving, optional
-  author (who it is by), at most one picture, any number of **tags**, a favorite mark,
-  and public or private. Added, edited and deleted manually, or imported
-  (`backend/README.md` → Tags and recipes API).
+- **Recipes** are stored in **both English and Hebrew**, are public or private, and are
+  added manually or imported (`backend/README.md` → Tags and recipes API).
 - **Tags**: Home filters by tag. Tags are added and removed on the recipe's own page,
   without opening the edit form; a tag no recipe has is deleted by itself; a tag can be renamed.
 - **Deleting** moves a recipe to **Recently deleted** for 30 days, where its owner can
@@ -70,26 +61,22 @@ linked section has the details.
   and sharing a picture into the app, *may come later* (`backend/IMPORT.md` → Import from a photo).
 - **Share to the app** (Android, installed app): sharing a post or page starts the
   import at once and closes the app (`frontend/README.md` → Screens → Share).
-- **Models**: users don't choose a model. An import tries a fixed list of free models in
-  order; a request with no video can end on a text-only fallback from another free
-  provider. The one choice is the **best model**: up to 5 a day per user (the admin has
-  no 5), offered on "Scan the link again" and used first for every photo; when it can't
-  be used, the request goes on with the usual models, with no question. Which model wrote
-  a recipe is stored with it (`backend/IMPORT.md` → Video, models and failures).
+- **Models**: users don't choose a model; an import tries a fixed list of free models in
+  order. The one choice is the **best model**: up to 5 a day per user (the admin has no
+  5), offered on "Scan the link again" and used first for every photo; when it can't be
+  used, the request goes on with the usual models, with no question
+  (`backend/IMPORT.md` → Video, models and failures).
 - **AI tools**, in a box at the bottom of a recipe's page, all shown at once: substitute
   an ingredient (suggestions in a popup, never saved), translate into the other language,
   calculate calories and protein, and, for an imported recipe, scan its link again. The
   edit form has no AI tools (`backend/README.md` → Translation, Calories estimate,
   Ingredient substitutes).
-- **Author**: an import fills it in only when it can tell (a video's channel, from the
-  site; a page's or photo's named author): the model never guesses one
-  (`backend/IMPORT.md` → Author).
-- **Pictures**: filled in by an import (thumbnail, `og:image`, or the photo) or chosen in
-  the edit form. **Never an AI-generated picture of the dish** (`backend/README.md` → Pictures).
+- **Author and picture**: an import fills in the author only when its source names one;
+  the model never guesses one (`backend/IMPORT.md` → Author). A picture comes from the
+  import or the edit form, **never an AI-generated picture of the dish**
+  (`backend/README.md` → Pictures).
 - **Browse**: other users' public recipes in a random order, loading as the user
   scrolls; one tap saves an identical copy as the user's own (`backend/README.md` → Browse API).
-- **Sorting** and **two defaults per user** ("new recipes are public", "a copy brings its
-  tags", both on) are in `frontend/README.md` → Screens.
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not
@@ -145,14 +132,8 @@ Browser
 One Cloudflare Worker  (backend/)
 ├── /api/*   → JSON API (login required) ──► D1 (users, tags, recipes, pictures, imports)
 │                                        ├──► Gemini file store (an uploaded photo, until its import ends)
-│                                        └──► Workflow (import, in the background)
-│                                               ├──► YouTube Data API (video details)
-│                                               ├──► Facebook / Instagram (public post page, video file)
-│                                               ├──► Any other public web page (its text)
-│                                               ├──► Google LLMs (text + video or photo, or a blocked page's address → recipe)
-│                                               ├──► Groq (text-only fallback)
-│                                               ├──► Image hosts (the link's one picture: YouTube thumbnail, og:image)
-│                                               └──► Images binding (resizes that picture)
+│                                        └──► Workflow (import, in the background: the source's
+│                                             site, Gemini, Groq, the Images binding; backend/IMPORT.md)
 └── /*       → static files built from frontend/ (frontend/out)
 ```
 
@@ -194,7 +175,6 @@ after the merge. Nothing records which migrations have been applied (`backend/RE
 ## Commands
 
 Run each from its own folder. Local dev never touches production (`local-dev` skill).
-Agents never use the owner's ports, :8787 and :3000 (`local-dev` → Ports).
 
 | Task           | `backend/`                                   | `frontend/`       |
 |----------------|----------------------------------------------|-------------------|
@@ -221,7 +201,7 @@ push, force-push or deletion). Your local checks are the only gate.
   script run locally spends real quota (`local-dev`). Reading any link's page locally, with
   no model call, needs no OK.
 - Add an API endpoint that skips the login check (only sign-up, login and logout are public).
-- Start a server on :8787 or :3000.
+- Start a server on :8787 or :3000: they're the owner's (`local-dev` → Ports).
 - Run `npm run deploy`, `wrangler deploy`, `wrangler login`, `wrangler secret`, or any
   wrangler command with `--remote`. Run the app only locally.
 - Add a paid service or anything outside the free tiers above.
@@ -262,12 +242,6 @@ Before every push:
     Code sees no skills. One-time fix per clone and per worktree, no admin needed (Git
     Bash, repo or worktree root):
     `rm .claude/skills && cmd //c "mklink /J .claude\skills .agents\skills" && git update-index --skip-worktree .claude/skills`
-  - `git-workflow`: branch, commit, push, open a PR, and how the owner tests it
-  - `new-feature`: feature checklist across backend and frontend
-  - `bug-fix`: reproduce, test, fix, verify
-  - `frontend-ui`: UI work in `frontend/`
-  - `local-dev`: run and test the app against a local copy of the DB, never production
-  - `repo-audit`: the periodic whole-repo audit, only when the owner asks
 - **Worktrees**: one per session; if the session already runs in one, work there and
   never make a second. Setup and removal are in `git-workflow` → reference.md.
 - **Claude Code settings**: `.claude/settings.json` (committed) denies a few `git push`
