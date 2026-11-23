@@ -35,7 +35,7 @@ Local queries: `npx wrangler d1 execute recipes-db --local --command="SELECT ...
 
 ## PR previews share the production database
 Workers Builds runs `wrangler preview` for PR branches, and previews use the same D1
-binding, i.e. **production** (accepted: `AGENTS.md` → Known bugs and accepted trade-offs).
+binding, i.e. **production** (accepted: `backend/README.md` → Database).
 It matters only if a PR would change production data during the build or deploy itself (a
 build step, deploy script or startup code that writes to the database without anyone
 using the preview). Flag that in the PR if your change does it.

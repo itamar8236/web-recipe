@@ -40,8 +40,9 @@ Every tracked `.md` file: `AGENTS.md`, `CLAUDE.md`, `backend/README.md`,
   run and test it, or what it must never do. Any `backend/src` or `frontend/` area no doc
   points to.
 - Too long: text an agent could read straight from the code, history of how something
-  came to be, finished plans, long examples. Rough limits: `AGENTS.md` ~250 lines (every
-  session loads all of it), a README ~400 lines (split by topic past that), a skill
+  came to be, finished plans, long examples. Rough limits: `AGENTS.md` (and `CLAUDE.md`, which imports it)
+  under 200 lines, since every session loads all of it and longer files are followed less
+  well (Anthropic's guidance: <https://code.claude.com/docs/en/memory>), a README ~400 lines (split by topic past that), a skill
   ~80 lines (details in a `reference.md` beside it).
 - **Code map**: from any feature in "The product" you reach its docs and files in one hop.
 

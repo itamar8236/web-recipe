@@ -23,6 +23,24 @@ says. Production is deployed only by merging a PR into `main`, through Workers B
   (see [Database](#database)). It needs the `previews` block in
   `wrangler.jsonc`.
 
+```
+Browser
+   │
+   ▼
+One Cloudflare Worker  (backend/)
+├── /api/*   → JSON API (login required) ──► D1 (users, tags, recipes, pictures, imports)
+│                                        ├──► Gemini file store (an uploaded photo, until its import ends)
+│                                        └──► Workflow (import, in the background)
+│                                               ├──► YouTube Data API (video details)
+│                                               ├──► Facebook / Instagram (public post page, video file)
+│                                               ├──► Any other public web page (its text)
+│                                               ├──► Google LLMs (text + video or photo, or a blocked page's address → recipe)
+│                                               ├──► Groq (text-only fallback)
+│                                               ├──► Image hosts (the link's one picture: YouTube thumbnail, og:image)
+│                                               └──► Images binding (resizes that picture)
+└── /*       → static files built from frontend/ (frontend/out)
+```
+
 Code: `src/index.js` (routes, auth and the daily cron job), `src/data.js` (tags and recipes), `src/deleted.js`
 ("Recently deleted": restoring and the 30-day purge), `src/browse.js`
 (other users' public recipes), `src/pictures.js` (recipes' pictures: the only file that
@@ -61,7 +79,7 @@ starts public, and copying a recipe in Browse copies its tags too. Cookies (both
 `Secure` on https): `device` (random id, kept across logouts) and `session` (random
 secret; only its SHA-256 is stored in `sessions.token_hash`). Login upserts the row for the
 device. There is no login rate limit, and a password may be 1 character: accepted by the
-owner (`AGENTS.md` → Known bugs and accepted trade-offs).
+owner.
 
 **Admin login as a user**: `POST /api/admin/impersonate` sets `sessions.acting_as_user_id`
 on this device's row (the schema's triggers refuse it for anyone but the admin). From then

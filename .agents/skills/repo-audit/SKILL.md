@@ -18,7 +18,7 @@ in [`reference.md`](reference.md).
 - **Evidence or it didn't happen.** Every finding has `file:line`, the fact, the likely
   impact (with your confidence), and a suggested fix. A finding you only inferred, never
   confirmed in code, is at most Warning/Medium.
-- Items in a Known bugs / Known gaps list (`AGENTS.md` → Known bugs and accepted
+- Items in a Known gaps list or marked accepted (`AGENTS.md` → Known bugs and accepted
   trade-offs says where they all are) are known. Report one only if it got worse or its
   linked section is gone. Never "fix" an accepted one.
 - Describe the code **as it is**, not as you think it should be.

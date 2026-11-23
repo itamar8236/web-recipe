@@ -308,6 +308,7 @@ Never fix one without asking the owner.
 - A photo import's picture is made by the browser, so a HEIC photo the browser can't draw
   (most browsers but Safari) gives the recipe no picture (see Screens → Add recipe).
 - `ConfirmDialog` opens with focus on its confirm button, not Cancel (see UX rules).
+- Builds made on Windows log harmless prefetch 404s (see Layout).
 
 ## UX rules
 
