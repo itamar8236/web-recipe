@@ -276,8 +276,14 @@ export async function callModel({ env, model, prompt, schema, videoUrl, videoTyp
     interaction = await waitInBackground({ env, model, id: interaction.id, startedAt, pollMs });
   }
   if (interaction?.status && interaction.status !== 'completed') {
-    const detail = `Gemini answered with status ${interaction.status}`;
+    // Google's own reasons, when it gives them. A background request over the model's quota
+    // isn't refused with a 429: it fails with RESOURCE_EXHAUSTED, which says nothing of a
+    // day or a minute, so it is read as a short limit (the import goes on with other models).
+    const errors = Array.isArray(interaction.errors) ? interaction.errors : [];
+    const reason = errors.length ? `: ${JSON.stringify(errors).slice(0, 500)}` : '';
+    const detail = `Gemini answered with status ${interaction.status}${reason}`;
     console.log(`LLM call failed: model=${model} ${detail}`);
+    if (errors.some((error) => error?.code === 'RESOURCE_EXHAUSTED')) throw new QuotaError({ daily: false, retryDelayMs: DEFAULT_RETRY_DELAY_MS });
     throw new ImportError('llm_error', { retryable: true, detail });
   }
   console.log(`LLM answer: model=${model} in ${Date.now() - startedAt} ms${background ? ' (background)' : ''}, ${usageLine(interaction?.usage)}`);

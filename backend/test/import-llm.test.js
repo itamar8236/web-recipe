@@ -344,6 +344,20 @@ describe('callModel: background mode', () => {
     await expect(background()).rejects.toMatchObject({ code: 'llm_error', retryable: true, detail: 'Gemini answered with status failed' });
   });
 
+  it('logs Google’s reasons for a failed request', async () => {
+    google(running, { id: 'v1_abc', status: 'failed', errors: [{ message: 'Internal', code: 'INTERNAL' }] });
+    await expect(background()).rejects.toMatchObject({ code: 'llm_error', retryable: true, detail: 'Gemini answered with status failed: [{"message":"Internal","code":"INTERNAL"}]' });
+  });
+
+  // What Google really answered (2026-11-23) when the best model's quota was used up.
+  it('reads a request that failed with RESOURCE_EXHAUSTED as a short quota limit', async () => {
+    const exhausted = { message: 'There was a problem processing your request. You will only be charged for tokens successfully generated.', code: 'RESOURCE_EXHAUSTED' };
+    google(running, { id: 'v1_abc', status: 'failed', steps: [], errors: [exhausted] });
+    const error = await background().catch((e) => e);
+    expect(error).toBeInstanceOf(QuotaError);
+    expect(error.daily).toBe(false);
+  });
+
   it('treats a failed check like any failed call', async () => {
     google(running, new Response(JSON.stringify({ error: { message: 'high demand' } }), { status: 503 }));
     await expect(background()).rejects.toBeInstanceOf(ModelBusyError);
