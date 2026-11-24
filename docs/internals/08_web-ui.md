@@ -2,8 +2,9 @@
 
 `frontend/`: a Next.js static export in plain JavaScript and CSS Modules, served by the Worker
 ([Architecture → Static export](./00_architecture.md#static-export)). The `frontend-ui` skill
-has the coding rules. The UI must stay **extremely simple**: few screens, every action in one
-or two taps, clear words on buttons (icons only beside text).
+has the coding rules (widths, tap targets, screen states, RTL, strings); this page keeps the
+decisions behind the screens and the traps. Every action takes one or two taps, and buttons
+carry words (icons only beside text).
 
 ## Data layer
 
@@ -89,11 +90,9 @@ installable. The service worker caches no pages; it only receives shares. Needs 
 
 ## UX rules
 
-- Mobile first: works from ~360px, no horizontal scroll, tap targets ≥ 44px.
-- Every data screen handles loading, empty, error and success: "Loading...", a failed load
-  with its reason and "Try again", a saving button disabled with "Saving...", a failed form
-  kept filled in with the message under it. The favorite heart changes at once and changes
-  back with a message if saving failed.
+- A failed load shows its reason and "Try again"; a failed form stays filled in with the
+  message under it. The favorite heart changes at once and changes back with a message if
+  saving failed.
 - **Confirm with `components/ConfirmDialog`**, never `window.confirm()`: some browsers and
   in-app views block it and it silently returns false.
 - **Swipe back**: wherever a Back link shows (`components/BackLink`), a quick sideways swipe
@@ -107,9 +106,7 @@ installable. The service worker caches no pages; it only receives shares. Needs 
 - The app **always opens in Hebrew**; the choice is not remembered. The header's toggle
   switches the UI and the recipe text shown, and is disabled on the edit page until Save or
   Cancel.
-- Hebrew sets `<html lang="he" dir="rtl">`, so layouts use CSS logical properties
-  (`margin-inline-start`, `text-align: start`). A swipe's direction is mirrored too.
-- Every visible string lives in `lib/i18n.js`, in both languages.
+- Hebrew sets `<html lang="he" dir="rtl">`, and a swipe's direction is mirrored.
 - A recipe with one language empty shows the other with a "not written yet" note.
 
 ## Known gaps and accepted trade-offs
