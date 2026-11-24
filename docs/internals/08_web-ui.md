@@ -127,3 +127,5 @@ installable. The service worker caches no pages; it only receives shares. Needs 
   works (Next falls back to the page's full data file) and production builds on Linux. Don't
   turn off prefetching or rename files to work around it.
 - A HEIC photo the browser can't draw gives the recipe no picture ([Pictures](./07_pictures.md#known-gaps-and-accepted-trade-offs)).
+- The third-language note on a recipe goes by script only, so another language written in
+  Latin letters (Spanish words in the English text) doesn't bring it up.
