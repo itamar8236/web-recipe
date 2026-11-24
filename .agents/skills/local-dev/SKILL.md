@@ -50,7 +50,7 @@ nothing in the main checkout. Run it again to pick up a newer copy (it discards 
 worktree's local test data).
 
 If the main checkout has no local database, or the counts are still 0, stop and ask the
-owner to refresh it (`backend/README.md` → Database → Refreshing the local copy), then run
+owner to refresh it (`docs/operations/00_database.md` → Local copies), then run
 `npm run db:copy-main` again. Continue only when they say it's done, or if they tell you
 to go on with an empty database (then `npm run db:schema:local` and add test data
 through the app).

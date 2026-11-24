@@ -47,8 +47,8 @@ worktree at a time.
 - AI agents end the message with a `Co-Authored-By:` trailer naming the model used.
 
 ## 3. Before pushing
-- Update every `.md` file whose content your change affects (`AGENTS.md`,
-  `backend/README.md`, `backend/IMPORT.md`, `frontend/README.md`, skills) in the same branch.
+- Update every `.md` file your change makes wrong (`AGENTS.md`, `docs/`, the READMEs,
+  skills) in the same branch (`AGENTS.md` → Conventions → Docs).
 - Run lint and tests for each app you touched (`AGENTS.md` → Commands); never push
   failing checks. There is no CI: these are the only checks.
 
