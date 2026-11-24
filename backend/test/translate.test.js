@@ -153,11 +153,12 @@ describe('POST /api/translate', () => {
     expect((await response.json()).error).toBe('bad_result');
   });
 
-  it('answers 503 model_busy and gives the request back when its model is busy', async () => {
+  it('answers 503 model_busy when its model stays busy, keeping each try counted', async () => {
     const response = await translate({ from: 'en', content: SOURCE }, answering(new ModelBusyError('busy')));
     expect(response.status).toBe(503);
     expect((await response.json()).error).toBe('model_busy');
-    expect(await usage(SMALL)).toBe(0);
+    // The first try and one after each wait in LLM_BUSY_RETRY_MS.
+    expect(await usage(SMALL)).toBe(3);
     expect((await translationRows())[0]).toMatchObject({ status: 'failed', error: 'model_busy', model: null });
   });
 

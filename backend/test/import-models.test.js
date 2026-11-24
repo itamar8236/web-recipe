@@ -25,7 +25,7 @@ const REQUEST = { prompt: 'p', schema: {}, videoUrl: null };
 const bare429 = () => new QuotaError({ daily: false, retryDelayMs: 1 });
 const daily429 = () => new QuotaError({ daily: true, retryDelayMs: 1 });
 const busy = () => new ModelBusyError('Gemini 503: high demand');
-const cutOff = () => new ModelBusyError('Gemini 524: error code: 524', { counted: true });
+const cutOff = () => new ModelBusyError('Gemini 524: error code: 524');
 const unusable = () => new ModelUnusableError('Gemini 404: models/x is not found');
 
 const setUsage = (model, calls, day = today()) =>
@@ -171,11 +171,11 @@ describe('an import: the models are tried in order, and nobody is asked', () => 
     expect(modelsUsed(llm)).toEqual([SECOND]);
   });
 
-  it('moves on from a busy model at once, giving its request back to the count', async () => {
+  it('moves on from a busy model at once, keeping its request counted', async () => {
     const llm = answering(busy(), ANSWER);
     expect(await run(await newJob(await insertUser()), llm)).toEqual({ output: ANSWER, model: SECOND });
     expect(modelsUsed(llm)).toEqual([FIRST, SECOND]);
-    expect(await usage(FIRST)).toBe(0);
+    expect(await usage(FIRST)).toBe(1);
     expect(await usage(SECOND)).toBe(1);
   });
 
@@ -200,11 +200,12 @@ describe('an import: the models are tried in order, and nobody is asked', () => 
     expect(modelsUsed(llm)).toEqual([FIRST, LAST]);
   });
 
-  it('reports busy when every model was busy, for the Workflow to wait, with nothing counted', async () => {
+  // Google counts a 503 against the day's quota (seen in AI Studio, 2026-11), so the app does too.
+  it('reports busy when every model was busy, for the Workflow to wait, keeping each request counted', async () => {
     const llm = answering(busy());
     await expect(run(await newJob(await insertUser()), llm)).rejects.toBeInstanceOf(ModelBusyError);
     expect(modelsUsed(llm)).toEqual(IMPORT);
-    for (const model of IMPORT) expect(await usage(model)).toBe(0);
+    for (const model of IMPORT) expect(await usage(model)).toBe(1);
   });
 
   it('reports busy, not quota, when some models are out and the rest are busy', async () => {
@@ -320,7 +321,7 @@ describe('when the user asked for the best model', () => {
     expect(await run(job, llm)).toEqual({ output: ANSWER, model: FIRST });
     expect(modelsUsed(llm)).toEqual([BEST, FIRST]);
     expect(llm.mock.calls[1][0].background).toBeUndefined();
-    expect(await usage(BEST)).toBe(0);
+    expect(await usage(BEST)).toBe(1);
     expect((await reload(job)).used_best).toBe(1);
   });
 

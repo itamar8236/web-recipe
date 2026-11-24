@@ -68,14 +68,13 @@ export class ModelUnusableError extends Error {
 
 // Google said the model is overloaded (503). That lasts minutes or more, longer than the
 // quick Workflow retries, so the request moves on to the next model (models.js), and when
-// every model is busy the Workflow waits and tries again (workflow.js). `counted` says
-// Google ran the request anyway (a 524), so it stays in the day's count.
+// every model is busy the Workflow waits and tries again (workflow.js). Google counts the
+// request against the day's quota all the same, so it stays in the app's count too.
 export class ModelBusyError extends Error {
-  constructor(detail, { counted = false } = {}) {
+  constructor(detail) {
     super('model_busy');
     this.name = 'ModelBusyError';
     this.detail = detail;
-    this.counted = counted;
   }
 }
 
@@ -191,8 +190,7 @@ function failureFrom(status, text, { model, media }) {
   // Cloudflare's own answer, not Google's: Google sent nothing back for about 100 s, the
   // longest Cloudflare waits. A slow model does that on most videos, and trying it again
   // would only wait again, so the request moves on to the next model, like a busy one.
-  // Google still ran it, so it stays counted.
-  if (status === 524) return new ModelBusyError(detail, { counted: true });
+  if (status === 524) return new ModelBusyError(detail);
   // A rejected request won't get better by itself, so only a server error is tried again.
   if (status >= 500) return new ImportError('llm_error', { retryable: true, detail });
   // Without a video the request is only our prompt and schema, so a 4xx is about the model.

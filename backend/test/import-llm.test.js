@@ -185,16 +185,11 @@ describe('callModel: failures', () => {
   });
 
   // Cloudflare's answer when Google sent nothing back for about 100 s, as plain text.
-  it('reports a 524 as the model being busy, but counted, so the next model is tried', async () => {
+  it('reports a 524 as the model being busy, so the next model is tried', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('error code: 524', { status: 524 })));
     const error = await call({ videoUrl: VIDEO }).catch((e) => e);
     expect(error).toBeInstanceOf(ModelBusyError);
-    expect(error).toMatchObject({ counted: true, detail: 'Gemini 524: error code: 524' });
-  });
-
-  it('does not mark a 503 as counted', async () => {
-    respond({ error: { message: 'high demand' } }, 503);
-    expect(await call().catch((e) => e)).toMatchObject({ counted: false });
+    expect(error).toMatchObject({ detail: 'Gemini 524: error code: 524' });
   });
 
   it('gives up on a request that takes too long, so a retry never overlaps it', async () => {
