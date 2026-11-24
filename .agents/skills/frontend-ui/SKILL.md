@@ -5,15 +5,15 @@ description: Guidance for building or changing UI in web-recipe's frontend/ (Nex
 
 # Frontend UI work in web-recipe
 
-Read `frontend/README.md` first (screens, UX rules, bilingual, API client). Match existing
+Read `docs/internals/08_web-ui.md` first (data layer, screens' rules, traps, bilingual). Match existing
 components before inventing new ones. The app must stay extremely simple to use.
 
 ## Rules
 - Plain JavaScript and CSS Modules. No TypeScript, UI kits, or CSS frameworks.
-- Static export: no server components that fetch, no API routes, no dynamic route
-  segments. Pass ids as query params (`/recipe?id=12`) and fetch on the client.
-- Data only through `lib/api.js` (same-origin requests, so the session cookie is sent);
-  never `fetch` inside components. The login screen is shown by `Shell`, not a `/login` route.
+- Static export: ids go in the query string and pages fetch on the client
+  (`docs/internals/00_architecture.md` → Static export).
+- Data only through `lib/api.js` (`08_web-ui.md` → Data layer); never `fetch` inside
+  components. The login screen is shown by `Shell`, not a `/login` route.
 - Visible text only from `lib/i18n.js`, in both English and Hebrew.
 - Use CSS logical properties (`margin-inline-start`, `text-align: start`) so Hebrew RTL
   works; colors and spacing come from the CSS variables in `styles/globals.css`.

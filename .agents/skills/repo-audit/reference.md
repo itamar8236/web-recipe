@@ -4,30 +4,34 @@ The checklists for the `repo-audit` skill ([`SKILL.md`](SKILL.md)).
 
 ## Part A: docs
 
-Every tracked `.md` file: `AGENTS.md`, `CLAUDE.md`, `backend/README.md`,
-`backend/IMPORT.md`, `frontend/README.md`, and every `.agents/skills/*/*.md`.
+Every tracked `.md` file: `AGENTS.md`, `CLAUDE.md`, everything in `docs/` (index:
+`docs/README.md`), `backend/README.md`, `frontend/README.md`, and every
+`.agents/skills/*/*.md`. What belongs in a doc is `AGENTS.md` → Conventions → Docs: a
+missing file list, field catalog or config value is never a finding.
 
 **Accuracy** (docs that mislead are the worst kind):
 - Every command in `AGENTS.md` → Commands and in skills exists in a `package.json`.
 - Every file path and markdown link points to something that exists, and so does every
-  doc pointer in a code comment (`grep -rn "README\|IMPORT.md" backend/src frontend`).
-- `backend/schema.sql` (and `backend/migrations/`) matches `backend/README.md` → Data.
-- Every route in `backend/src/` is in the README's API sections, and the reverse. Same
-  for the request/response shapes `frontend/lib/api.js` relies on.
-- Model names and order, daily limits (`LLM_*` vars in `backend/wrangler.jsonc`), the
-  best model's 5 a day per user, the 50-user cap and the supported platforms match
-  between the docs and the code.
+  doc pointer in a code comment (`grep -rn "docs/\|README" backend/src frontend`).
+- What `docs/internals/02_data.md` says about tables and their rules matches
+  `backend/schema.sql` and `backend/migrations/`.
+- Every route in `backend/src/` is in `docs/internals/01_api.md`, and the reverse. Same
+  for the request/response shapes and error codes `frontend/lib/api.js` relies on.
+- Every number or name a doc still states (the best model's 5 a day per user, the
+  50-user cap, the supported platforms, setting names) matches the code. Model names,
+  order and daily limits live only in `backend/wrangler.jsonc`: a doc that copies them is
+  a finding.
 - Bindings, compatibility flags, secrets and env var names match `wrangler.jsonc` and
   `.dev.vars.example`.
-- Screens, components and `lib/api.js` exports in `frontend/README.md` exist in
-  `frontend/app`, `frontend/components` and `frontend/lib`, and the reverse.
+- Every file, screen or component a doc names still exists.
 - Each Known bugs / Known gaps line still links to a real section that still describes it.
 
 **Freshness**:
 - Code changed recently (step 1) but its doc didn't.
 - Overview sections still describe the code as it is.
 - TODO, "planned", "for now", "not built yet", "a later feature" text that is now done
-  or dead; dated test logs and PR history ("is unchanged", "from an older page").
+  or dead; dated test logs and PR history ("is unchanged", "from an older page"); text
+  appended after the old text it contradicts instead of replacing it.
 
 **Coherence**:
 - `CLAUDE.md` is still only `@AGENTS.md`; no rules there.
@@ -45,13 +49,14 @@ Every tracked `.md` file: `AGENTS.md`, `CLAUDE.md`, `backend/README.md`,
     all of it, and longer files are followed less well (Anthropic's guidance:
     <https://code.claude.com/docs/en/memory>). A fact that matters only to one area
     belongs in that area's docs, not there.
-  - A README: ~400 lines (split by topic past that).
+  - A `docs/` page: ~400 lines (split by topic past that). A package README: a few lines
+    pointing to `docs/`.
   - A skill: ~80 lines (details in a `reference.md` beside it).
 - **Code map**: from any feature in "The product" you reach its docs and files in one hop.
 
 ## Part B: architecture and end to end
 
-Read `AGENTS.md`, both READMEs and `backend/IMPORT.md`, then trace each journey through
+Read `AGENTS.md` and `docs/` (in `docs/README.md`'s order), then trace each journey through
 the real code: frontend → `frontend/lib/api.js` → `backend/src/index.js` → D1 / Workflow
 → LLM → back to the screen.
 
