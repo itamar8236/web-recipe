@@ -156,7 +156,12 @@ by a fixed path, because the layout differs between a reel page and a watch page
   (`og:title`/`og:description`) as a caption-only import.
 - This was built and tested from a home connection. Cloudflare's network may be answered
   differently (a login wall or a block), which shows as `login_required` or
-  `source_blocked` with the reason in `error_detail` and in the logs. Meta can also change
+  `source_blocked` with the reason in `error_detail` and in the logs. From there Instagram
+  shows a public post's login wall only some of the time (seen 2026-11-24: one reel failed
+  several Retries, then imported), so an Instagram login wall (a redirect to its login
+  page, the login page itself, or a post shown only after a login) is tried again after the
+  busy waits ([Video, models and failures](#video-models-and-failures)), 4 tries over about 11 minutes. A post that really
+  needs a login fails only after those waits. Meta can also change
   its pages at any time; `scripts/e2e-links.mjs` is the check.
 
 ## Import from a photo
@@ -342,7 +347,7 @@ in `error_detail` (never sent to the browser).
 | Case | Code | Automatic retry | User can Retry |
 |---|---|---|---|
 | Removed or private, or the video couldn't be used and nothing else had the recipe; a web page that answered 404/410 | `video_unavailable` | no | no |
-| The site redirected to a login page, or shows the post only after a login | `login_required` | no | yes |
+| The site redirected to a login page, or shows the post only after a login | `login_required` | no (Instagram: the busy waits below) | yes |
 | The site answered 5xx (or 403/429 for Facebook and Instagram), or sent a page with none of the known parts | `source_blocked` | yes, 3 tries | yes |
 | A web page turned away the Worker (403/429) and Google couldn't open it either | `source_blocked` | no | yes |
 | A share link led to a recipe the user already has | `already_imported` | no | no |
@@ -377,7 +382,9 @@ instead: back off and retry, short at first and longer after. The stage ends wit
 failing, and the Workflow sleeps (`step.sleep`) **30 seconds, then 2 minutes, then 8
 minutes** before each new run, so 4 runs in all, each starting again from the first model
 (and from the best model, when the user asked for it); still busy after that, it fails with
-`llm_error`. The card shows the import as still running meanwhile. Every busy answer's
+`llm_error`. The card shows the import as still running meanwhile. Instagram's login wall
+gets the same waits ([Facebook and Instagram](#facebook-and-instagram)), and fails with
+`login_required` after the last one. Every busy answer's
 request is given back to the shared count.
 
 No wait has jitter: there are too few users for their retries to pile up, and a Workflow
@@ -439,6 +446,8 @@ Never fix one without asking the owner. Accepted:
   Meta may block or change this at any time ([Facebook and Instagram](#facebook-and-instagram)).
   From Cloudflare's network a Facebook share link may be sent to the login page; that works
   only when the login page names the video. Facebook photo and text posts aren't supported.
+  An Instagram post that really needs a login (an age limit) fails only after about 11
+  minutes of waits, since its login wall looks like the one that comes and goes.
 - A photo import's Retry works only for 48 hours, while Google keeps the uploaded pictures;
   then it fails with `photo_expired` and the user chooses the photos again.
 - Photos share the best model's 20 a day with re-scans, so on a busy day most photo imports

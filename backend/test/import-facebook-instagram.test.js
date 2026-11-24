@@ -167,11 +167,18 @@ describe('stage: meta, for a post', () => {
     });
   });
 
-  it('fails permanently with login_required when the site wants a login', async () => {
+  it('leaves an Instagram login wall to the Workflow’s waits, with the reason kept on the row', async () => {
     stubFetch(async () => new Response(null, { status: 302, headers: { location: 'https://www.instagram.com/accounts/login/' } }));
     const row = await instagramImport(await insertUser());
-    await expectFailure(run(row, 'meta'), row, 'login_required');
+    expect(await run(row, 'meta')).toEqual({ busy: true });
+    expect(await reload(row)).toMatchObject({ status: 'running', error: 'login_required' });
     expect((await reload(row)).error_detail).toContain('accounts/login');
+  });
+
+  it('fails permanently with login_required when Facebook wants a login', async () => {
+    stubFetch(async () => new Response(null, { status: 302, headers: { location: 'https://www.facebook.com/login/' } }));
+    const row = await insertImport(await insertUser(), { platform: 'facebook', source_id: FB_ID, source_url: FB_WATCH, quota_day: today() });
+    await expectFailure(run(row, 'meta'), row, 'login_required');
   });
 
   it('leaves a block to the Workflow retries, with the reason kept on the row', async () => {
@@ -741,12 +748,24 @@ describe('the Workflow, end to end, for Facebook and Instagram', () => {
     expect(usage.calls).toBe(3);
   });
 
-  it('fails with a clear code, calling no model, when the site wants a login', async () => {
+  it('reads an Instagram post that showed a login wall at first, after a wait', async () => {
+    const login = new Response(null, { status: 302, headers: { location: 'https://www.instagram.com/accounts/login/' } });
+    let pageRequests = 0;
+    fakeWorld({ page: instagramReelPage() });
+    const world = fetch.getMockImplementation();
+    stubFetch(async (url, options) => (String(url) === IG_POST && ++pageRequests <= 2 ? login.clone() : world(url, options)));
+    const row = await instagramImport(await insertUser());
+    await runWorkflow(row);
+    expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null });
+    expect(pageRequests).toBe(3);
+  });
+
+  it('tries an Instagram login wall four times, then fails with login_required, calling no model', async () => {
     stubFetch(async () => new Response(null, { status: 302, headers: { location: 'https://www.instagram.com/accounts/login/' } }));
     const row = await instagramImport(await insertUser());
     await runWorkflow(row);
     expect(await reload(row)).toMatchObject({ status: 'failed', error: 'login_required' });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(4);
   });
 
   it('tries a blocked site three times, then fails with source_blocked', async () => {
