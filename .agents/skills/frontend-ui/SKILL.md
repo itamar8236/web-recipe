@@ -5,7 +5,7 @@ description: Guidance for building or changing UI in web-recipe's frontend/ (Nex
 
 # Frontend UI work in web-recipe
 
-Read `frontend/README.md` first (screens, UX rules, bilingual, API client). Match existing
+Read `docs/internals/08_web-ui.md` first (data layer, screens' rules, UX rules, bilingual). Match existing
 components before inventing new ones. The app must stay extremely simple to use.
 
 ## Rules

@@ -6,18 +6,11 @@ there.
 
 ## Known bugs and accepted trade-offs
 
-There is no issue tracker, so each area's docs list its known bugs and the trade-offs the
-owner accepted. **Read them before changing that area, and never "fix" an accepted one
-without asking the owner**:
-
-- Imports (links, photos, models, quota, sites): `backend/IMPORT.md` → Known gaps and
-  accepted trade-offs.
-- Pictures: `backend/README.md` → Pictures → Known gaps and accepted trade-offs.
-- Database, previews and login: `backend/README.md` → Database and Auth API.
-- Screens and builds: `frontend/README.md` → Known gaps and accepted trade-offs.
-
-Add a line to that list in the same PR when you find a bug you don't fix or the owner
-accepts a trade-off, and remove it when it's resolved.
+There is no issue tracker, so each `docs/internals/` page ends with its area's **Known
+gaps and accepted trade-offs** (index: `docs/README.md`; previews are in
+`docs/operations/01_deploy.md`). **Read them before changing that area, and never "fix" an
+accepted one without asking the owner**. Add a line in the same PR when you find a bug you
+don't fix or the owner accepts a trade-off, and remove it when it's resolved.
 
 ## The product
 
@@ -26,13 +19,13 @@ All of this is built, except what says *may come later*; the linked sections hav
 
 - **Users**: up to 50, each with their own data; nobody can change another user's. Anyone
   can sign up (username + password) until 50 exist, and a login is remembered on the
-  device until the user logs out (`backend/README.md` → Users and login).
+  device until the user logs out (`docs/internals/03_auth.md`).
 - **Guest mode**: fully usable, but nothing reaches the database. Imports, the AI tools
-  and Browse need an account, and the backend refuses them (`frontend/README.md` → Login flow).
+  and Browse need an account, and the backend refuses them (`docs/internals/03_auth.md` → Guests).
 - **Admin**: one, set in the database, never by sign-up. In "My account" they can log in
-  as any other user with no password, until that device logs out (`backend/README.md` → Auth API).
+  as any other user with no password, until that device logs out (`docs/internals/03_auth.md` → Admin login as a user).
 - **Recipes** are stored in **both English and Hebrew**, are public or private, and are
-  added manually or imported (`backend/README.md` → Tags and recipes API).
+  added manually or imported (`docs/internals/02_data.md`).
 - **Tags**: Home filters by tag; tags are added and removed on the recipe's own page,
   without opening the edit form.
 - **Deleting** moves a recipe to **Recently deleted**, where its owner can restore it
@@ -40,26 +33,26 @@ All of this is built, except what says *may come later*; the linked sections hav
 - **Import from a link**: YouTube, Facebook (videos and reels), Instagram (reels, and
   photo posts by their caption), public posts only, and any other public **web page**.
   It runs in the background and saves the recipe by itself, with no tags. Other platforms
-  (TikTok, ...) *may come later*: don't build for them until asked (`backend/IMPORT.md`).
+  (TikTok, ...) *may come later*: don't build for them until asked (`docs/internals/04_import.md`).
 - **Import from photos**: 1 to 7 pictures of **one written** recipe (its pages, and maybe
   the dish), read together in one model request; photos of different recipes fail, and a
   photo of food with no recipe text gives no recipe, since the model never guesses one. Of
   several photos, the one the model says best shows the dish becomes the recipe's picture.
-  The originals are deleted when the import ends (`backend/IMPORT.md` → Import from a photo).
+  The originals are deleted when the import ends (`docs/internals/04_import.md` → Import from photos).
 - **Share to the app** (Android, installed app): sharing a post, a page, or 1 to 7 photos
-  from the gallery starts the import at once and closes the app (`frontend/README.md` →
-  Screens → Share).
+  from the gallery starts the import at once and closes the app (`docs/internals/08_web-ui.md` →
+  Share).
 - **Models**: users don't choose one; an import tries a fixed list of free models. The one
   choice is the **best model**: 5 a day per user (the admin has no 5), on "Scan the link
   again" and first for every photo; when it can't be used, the usual models go on with no
-  question (`backend/IMPORT.md` → Video, models and failures).
+  question (`docs/internals/05_models.md`).
 - **AI tools**, all in one box on a recipe's page, never in the edit form: substitute an
   ingredient (never saved), translate, calculate calories and protein, and scan the link
-  again (`backend/README.md` → Translation, Calories estimate, Ingredient substitutes).
-- **Author and picture**: the model never guesses an author (`backend/IMPORT.md` →
-  Author), and a picture is **never an AI-generated picture of the dish** (`backend/README.md` → Pictures).
+  again (`docs/internals/06_ai-tools.md`).
+- **Author and picture**: the model never guesses an author (`docs/internals/04_import.md` →
+  Author), and a picture is **never an AI-generated picture of the dish** (`docs/internals/07_pictures.md`).
 - **Browse**: other users' public recipes in a random order, loading as the user
-  scrolls; one tap saves an identical copy as the user's own (`backend/README.md` → Browse API).
+  scrolls; one tap saves an identical copy as the user's own (`docs/internals/02_data.md` → Browse).
 - The UI must be **extremely simple**: few screens, big obvious buttons, no learning curve.
 
 ### What this project is not
@@ -81,7 +74,7 @@ All of this is built, except what says *may come later*; the linked sections hav
   and in the PR what breaks and what the owner must do when (`git-workflow` → Push and open a PR).
 - **Ask when unsure.** If a requirement is ambiguous, ask the owner instead of guessing.
 - **Flag contradictions.** If a prompt seems to contradict an `.md` file (this file, a
-  README, or a skill), stop and ask whoever gave the prompt which one is right: change
+  doc, or a skill), stop and ask whoever gave the prompt which one is right: change
   the request, or update the doc.
 - **Owner-only actions**: running a migration or `schema.sql` on production, `npm run
   db:pull`, `wrangler login`, Worker secrets, merging PRs, and GitHub and Cloudflare
@@ -95,8 +88,8 @@ All of this is built, except what says *may come later*; the linked sections hav
 | Backend   | Cloudflare Worker, plain JavaScript (ES modules)   | Workers runtime with **no `nodejs_compat`**: web APIs only, never `node:*` modules; no web framework |
 | Database  | Cloudflare D1 (serverless SQLite)                  |                                                    |
 | Background jobs | Cloudflare Workflows; one daily Cron Trigger | Workflows for imports; the cron purges deleted recipes; both free |
-| Images    | Cloudflare Images binding (free plan)              | Resizes a link import's picture (`backend/README.md` → Pictures) |
-| LLM       | Gemini free tier; Groq free tier as a text-only fallback | Models and limits in `backend/wrangler.jsonc` (`backend/IMPORT.md` → Video, models and failures) |
+| Images    | Cloudflare Images binding (free plan)              | Resizes a link import's picture (`docs/internals/07_pictures.md`) |
+| LLM       | Gemini free tier; Groq free tier as a text-only fallback | Models and limits in `backend/wrangler.jsonc` (`docs/internals/05_models.md`) |
 | Auth      | Built in, stored in D1                             | PBKDF2 (WebCrypto)                                 |
 | Hosting   | Cloudflare Workers free plan, deployed from GitHub | Workers Builds deploys on every merge to `main`    |
 
@@ -107,14 +100,13 @@ Adding a framework, language, paid service, or major dependency needs the owner'
 - **One deployable, one origin.** The Worker serves the API and the frontend's static
   build, so there is no CORS or cross-domain auth in production.
 - **Frontend and backend are separate projects**, each with its own `package.json` and
-  README, sharing no code and talking only over the HTTP API (the backend serves `frontend/out`).
+  short README, sharing no code and talking only over the HTTP API (`docs/internals/01_api.md`).
 
-The request flow and the full file lists are in `backend/README.md` → Overview and
-`frontend/README.md` → Layout.
+How it all works is in `docs/` (`docs/README.md` is the index, in reading order).
 
 ```
 .
-├── backend/              # Cloudflare Worker (README.md: data, API, auth; IMPORT.md: the import)
+├── backend/              # Cloudflare Worker
 │   ├── src/index.js      # Router, login check, the daily cron job
 │   ├── src/import/       # The import Workflow, models, and one adapter per source
 │   ├── schema.sql        # Every table, the source of truth for a new database
@@ -123,13 +115,14 @@ The request flow and the full file lists are in `backend/README.md` → Overview
 │   ├── app/              # The screens
 │   ├── lib/api.js        # The only data layer: the backend, or memory for a guest
 │   └── lib/i18n.js       # Every UI string, in English and Hebrew
+├── docs/                 # internals/ (how and why, known gaps), operations/ (runbooks)
 ├── .agents/skills/       # Shared agent skills (source of truth)
 └── .claude/              # Claude Code settings and hooks (Agent setup below)
 ```
 
 **Schema changes**: a change to an existing table needs, besides `schema.sql`, a one-off
 file in `backend/migrations/` that the owner runs; the PR says whether before or after
-the merge (`backend/README.md` → Database).
+the merge (`docs/internals/02_data.md` → Schema changes).
 
 ## Commands
 
@@ -154,7 +147,7 @@ push, force-push or deletion). Your local checks are the only gate.
 - Commit secrets, or read/print `.env` or `.dev.vars`. Commit `.dev.vars.example` /
   `.env.example` with placeholder values instead.
 - Import code across `backend/` and `frontend/`.
-- Call the LLM from the frontend. API keys exist only in the Worker (`backend/README.md` → Secrets).
+- Call the LLM from the frontend. API keys exist only in the Worker (`docs/internals/00_architecture.md` → Secrets).
 - Call a model (Gemini, Groq) without the owner's OK in the chat: a real import, AI tool or
   script run locally spends real quota (`local-dev`). Reading any link's page locally, with
   no model call, needs no OK.
@@ -171,10 +164,12 @@ push, force-push or deletion). Your local checks are the only gate.
 - Validate all input in the backend; never trust the client.
 - Write tests with every feature and bug fix (a failing test first for bugs). Backend
   changes always get simple tests: a few clear cases per endpoint, run on the local DB.
-- **Docs move with the code.** Every feature or bug fix updates, in the same PR, every
-  `.md` file whose content it changes (this file, the READMEs, `backend/IMPORT.md`,
-  skills), and removes docs that became wrong. **One fact, one file**: link to the section
-  that holds a fact instead of restating it, so it never goes stale in a second place.
+- **Docs** (`docs/README.md` says what goes where): keep only what code can't show:
+  decisions and their why, rules that span files, traps, the HTTP contract
+  (`01_api.md`, change it with every route or shape) and known gaps. No file lists, field
+  or function catalogs, config values (link `wrangler.jsonc`), UI descriptions, or dated
+  test logs (those go in the PR). When a change makes a doc wrong, rewrite or delete that
+  text in the same PR; don't append. **One fact, one file**: link, don't restate.
 - Git: one task = one session = one **git worktree** (if the session already runs in
   one, never make a second) on a branch from an up-to-date `origin/main`. Use
   Conventional Commits and PR into `main`. Full steps in the `git-workflow` skill.

@@ -13,11 +13,11 @@ description: Steps for fixing a bug in web-recipe - reproduce, write a failing t
    simple Vitest test in `backend/` too (local D1, never production).
 4. **Smallest fix**: change only what the bug needs. No refactors or unrelated cleanups;
    mention anything else you noticed in the PR's "Notes / follow-ups", and add real bugs
-   you leave unfixed to the Known gaps list of their area (`AGENTS.md` → Known bugs and
-   accepted trade-offs says which).
+   you leave unfixed to the Known gaps list of their area's `docs/internals/` page
+   (`AGENTS.md` → Known bugs and accepted trade-offs).
 5. **Verify**: the new test passes, lint and the app's tests pass, and for UI bugs the
    behavior is correct in the browser (phone + desktop, English + Hebrew if relevant),
    running against the local DB (`local-dev`).
 6. **Document**: if the fix changes behavior, the API, schema, or commands, update the
-   matching `.md` files (`AGENTS.md`, `backend/README.md`, `backend/IMPORT.md`, `frontend/README.md`, skills).
+   matching `.md` files (`AGENTS.md`, `docs/`, the READMEs, skills; `AGENTS.md` → Conventions → Docs).
 7. **Ship**: commit `fix(<scope>): ...` and open a PR describing cause and fix.

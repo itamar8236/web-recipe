@@ -1,7 +1,7 @@
 // Any other web page, such as a recipe site's article. It is the last adapter: a link on
 // YouTube, Facebook or Instagram never gets here. Unlike the other adapters, the page has
 // no id to rebuild a link from, so the pasted link itself is fetched, which is why every
-// hop is checked by `isFetchableUrl` (backend/IMPORT.md → Web pages). Everything that
+// hop is checked by `isFetchableUrl` (docs/internals/04_import.md → Web pages). Everything that
 // comes back is untrusted data, read as text only; nothing on the page is followed, except
 // its one preview image (og:image), which the picture step fetches with the same checks. A page
 // that turns the Worker away is left for the model to open with Google's URL tool.
