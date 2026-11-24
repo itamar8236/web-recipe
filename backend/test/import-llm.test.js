@@ -185,16 +185,11 @@ describe('callModel: failures', () => {
   });
 
   // Cloudflare's answer when Google sent nothing back for about 100 s, as plain text.
-  it('reports a 524 as the model being busy, but counted, so the next model is tried', async () => {
+  it('reports a 524 as the model being busy, so the next model is tried', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('error code: 524', { status: 524 })));
     const error = await call({ videoUrl: VIDEO }).catch((e) => e);
     expect(error).toBeInstanceOf(ModelBusyError);
-    expect(error).toMatchObject({ counted: true, detail: 'Gemini 524: error code: 524' });
-  });
-
-  it('does not mark a 503 as counted', async () => {
-    respond({ error: { message: 'high demand' } }, 503);
-    expect(await call().catch((e) => e)).toMatchObject({ counted: false });
+    expect(error).toMatchObject({ detail: 'Gemini 524: error code: 524' });
   });
 
   it('gives up on a request that takes too long, so a retry never overlaps it', async () => {
@@ -262,6 +257,19 @@ describe('callModel: 429', () => {
   it('recognises a daily limit named elsewhere in a violation', async () => {
     quotaResponse([quotaFailure({ quotaMetric: 'generativelanguage.googleapis.com/generate_requests_PerDay' })]);
     expect((await quotaError()).daily).toBe(true);
+  });
+
+  // The shape Google answered with in production from 2026-11, with no details at all.
+  it('recognises a daily limit named only in the message', async () => {
+    const message =
+      'Rate limit exceeded for model gemini-3.8-flash (limit: 20 requests per day on Free Tier). Please retry in 10h46m37s or upgrade your tier at https://ai.dev/rate-limit.';
+    respond({ error: { message, code: 'too_many_requests' } }, 429);
+    expect((await quotaError()).daily).toBe(true);
+  });
+
+  it('does not call a per-minute limit named only in the message daily', async () => {
+    respond({ error: { message: 'Rate limit exceeded for model gemini-3.8-flash (limit: 5 requests per minute on Free Tier).', code: 'too_many_requests' } }, 429);
+    expect((await quotaError()).daily).toBe(false);
   });
 
   it('does not call a per-minute limit daily', async () => {

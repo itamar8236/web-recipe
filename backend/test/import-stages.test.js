@@ -932,7 +932,7 @@ describe('the Workflow, end to end', () => {
     expect(await reload(row)).toMatchObject({ status: 'done', error: null, error_detail: null, used_best: 0, model: SECOND });
     expect(sentModels()).toEqual([FIRST, SECOND]);
     expect(await savedModel(row)).toBe(SECOND);
-    expect(await totalCounted()).toBe(1);
+    expect(await totalCounted()).toBe(2);
   });
 
   // What failed in production: a slow model on a video, cut off by Cloudflare after ~100 s.
@@ -957,7 +957,7 @@ describe('the Workflow, end to end', () => {
     expect(await savedModel(row)).toBe(FIRST);
   });
 
-  it('waits longer each time while every model stays busy, then fails with llm_error, with nothing counted', async () => {
+  it('waits longer each time while every model stays busy, then fails with llm_error, keeping every busy request counted', async () => {
     const busy = { error: { code: 503, message: 'This model is currently experiencing high demand.' } };
     fakeGoogle({ gemini: () => jsonResponse(busy, 503) });
     const row = await newImport();
@@ -971,7 +971,7 @@ describe('the Workflow, end to end', () => {
     });
     // Four runs of the stage (the first, then one after each of the three waits).
     expect(sentModels()).toEqual([FIRST, SECOND, LAST, FIRST, SECOND, LAST, FIRST, SECOND, LAST, FIRST, SECOND, LAST]);
-    expect(await totalCounted()).toBe(0);
+    expect(await totalCounted()).toBe(12);
   });
 
   it('keeps quick retries on the same model for other errors', async () => {

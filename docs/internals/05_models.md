@@ -51,18 +51,21 @@ Daily quotas reset at **midnight Pacific** (`nextQuotaReset`). Google can't be a
 many requests are left, so `llm_usage` counts them: every real call first reserves one, in
 one atomic statement, up to the model's limit.
 
-- A failed call still counts, because Google may have counted it, **except** a 503, a short
-  rate limit or a model that can't run: Google says a 503 is "unrelated to your quota", and
-  a rejected request is never served, so it is given back to the shared count (never to the
-  user's best-model tries). If Google counts them anyway, its per-day 429 sets the count right.
-- A 429 naming a per-day quota sets the model's count to the limit, which keeps it unused
-  until the reset. Any other 429 (per minute) is treated like a busy model; nothing is
-  remembered.
+- A failed call still counts, because Google may have counted it, **except** a 429 or a
+  model that can't run: a rejected request is never served, so it is given back to the
+  shared count (never to the user's best-model tries).
+- A busy model's request (503, 524) **stays counted**. Google says a 503 is "unrelated to
+  your quota", but it counts it: on 2026-11-23 `gemini-3.8-flash` was sent 26 requests that
+  weren't refused with a 429, all 503s, and AI Studio counted 26 against its 20 a day.
+- A 429 naming a per-day quota, in its details or only in its message ("20 requests per
+  day"), sets the model's count to the limit, which keeps it unused until the reset; Google
+  may have counted requests the app didn't make. Any other 429 (per minute) is treated like
+  a busy model; nothing is remembered.
 
 ## Busy models
 
-A busy model (503, "high demand") costs nothing: the request moves on to the next model in
-the same run. Only when **every** model it could use was busy is the request busy.
+A busy model (503, "high demand") costs no time: the request moves on to the next model in
+the same run. It does cost one of the model's daily requests ([Quota](#quota)). Only when **every** model it could use was busy is the request busy.
 
 - **Imports**: busy can last minutes or hours, so the stage skips the Workflow's quick
   retries and follows Google's advice to back off: it ends without failing and the Workflow
@@ -105,6 +108,10 @@ logs the same way. Where to read the logs: [Deploy → Logs](../operations/01_de
 ## Known gaps and accepted trade-offs
 
 - The free-tier quota is small and shared by all users.
+- A busy model is tried again by every new import and after every busy wait, and each 503
+  uses one of its daily requests. On a day of high demand the stronger models can use up
+  their 20 on 503s alone, so imports end on the small model. The owner chose this over
+  resting a busy model for a while.
 - Photo imports share the best model's daily requests with re-scans, so on a busy day most
   photo imports use the usual models.
 - When every import model is out for the day, a new import is refused with `quota` before

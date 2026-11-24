@@ -183,10 +183,10 @@ async function callUnlessOut({ env, llm, model, request }) {
   try {
     return { output: await llm({ env, model, ...request }) };
   } catch (error) {
-    // Google says a 503 is unrelated to quota, and a rejected request is never served, so
-    // the request is given back to the shared count. If Google counted it after all, its
-    // per-day 429 sets the count right.
-    if ((error instanceof ModelBusyError && !error.counted) || error instanceof ModelUnusableError) await releaseCall(env, model, day);
+    // A rejected request (a model that can't run, a 429) is never served or counted, so it
+    // is given back to the shared count. A busy one (503, 524) stays counted: Google counts
+    // a 503 against the day's quota even though it says otherwise (AI Studio, 2026-11).
+    if (error instanceof ModelUnusableError) await releaseCall(env, model, day);
     if (!(error instanceof QuotaError)) throw error;
     if (error.daily) {
       await markModelOutForTheDay(env, model, limit, Date.now());

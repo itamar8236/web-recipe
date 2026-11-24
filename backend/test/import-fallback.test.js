@@ -72,7 +72,7 @@ describe('the fallback model in the model policy', () => {
     expect(fallbackLlm).toHaveBeenCalledTimes(1);
     expect(fallbackLlm.mock.calls[0][0]).toMatchObject({ model: FALLBACK, prompt: 'p' });
     expect(await usage(FALLBACK)).toBe(1);
-    for (const model of IMPORT) expect(await usage(model)).toBe(0);
+    for (const model of IMPORT) expect(await usage(model)).toBe(1);
   });
 
   it('answers when every import model is out for the day', async () => {
@@ -110,7 +110,7 @@ describe('the fallback model in the model policy', () => {
     const error = await ask(await newJob(), { env: withKey, llm: answering(busy()), fallbackLlm: answering(new ModelBusyError('Groq 503')) }).catch((e) => e);
     expect(error).toBeInstanceOf(ModelBusyError);
     expect(error.detail).toBe('Gemini 503: high demand');
-    expect(await usage(FALLBACK)).toBe(0);
+    expect(await usage(FALLBACK)).toBe(1);
   });
 
   it('reports busy, not the fallback’s failure, when the fallback can’t run', async () => {
