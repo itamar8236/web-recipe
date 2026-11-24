@@ -105,6 +105,10 @@
   font-size: 16px;
 }
 
+.noticeText {
+  margin: 0 0 10px;
+}
+
 .card {
   padding: 16px 18px;
   border: 1px solid var(--line);

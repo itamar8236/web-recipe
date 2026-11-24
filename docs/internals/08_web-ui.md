@@ -108,6 +108,11 @@ installable. The service worker caches no pages; it only receives shares. Needs 
   Cancel.
 - Hebrew sets `<html lang="he" dir="rtl">`, and a swipe's direction is mirrored.
 - A recipe with one language empty shows the other with a "not written yet" note.
+- A model sometimes slips a third language into a recipe (Russian words in Hebrew text). When
+  the shown text has a letter outside the Latin and Hebrew scripts, a note at the top of the
+  recipe (logged-in users only, since the fixes are AI tools) suggests switching to the other
+  language and translating from it, offered only when that version exists and is clean, and
+  scanning the link again, offered only for an imported recipe. With neither, no note.
 
 ## Known gaps and accepted trade-offs
 

@@ -12,11 +12,12 @@ import RecipeAiTools from '@/components/RecipeAiTools';
 import RecipePicture from '@/components/RecipePicture';
 import RecipeTags from '@/components/RecipeTags';
 import { errorMessage, pickLanguage } from '@/lib/i18n';
+import { hasForeignScript } from '@/lib/foreignScript';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
 
 function RecipeView() {
-  const { lang, t } = useLanguage();
+  const { lang, setLang, t } = useLanguage();
   const router = useRouter();
   const id = Number(useSearchParams().get('id'));
   const [recipe, setRecipe] = useState(undefined); // undefined = loading, null = missing
@@ -83,6 +84,12 @@ function RecipeView() {
   // Recipe text may be in the other language than the UI, so set direction on the text itself.
   const contentLang = content.translated ? lang : lang === 'en' ? 'he' : 'en';
   const contentDir = contentLang === 'he' ? 'rtl' : 'ltr';
+  // When the shown text has letters of a third language, point to the AI tools that fix it:
+  // translating from the other version (only if it exists and is clean) or scanning the link
+  // again. Both need an account, so a guest never sees this.
+  const otherLang = lang === 'en' ? 'he' : 'en';
+  const canTranslateFromOther = content.translated && recipe[otherLang].name && !hasForeignScript(recipe[otherLang]);
+  const showForeignNotice = loggedIn && hasForeignScript(content) && (canTranslateFromOther || recipe.link);
 
   async function remove() {
     setConfirmingDelete(false);
@@ -118,6 +125,21 @@ function RecipeView() {
       <BackLink className={styles.back}>
         <span aria-hidden="true" className={styles.arrow}>←</span> {t.back}
       </BackLink>
+
+      {showForeignNotice && (
+        <div className={styles.notice} role="note">
+          <p className={styles.noticeText}>
+            {t.foreignText}{' '}
+            {canTranslateFromOther ? t.foreignTranslate : t.foreignRescanOnly}
+            {canTranslateFromOther && recipe.link && ` ${t.foreignRescan}`}
+          </p>
+          {canTranslateFromOther && (
+            <button type="button" className="button secondary" onClick={() => setLang(otherLang)}>
+              {t.switchToOther}
+            </button>
+          )}
+        </div>
+      )}
 
       <header className={styles.head} lang={contentLang} dir={contentDir}>
         <div className={styles.titleRow}>
