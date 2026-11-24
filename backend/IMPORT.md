@@ -335,9 +335,11 @@ way to ask how many requests are left, so `llm_usage` counts them: every real ca
 reserves one, in one atomic statement, up to the model's limit in `LLM_DAILY_LIMITS`. A
 failed call still counts, because Google may have counted it, except a 503, a short rate
 limit, or a model that can't run: Google says a 503 is "unrelated to your quota", and a
-rejected request is never served, so its request is given back to this shared count (not to the user's 5, see above). Some users report Google counts them anyway;
-if so, Google's per-day 429 below sets the count right. A 429 naming a per-day quota sets
-the model's count to the limit, which alone keeps it unused until the reset. Any other 429
+rejected request is never served, so its request is given back to this shared count (not to the user's 5, see above). Google counts a 503 anyway: on 2026-11-23
+`gemini-3.8-flash` was sent 26 requests that weren't refused with a 429, all 503s, and AI
+Studio counted 26 against its 20 a day. Google's per-day 429 below sets the count right. A
+429 naming a per-day quota, in its details or only in its message ("20 requests per day"),
+sets the model's count to the limit, which alone keeps it unused until the reset. Any other 429
 (a per-minute limit) is treated like a busy model; nothing is remembered, so the next
 request simply tries. In every case the request moves to the next model at once.
 
@@ -375,8 +377,8 @@ Photos are refused before any row exists, so these answer the POST and never sho
 Each stage may take 15 minutes; a Gemini request is cancelled after 14, so a retry never
 overlaps a call that is still running (video calls have taken over 5 minutes).
 
-A busy model (503, "high demand") costs nothing: the stage moves on to the next model in
-the same run. Only when **every** model it could use was busy does the stage end as busy.
+A busy model (503, "high demand") costs no time: the stage moves on to the next model in
+the same run, but Google still counts the request (see Quota). Only when **every** model it could use was busy does the stage end as busy.
 That can last minutes or hours, so it skips the quick retries and follows Google's advice
 instead: back off and retry, short at first and longer after. The stage ends without
 failing, and the Workflow sleeps (`step.sleep`) **30 seconds, then 2 minutes, then 8
@@ -385,7 +387,7 @@ minutes** before each new run, so 4 runs in all, each starting again from the fi
 `llm_error`. The card shows the import as still running meanwhile. Instagram's login wall
 gets the same waits ([Facebook and Instagram](#facebook-and-instagram)), and fails with
 `login_required` after the last one. Every busy answer's
-request is given back to the shared count.
+request is given back to the shared count, though Google counts it.
 
 No wait has jitter: there are too few users for their retries to pile up, and a Workflow
 must sleep the same on every replay. Google's Batch API is not used: its results can take
@@ -438,6 +440,13 @@ Never fix one without asking the owner. Accepted:
   (`photo_upload_failed`): previews have no Gemini key, so test photos locally.
 - The free-tier model quota is shared by all users: 20 requests a day on each stronger
   model, 500 on the small one.
+
+Known bug, not fixed yet:
+
+- Google counts a busy model's 503 against its 20 a day, but the app gives the request back
+  and tries the model again on every busy wait. On a day of high demand the stronger models
+  use up their 20 on 503s alone (2026-11-23: 26 requests to `gemini-3.8-flash`, none
+  answered), so imports end on `gemini-3.5-flash-lite`.
 - Web pages are read as plain text, as an anonymous visitor: a site that builds its page
   only in JavaScript fails with `no_recipe`, and one that blocks the Worker (403/429) is
   opened by Google instead, failing with `source_blocked` only when Google is blocked too

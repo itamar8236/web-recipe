@@ -86,7 +86,8 @@ function retryDelayFrom(details) {
 }
 
 // Google doesn't reliably say which limit was hit: some 429s name a per-day quota in
-// their details, others say nothing.
+// their details, some only in their message ("20 requests per day", with no details,
+// seen 2026-11), others say nothing.
 function quotaErrorFrom(text) {
   let body = {};
   try {
@@ -95,7 +96,8 @@ function quotaErrorFrom(text) {
     // A 429 without a JSON body is treated like a bare one.
   }
   const details = Array.isArray(body?.error?.details) ? body.error.details : [];
-  return new QuotaError({ daily: JSON.stringify(details).includes('PerDay'), retryDelayMs: retryDelayFrom(details) });
+  const daily = JSON.stringify(details).includes('PerDay') || /per day/i.test(String(body?.error?.message ?? ''));
+  return new QuotaError({ daily, retryDelayMs: retryDelayFrom(details) });
 }
 
 // A photo of a recipe is mostly small print, so it is read at high resolution, which

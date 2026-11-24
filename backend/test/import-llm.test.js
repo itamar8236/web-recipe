@@ -264,6 +264,19 @@ describe('callModel: 429', () => {
     expect((await quotaError()).daily).toBe(true);
   });
 
+  // The shape Google answered with in production from 2026-11, with no details at all.
+  it('recognises a daily limit named only in the message', async () => {
+    const message =
+      'Rate limit exceeded for model gemini-3.8-flash (limit: 20 requests per day on Free Tier). Please retry in 10h46m37s or upgrade your tier at https://ai.dev/rate-limit.';
+    respond({ error: { message, code: 'too_many_requests' } }, 429);
+    expect((await quotaError()).daily).toBe(true);
+  });
+
+  it('does not call a per-minute limit named only in the message daily', async () => {
+    respond({ error: { message: 'Rate limit exceeded for model gemini-3.8-flash (limit: 5 requests per minute on Free Tier).', code: 'too_many_requests' } }, 429);
+    expect((await quotaError()).daily).toBe(false);
+  });
+
   it('does not call a per-minute limit daily', async () => {
     quotaResponse([quotaFailure({ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' })]);
     expect((await quotaError()).daily).toBe(false);
