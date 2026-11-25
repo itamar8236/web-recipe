@@ -44,6 +44,10 @@ What each screen shows is in its component; these are the decisions behind them.
   would overwrite text or numbers. "Scan the link again" asks first (it replaces edits) and
   holds the only model choice, "Use the best model", ticked while `models.bestAvailable`.
   Calories and protein carry a note that AI calculated them.
+  The ½×–3× buttons over the ingredients multiply their amounts on screen only, for everyone
+  including guests, and are never saved. It is code (`lib/scale.js`), not a model: instant,
+  free and the same every time, and a wrong line is easy to spot and fix in your head. Only
+  the ingredients change; the steps keep the recipe's own amounts.
 - **Edit** writes one language at a time, the app's current one; the other is kept as is.
   The author and the calories and protein are the same in both languages. Public/private and
   the picture only change the form until Save. No AI tools here, so it stays a plain form.
@@ -129,3 +133,11 @@ installable. The service worker caches no pages; it only receives shares. Needs 
 - A HEIC photo the browser can't draw gives the recipe no picture ([Pictures](./07_pictures.md#known-gaps-and-accepted-trade-offs)).
 - The third-language note on a recipe goes by script only, so another language written in
   Latin letters (Spanish words in the English text) doesn't bring it up.
+- Multiplying the amounts is a best effort on free text, so some lines come out wrong:
+  - Nouns that aren't units stay singular ("2 cucumber"); only units and eggs change form.
+  - An amount in words in the middle of a line isn't multiplied ("juice of one lemon", "מיץ
+    מחצי לימון", "פחות כף"). Words are read only at the start of a line or a bracket.
+  - Every other number in the line is multiplied, also the odd one that isn't an amount
+    ("makes 16 rolls", "250ml measuring cup"); percents, temperatures, times and sizes after
+    the first amount (cm, inch) are kept.
+  - A Hebrew number word becomes digits ("שתי כוסות" ×2 → "4 כוסות").
