@@ -153,8 +153,13 @@ export async function resize(env, bytes) {
   return { full, thumb, type: 'image/jpeg' };
 }
 
+// The Images binding's "too large or too busy" (9529). It comes for small pictures too, and
+// passes, so it is the one error worth trying again.
+const IMAGES_BUSY = /\b9529\b/;
+
 // The first of a link's picture addresses that can be fetched and resized, as
-// { full, thumb, type }, or null. Never throws: a recipe without a picture is fine.
+// { full, thumb, type }, or null: a recipe without a picture is fine. Throws only when the
+// Images service is busy, so the import's picture step can try again a little later.
 // Used by the import's picture step, and reusable by a backfill.
 export async function pictureForLink(env, addresses) {
   for (const address of addresses ?? []) {
@@ -162,6 +167,7 @@ export async function pictureForLink(env, addresses) {
       const bytes = await fetchPicture(address);
       if (bytes) return await resize(env, bytes);
     } catch (error) {
+      if (IMAGES_BUSY.test(error.message)) throw error;
       skip(`${error.name}: ${error.message}`);
     }
   }
