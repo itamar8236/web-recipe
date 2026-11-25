@@ -31,7 +31,9 @@ fetches the first that works, resizes it, saves it and clears `state`.
   `redirect: 'manual'`, `isFetchableUrl` at every hop, image types only (never SVG), a size
   cap and a timeout.
 - **A picture never fails an import**: anything that goes wrong is logged and the recipe stays
-  without one.
+  without one. The one exception is the Images binding's error 9529 ("too large or too
+  busy"), which comes for small pictures too and passes: the step throws it, so the
+  Workflow tries the picture once more a little later.
 - **Resizing is done by Cloudflare's Images binding** (`env.IMAGES`, also under `previews`),
   since the Worker can't decode an image within its CPU time. Free plan: 5,000
   transformations a month, 2 per import; past that it fails (error 9422, never a bill) and the

@@ -335,4 +335,16 @@ describe('the import’s picture step', () => {
     expect(await pictureRow(recipe.id)).toBeNull();
     expect((await env.DB.prepare('SELECT status FROM llm_requests WHERE id = ?').bind(row.id).first()).status).toBe('done');
   });
+
+  it('throws when the Images service is busy, keeping the address for the step’s retry', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jpegResponse()));
+    const busy = new Error('IMAGES_TRANSFORM_ERROR 9529: The image is too large to process or the service is too busy');
+    const busyEnv = { ...env, IMAGES: { info: async () => { throw busy; } } };
+    const recipe = await newRecipe(dana);
+    const row = await finished(recipe.id);
+    await expect(savePictureForImport(busyEnv, row.id, row.attempt)).rejects.toThrow('9529');
+    expect(await pictureRow(recipe.id)).toBeNull();
+    await savePictureForImport(env, row.id, row.attempt);
+    expect(await pictureRow(recipe.id)).toMatchObject({ edited: 0, type: 'image/jpeg' });
+  });
 });
