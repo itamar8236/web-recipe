@@ -31,3 +31,27 @@ export async function takeSharedPhotos() {
   await caches.delete(SHARED_PHOTOS_CACHE);
   return photos;
 }
+
+// The link that shares a public recipe: it opens Browse with the recipe's name already in
+// the search, so the recipe shows up for whoever opens it. Browse lists only public recipes,
+// so there is no link for a private one.
+export function recipeShareLink(origin, name) {
+  return `${origin}/browse?q=${encodeURIComponent(name)}`;
+}
+
+// A phone gets its share sheet (WhatsApp, messages...); a computer gets the link copied,
+// since a desktop's share dialog is rarely where people send links from. Returns 'shared',
+// 'cancelled' (the user closed the sheet) or 'copied'; throws when copying failed.
+export async function shareLink({ title, text, url }, nav = navigator, touch = matchMedia('(pointer: coarse)').matches) {
+  if (touch && nav.share) {
+    try {
+      await nav.share({ title, text, url });
+      return 'shared';
+    } catch (err) {
+      if (err?.name === 'AbortError') return 'cancelled';
+      // Some in-app browsers refuse to share: copying still works there.
+    }
+  }
+  await nav.clipboard.writeText(url);
+  return 'copied';
+}

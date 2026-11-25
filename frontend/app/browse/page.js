@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import BackLink from '@/components/BackLink';
 import BrowseCard from '@/components/BrowseCard';
 import ModeTabs from '@/components/ModeTabs';
@@ -16,7 +17,8 @@ import styles from './browse.module.css';
 // Other users' public recipes, in a random order (or the one picked in the sort menu), a page at a time: the next page loads
 // when the end of the list comes near the screen (and "Show more" does the same by hand).
 // Search filters the loaded recipes; while few match, the end stays near the screen, so
-// more pages keep loading until enough match or there are no more.
+// more pages keep loading until enough match or there are no more. A shared recipe's link
+// (`?q=<its name>`) opens with that name in the search, so the recipe shows up.
 function BrowseFeed() {
   const { t } = useLanguage();
   // null until the first load picks one, so nothing random runs while the page is built.
@@ -25,7 +27,7 @@ function BrowseFeed() {
   const [next, setNext] = useState(undefined); // undefined = first page not loaded, null = no more
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(useSearchParams().get('q') ?? '');
   const [sort, setSort] = useState('random');
   const latest = useRef(0); // the newest request; an older one's answer is dropped
   const sentinel = useRef(null);
@@ -167,7 +169,9 @@ export default function BrowsePage() {
 
   return (
     <ModeTabs current="browse">
-      <BrowseFeed />
+      <Suspense fallback={null}>
+        <BrowseFeed />
+      </Suspense>
     </ModeTabs>
   );
 }

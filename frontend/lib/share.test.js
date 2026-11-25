@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { findSharedLink, takeSharedPhotos } from './share';
+import { findSharedLink, recipeShareLink, shareLink, takeSharedPhotos } from './share';
 
 describe('findSharedLink', () => {
   it('finds the link that Android puts in the text', () => {
@@ -62,5 +62,50 @@ describe('takeSharedPhotos', () => {
   it('returns no photos when none were shared', async () => {
     vi.stubGlobal('caches', fakeCaches([]));
     expect(await takeSharedPhotos()).toEqual([]);
+  });
+});
+
+describe('recipeShareLink', () => {
+  it('opens Browse with the name in the search', () => {
+    expect(recipeShareLink('https://app.example', 'Pasta & beans')).toBe('https://app.example/browse?q=Pasta%20%26%20beans');
+  });
+
+  it('keeps a Hebrew name readable after decoding', () => {
+    const link = new URL(recipeShareLink('https://app.example', 'עוגת שוקולד'));
+    expect(link.searchParams.get('q')).toBe('עוגת שוקולד');
+  });
+});
+
+describe('shareLink', () => {
+  const item = { title: 'Pasta', text: 'A recipe for you: Pasta', url: 'https://app.example/browse?q=Pasta' };
+  const clipboard = () => ({ writeText: vi.fn().mockResolvedValue() });
+
+  it('opens the share sheet on a phone', async () => {
+    const nav = { share: vi.fn().mockResolvedValue(), clipboard: clipboard() };
+    expect(await shareLink(item, nav, true)).toBe('shared');
+    expect(nav.share).toHaveBeenCalledWith(item);
+    expect(nav.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('does nothing more when the user closes the sheet', async () => {
+    const nav = { share: vi.fn().mockRejectedValue(Object.assign(new Error('x'), { name: 'AbortError' })), clipboard: clipboard() };
+    expect(await shareLink(item, nav, true)).toBe('cancelled');
+    expect(nav.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('copies the link when sharing is refused', async () => {
+    const nav = { share: vi.fn().mockRejectedValue(Object.assign(new Error('x'), { name: 'NotAllowedError' })), clipboard: clipboard() };
+    expect(await shareLink(item, nav, true)).toBe('copied');
+    expect(nav.clipboard.writeText).toHaveBeenCalledWith(item.url);
+  });
+
+  it('copies the link on a computer, even with a share dialog', async () => {
+    const nav = { share: vi.fn(), clipboard: clipboard() };
+    expect(await shareLink(item, nav, false)).toBe('copied');
+    expect(nav.share).not.toHaveBeenCalled();
+  });
+
+  it('throws when the link cannot be copied', async () => {
+    await expect(shareLink(item, {}, false)).rejects.toThrow();
   });
 });
