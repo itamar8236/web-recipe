@@ -1,13 +1,15 @@
 // Loads a `wrangler d1 export` dump into the local database (or the one under `persistTo`).
-// `wrangler d1 execute` refuses any statement over 100 KB, and a row of recipe_pictures or
-// import_pictures holds a picture that, written out as hex, is far bigger. So those rows
+// `wrangler d1 execute` refuses any statement over 100 KB, and a row of any *_pictures table
+// (recipe_pictures, import_pictures, deleted_recipe_pictures, ...) holds a picture that,
+// written out as hex, is far bigger. Matching the suffix keeps a new picture table from
+// breaking the load. So those rows
 // are left out of the file wrangler runs and inserted afterwards with their bytes as bound
 // values, through wrangler's local D1.
 import { execSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { getPlatformProxy } from 'wrangler';
 
-const PICTURE_ROW = /^INSERT INTO "(recipe_pictures|import_pictures)" /;
+const PICTURE_ROW = /^INSERT INTO "[a-z_]*pictures" /;
 const HEX = /X'([0-9a-fA-F]*)'/g;
 
 function run(command) {
