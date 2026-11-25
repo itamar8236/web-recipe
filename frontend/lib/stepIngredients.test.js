@@ -116,6 +116,17 @@ describe('stepIngredients', () => {
     expect(stepIngredients(ingredients, ['מערבבים את הגבינה.'])).toEqual([[]]);
   });
 
+  it('reads a Hebrew word joined with "and" as the next ingredient, not part of the name', () => {
+    const ingredients = ['חלמון ביצה אחד', '1/4 כפית מלח', '397 גרם חלב מרוכז ממותק', '60 מ"ל סירופ גולדן', '200 גרם סוכר חום בהיר'];
+    const steps = ['מוסיפים את החלמון והמלח.', 'שמים חלב מרוכז וסירופ גולדן.', 'מוסיפים סוכר חום.'];
+    expect(stepIngredients(ingredients, steps)).toEqual([[0, 1], [2, 3], [4]]);
+  });
+
+  it('shows nothing for a name two lines share, such as butter for the base and for the caramel', () => {
+    const ingredients = ['225 גרם חמאה (לבסיס)', '100 גרם סוכר דק', '115 גרם חמאה (לקרמל)', '200 גרם סוכר חום'];
+    expect(stepIngredients(ingredients, ['טורפים חמאה וסוכר.'])).toEqual([[]]);
+  });
+
   it('gives no matches when the recipe has letters other than English or Hebrew', () => {
     expect(stepIngredients(['2 eggs', '1 كوب سكر'], ['Add the eggs.'])).toEqual([[]]);
     expect(stepIngredients(['2 eggs'], ['Add the eggs 鸡蛋.'])).toEqual([[]]);

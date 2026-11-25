@@ -122,6 +122,26 @@
   font-size: 21px;
 }
 
+/* The steps' title with the toggle beside it, wrapping under it on a narrow phone. */
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 10px;
+}
+
+.card .cardHead h2 {
+  margin-bottom: 0;
+}
+
+.stepToggle {
+  min-height: 44px;
+  padding-inline: 14px;
+  font-size: 16px;
+}
+
 .ingredients {
   margin: 0;
   padding-inline-start: 24px;

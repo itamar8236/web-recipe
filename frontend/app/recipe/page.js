@@ -32,6 +32,8 @@ function RecipeView() {
   // page only says which it is.
   const loggedIn = useAuth().status === 'user';
   const [error, setError] = useState('');
+  // Off by default (the owner's call): the chips are a guess, so the user asks for them.
+  const [showStepIngredients, setShowStepIngredients] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +94,7 @@ function RecipeView() {
   const canTranslateFromOther = content.translated && recipe[otherLang].name && !hasForeignScript(recipe[otherLang]);
   const showForeignNotice = loggedIn && hasForeignScript(content) && (canTranslateFromOther || recipe.link);
   const ingredientsPerStep = stepIngredients(content.ingredients, content.steps);
+  const anyStepIngredients = ingredientsPerStep.some((lines) => lines.length > 0);
 
   async function remove() {
     setConfirmingDelete(false);
@@ -192,13 +195,20 @@ function RecipeView() {
       </section>
 
       <section className={styles.card}>
-        <h2>{t.instructions}</h2>
+        <div className={styles.cardHead}>
+          <h2>{t.instructions}</h2>
+          {anyStepIngredients && (
+            <button type="button" className={`button secondary ${styles.stepToggle}`} onClick={() => setShowStepIngredients(!showStepIngredients)}>
+              {showStepIngredients ? t.hideStepIngredients : t.showStepIngredients}
+            </button>
+          )}
+        </div>
         <ol className={styles.steps} lang={contentLang} dir={contentDir}>
           {content.steps.map((step, i) => (
             <li key={i}>
               <div className={styles.stepBody}>
                 {step}
-                {ingredientsPerStep[i].length > 0 && (
+                {showStepIngredients && ingredientsPerStep[i].length > 0 && (
                   <ul className={styles.stepIngredients} aria-label={t.stepIngredients}>
                     {ingredientsPerStep[i].map((index) => <li key={index}>{content.ingredients[index]}</li>)}
                   </ul>

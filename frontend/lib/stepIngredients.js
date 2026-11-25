@@ -37,6 +37,7 @@ const HEBREW_NOISE = new Set(`
   טחון טחונה טחונים כתוש כתושה כתושים קלוף קלופה קלופים
   יבש יבשה יבשים מיובש מיובשת מיובשים דק דקה דקים גס גסה
   מבושל מבושלת מבושלים שלם שלמה שלמים להגשה לקישוט לציפוי אופציונלי רצוי
+  אחד אחת שטוח שטוחה גדוש גדושה בהיר בהירה ממותק ממותקת
 `.split(/\s+/).filter(Boolean));
 
 // The last English word or first Hebrew word ("olive oil", "שמן זית") is what a step often
@@ -172,7 +173,9 @@ function vocabularyOf(ingredients) {
   return new Set([...listWords, ...LIQUID_WORDS]);
 }
 
-function linesInPhrase(phrase, names, vocabulary, lines) {
+function linesInPhrase(text, names, vocabulary, lines) {
+  const raw = words(text);
+  const phrase = raw.map(forms);
   const taken = phrase.map(() => false);
   const matches = [];
   // Longest names first, and each step word counts once, so "brown sugar" is never also "sugar".
@@ -185,9 +188,13 @@ function linesInPhrase(phrase, names, vocabulary, lines) {
   }
   // A food word right next to the match ("bell" peppers, "pasta water", פלפל "חריף") means
   // the step speaks of something else.
-  const isOther = (index, name) => [...(phrase[index] ?? [])].some((form) => !name.words.includes(form) && (LIQUID_WORDS.includes(form) || (!taken[index] && vocabulary.has(form))));
+  // A Hebrew word joined with "and" (חמאה "וסוכר") starts the next ingredient instead; one
+  // whose ו is its own letter (וניל) is a word of the list as it stands.
+  const startsWithAnd = (index) => raw[index]?.startsWith('ו') && !vocabulary.has(stem(raw[index]));
+  const isOther = (index, name) => !startsWithAnd(index) && [...(phrase[index] ?? [])].some((form) => !name.words.includes(form) && (LIQUID_WORDS.includes(form) || (!taken[index] && vocabulary.has(form))));
   for (const { name, start } of matches) {
-    if (!isOther(start - 1, name) && !isOther(start + name.words.length, name)) lines.add(name.line);
+    const joinedToPrevious = raw[start].startsWith('ו') && !name.words.includes(stem(raw[start]));
+    if ((joinedToPrevious || !isOther(start - 1, name)) && !isOther(start + name.words.length, name)) lines.add(name.line);
   }
 }
 
@@ -195,7 +202,7 @@ function linesInStep(step, names, vocabulary) {
   const lines = new Set();
   // Punctuation and "and" end a phrase, so a list of ingredients is read one at a time.
   for (const part of step.split(/[,.;:!?()/\n]|\s(?:and|or|או)\s/i)) {
-    linesInPhrase(phraseOf(part), names, vocabulary, lines);
+    linesInPhrase(part, names, vocabulary, lines);
   }
   return [...lines].sort((a, b) => a - b);
 }
