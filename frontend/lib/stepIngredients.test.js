@@ -127,6 +127,38 @@ describe('stepIngredients', () => {
     expect(stepIngredients(ingredients, ['טורפים חמאה וסוכר.'])).toEqual([[]]);
   });
 
+  it('does not read a verb as the ingredient of the same name', () => {
+    const ingredients = ['80 ml cream', '1/2 cup Lotus spread', 'Coarse salt to sprinkle and freeze'];
+    const steps = ['Cream together the butter and sugar.', 'Then spread the cream.', 'Freeze until set.', 'Warm the Lotus spread.'];
+    expect(stepIngredients(ingredients, steps)).toEqual([[], [0], [], [1]]);    expect(stepIngredients(['1 cup flour', '1 tsp baking powder'], ['Mix the flour and baking powder together.'])).toEqual([[0, 1]]);
+  });
+
+  it('does not take a dish for the ingredient it is named after', () => {
+    const ingredients = ['50 g white chocolate, melted', '100 גרם עוגיות פתי בר', '50 גר׳ שוקולד לבן'];
+    const steps = ['Bake the chocolate cake.', 'מוציאים את העוגה מהתנור.', 'אופים עוגת שוקולד.', 'Add the white chocolate.'];
+    expect(stepIngredients(ingredients, steps)).toEqual([[], [], [], [0]]);
+  });
+
+  it('does not use a vague first word such as paper, pieces or ice water alone', () => {
+    const ingredients = ['נייר כסף', '2-3 כפות מי קרח', '75 גר׳ שברי עוגיות לוטוס', '3 egg whites'];
+    const steps = ['מניחים נייר אפייה.', 'מוסיפים מים.', 'מוסיפים שברי שוקולד.', 'Whip until stiff, white, and airy.', 'עוטפים בנייר כסף.'];
+    expect(stepIngredients(ingredients, steps)).toEqual([[], [], [], [], [0]]);
+  });
+
+  it('does not take "more" as an ingredient', () => {
+    expect(stepIngredients(['עוד כמה לימונים שלמים קלופים'], ['מקלפים עוד כמה תפוזים.'])).toEqual([[]]);
+  });
+
+  it('reads a Hebrew word with a typographic apostrophe (צ’ילי) as one word', () => {
+    const ingredients = ['חצי כפית פתיתי צ’ילי', '1 כף שמן'];
+    expect(stepIngredients(ingredients, ['מוסיפים פתיתי צ’ילי.', 'מוסיפים פתיתי שקדים.'])).toEqual([[0], []]);
+  });
+
+  it('does not count what a line is for as an ingredient of that line', () => {
+    const ingredients = ['60 גרם שיבולת שועל (לפקאנים בקינמון)', '150 גרם פקאנים קצוצים', '1 פיינט אוכמניות'];
+    expect(stepIngredients(ingredients, ['מוסיפים פקאנים.', 'שוטפים את האוכמניות.'])).toEqual([[1], [2]]);
+  });
+
   it('gives no matches when the recipe has letters other than English or Hebrew', () => {
     expect(stepIngredients(['2 eggs', '1 كوب سكر'], ['Add the eggs.'])).toEqual([[]]);
     expect(stepIngredients(['2 eggs'], ['Add the eggs 鸡蛋.'])).toEqual([[]]);

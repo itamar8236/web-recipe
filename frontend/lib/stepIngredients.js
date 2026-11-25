@@ -7,7 +7,7 @@ import { hasForeignScript } from './foreignScript';
 
 // Words that say how much or what state an ingredient is in, not what it is.
 const ENGLISH_NOISE = new Set(`
-  a an the of about approx approximately plus extra some to taste or and little
+  a an the of about approx approximately plus extra more some to taste or and little
   one two three four five six half quarter
   cup cups c tbsp tbs tbl tablespoon tablespoons tsp teaspoon teaspoons
   g gr gram grams kg kilo kilos kilogram kilograms ml milliliter milliliters l liter liters litre litres
@@ -26,10 +26,10 @@ const ENGLISH_NOISE = new Set(`
 const ENGLISH_NAME_ENDS = new Set(['for', 'from', 'with', 'in', 'into', 'on', 'at', 'to']);
 
 const HEBREW_NOISE = new Set(`
-  כוס כוסות כף כפות כפית כפיות גרם גרמים גר קילו קילוגרם קג ליטר ליטרים מל
+  כוס כוסות כף כפות כפית כפיות גרם גרמים גר קילו קילוגרם קג ליטר ליטרים מל פיינט
   יחידה יחידות קורט חופן חופנים שן שיני שיניים פרוסה פרוסות חבילה חבילות
   קופסה קופסת קופסאות פחית צרור ענף ענפי גביע גביעים עלי עלה עלים
-  חצי רבע שליש שלושת רבעי כמה קצת מעט של בערך לפי הטעם טעם
+  חצי רבע שליש שלושת רבעי כמה קצת מעט עוד של בערך לפי הטעם טעם
   קצוץ קצוצה קצוצים קצוצות טרי טרייה טריים טריות
   גדול גדולה גדולים גדולות קטן קטנה קטנים קטנות בינוני בינונית בינוניים בינוניות
   פרוס פרוסים מגורד מגורדת מגורדים מגורר מגוררת מרוסק מרוסקת מרוסקים
@@ -45,14 +45,24 @@ const HEBREW_NOISE = new Set(`
 // "water" is as often for rinsing or boiling as the listed water.
 const VAGUE_WORDS = new Set(`
   sauce mixture mix dough batter filling topping glaze base water oil
-  powder juice extract paste syrup flakes seeds seed zest peel
-  רוטב תערובת בצק בלילה מילוי ציפוי מים שמן אבקת אבקה מיץ רכז תמצית
+  powder juice extract paste syrup flakes seeds seed zest peel paper white whites
+  רוטב תערובת בצק בלילה מילוי ציפוי מים מי שמן אבקת אבקה מיץ רכז תמצית נייר שברי שבבי פתיתי
   גרידת גרידה קליפת קליפה פרוסות קוביות חתיכות גרגירי גרעיני זרעי פרחי נתחי נתח פילה
 `.split(/\s+/).filter(Boolean));
 
 // Liquids a step often names next to another ingredient ("pasta water", "מי פסטה"), so
 // they block a match even when the list doesn't have them.
 const LIQUID_WORDS = ['water', 'oil', 'juice', 'stock', 'broth', 'מימ', 'שמנ', 'מיצ', 'ציר'];
+
+// A dish named after an ingredient ("chocolate cake", "עוגת שוקולד") is not that ingredient.
+// English names the dish after the ingredient, Hebrew before it.
+const ENGLISH_DISHES = new Set(['cake', 'cakes', 'cookie', 'cookies', 'pie', 'pies', 'tart', 'tarts', 'muffin', 'muffins', 'brownie', 'brownies']);
+const HEBREW_DISHES = new Set(['עוגת', 'עוגות', 'עוגיות', 'פשטידת']);
+
+// An English word right before "the" or "it" is a verb: "cream the butter", "spread it",
+// "cream together the butter" (but "mix the flour and salt together" keeps its salt).
+const AFTER_A_VERB = new Set(['the', 'a', 'an', 'it', 'them', 'everything']);
+const isVerb = (raw, after) => AFTER_A_VERB.has(raw[after]) || (raw[after] === 'together' && AFTER_A_VERB.has(raw[after + 1]));
 
 // Hebrew joins "and", "the", "in" and "to" to the next word ("והבצל"). A lone "מ" is left
 // out: it also starts verbs (משמנים is greasing, not oil).
@@ -71,7 +81,7 @@ function plainLetters(text) {
 
 // A Hebrew word keeps its geresh or gershayim (צ׳ילי, מ"ל) as one word, without the mark.
 function words(text) {
-  return (plainLetters(text).match(/[a-z]+|[א-ת]+(?:['"׳״][א-ת]+)*/g) ?? []).map((word) => word.replace(/['"׳״]/g, ''));
+  return (plainLetters(text).match(/[a-z]+|[א-ת]+(?:['"׳״’][א-ת]+)*/g) ?? []).map((word) => word.replace(/['"׳״’]/g, ''));
 }
 
 // Singular and plural ("egg", "eggs"; "ביצה", "ביצים") become the same word.
@@ -80,9 +90,8 @@ function stem(word) {
     if (word === 'מי') return 'מימ'; // "water of", as in מי פסטה
     let base = word.replace(/(ים|ות|ה)$/, '');
     if (base.length < MIN_NAME_LETTERS) base = word;
-    // עגבנייה and עגבניות meet at עגבנ; קרמי (creamy) stays apart from קרם.
-    const withoutYod = base.replace(/י+$/, '');
-    if (base !== word && withoutYod.length >= MIN_NAME_LETTERS) base = withoutYod;
+    // עגבנייה and עגבניות meet at עגבני; עוגה (cake) stays apart from עוגיות (cookies).
+    if (base !== word) base = base.replace(/יי$/, 'י');
     return base.replace(/[ךםןףץ]/g, (letter) => HEBREW_FINALS[letter]);
   }
   if (word.length > 4 && word.endsWith('ies')) return `${word.slice(0, -3)}y`;
@@ -125,6 +134,8 @@ function ingredientNames(line) {
   const colon = main.match(/^\s*(for\s[^:]*|ל[א-ת]*)\s*:(.*)$/i);
   if (colon) main = colon[2];
   main = main.split(/[,:;]| - | – /)[0];
+  // "salt to sprinkle and freeze": what follows "to" is not a second ingredient.
+  main = main.split(new RegExp(String.raw`\s(?:${[...ENGLISH_NAME_ENDS].join('|')})\s`, 'i'))[0];
   return [main, ...inBrackets.filter((text) => /^\s*(or|או)\s/i.test(text))]
     .flatMap((part) => part.split(/\s(?:or|and|או)\s|&/i))
     .map(nameWords)
@@ -146,7 +157,9 @@ function appearsIn(phrase, nameWords) {
 // any other line also has ("oil" in "olive oil" and "sesame oil", "onion" in a broth's
 // list of vegetables) points to neither.
 function namesOf(ingredients) {
-  const linePhrases = ingredients.map(phraseOf);
+  // What a line is for, in brackets ("oats (for the cinnamon pecans)"), doesn't make the
+  // pecans that line's too.
+  const linePhrases = ingredients.map((line) => phraseOf(line.replace(/\((?:for\s|ל)[^)]*\)/gi, ' ')));
   const names = [];
   ingredients.forEach((line, index) => {
     const keys = new Map();
@@ -193,6 +206,9 @@ function linesInPhrase(text, names, vocabulary, lines) {
   const startsWithAnd = (index) => raw[index]?.startsWith('ו') && !vocabulary.has(stem(raw[index]));
   const isOther = (index, name) => !startsWithAnd(index) && [...(phrase[index] ?? [])].some((form) => !name.words.includes(form) && (LIQUID_WORDS.includes(form) || (!taken[index] && vocabulary.has(form))));
   for (const { name, start } of matches) {
+    const next = raw[start + name.words.length];
+    if (!isHebrew(raw[start]) && (isVerb(raw, start + name.words.length) || ENGLISH_DISHES.has(next))) continue;
+    if (isHebrew(raw[start]) && HEBREW_DISHES.has(raw[start - 1]?.replace(/^(ו|ה|וה|ב|ל|מ)/, '') ?? '')) continue;
     const joinedToPrevious = raw[start].startsWith('ו') && !name.words.includes(stem(raw[start]));
     if ((joinedToPrevious || !isOther(start - 1, name)) && !isOther(start + name.words.length, name)) lines.add(name.line);
   }
