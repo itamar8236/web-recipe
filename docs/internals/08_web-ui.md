@@ -44,6 +44,12 @@ What each screen shows is in its component; these are the decisions behind them.
   would overwrite text or numbers. "Scan the link again" asks first (it replaces edits) and
   holds the only model choice, "Use the best model", ticked while `models.bestAvailable`.
   Calories and protein carry a note that AI calculated them.
+  Under each step, chips repeat the ingredient lines it names, amounts included
+  (`lib/stepIngredients.js`). It is plain text matching in the browser, not a model, so it
+  works for every recipe and edit with no stored data. It is tuned to **show nothing rather
+  than a wrong line** (the owner's call): a name another line also contains, a bare
+  "water" or "oil", or a food word right beside the match all mean no chip, and a recipe
+  with letters other than English or Hebrew gets none.
 - **Edit** writes one language at a time, the app's current one; the other is kept as is.
   The author and the calories and protein are the same in both languages. Public/private and
   the picture only change the form until Save. No AI tools here, so it stays a plain form.
@@ -126,6 +132,9 @@ installable. The service worker caches no pages; it only receives shares. Needs 
   uses `\` on Windows, so they land in subfolders the browser never asks for. Navigation still
   works (Next falls back to the page's full data file) and production builds on Linux. Don't
   turn off prefetching or rename files to work around it.
+- A step's ingredient chips miss what the step doesn't name the way the list does ("the
+  dry mix", "scallions" for "green onions", Hebrew forms beyond the joined ו/ה/ב/ל and
+  plurals), and a step that uses part of an ingredient still shows its full amount.
 - A HEIC photo the browser can't draw gives the recipe no picture ([Pictures](./07_pictures.md#known-gaps-and-accepted-trade-offs)).
 - The third-language note on a recipe goes by script only, so another language written in
   Latin letters (Spanish words in the English text) doesn't bring it up.

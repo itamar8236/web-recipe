@@ -13,6 +13,7 @@ import RecipePicture from '@/components/RecipePicture';
 import RecipeTags from '@/components/RecipeTags';
 import { errorMessage, pickLanguage } from '@/lib/i18n';
 import { hasForeignScript } from '@/lib/foreignScript';
+import { stepIngredients } from '@/lib/stepIngredients';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
 
@@ -90,6 +91,7 @@ function RecipeView() {
   const otherLang = lang === 'en' ? 'he' : 'en';
   const canTranslateFromOther = content.translated && recipe[otherLang].name && !hasForeignScript(recipe[otherLang]);
   const showForeignNotice = loggedIn && hasForeignScript(content) && (canTranslateFromOther || recipe.link);
+  const ingredientsPerStep = stepIngredients(content.ingredients, content.steps);
 
   async function remove() {
     setConfirmingDelete(false);
@@ -192,7 +194,18 @@ function RecipeView() {
       <section className={styles.card}>
         <h2>{t.instructions}</h2>
         <ol className={styles.steps} lang={contentLang} dir={contentDir}>
-          {content.steps.map((step, i) => <li key={i}>{step}</li>)}
+          {content.steps.map((step, i) => (
+            <li key={i}>
+              <div className={styles.stepBody}>
+                {step}
+                {ingredientsPerStep[i].length > 0 && (
+                  <ul className={styles.stepIngredients} aria-label={t.stepIngredients}>
+                    {ingredientsPerStep[i].map((index) => <li key={index}>{content.ingredients[index]}</li>)}
+                  </ul>
+                )}
+              </div>
+            </li>
+          ))}
         </ol>
       </section>
 
