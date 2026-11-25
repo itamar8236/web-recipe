@@ -28,8 +28,8 @@ All of this is built, except what says *may come later*; the linked sections hav
   added manually or imported (`docs/internals/02_data.md`).
 - **Tags**: Home filters by tag; tags are added and removed on the recipe's own page,
   without opening the edit form.
-- **Multiply the amounts**: ½× to 3× buttons on a recipe's page change the ingredients'
-  amounts on screen only, by code, not AI, and never save (`docs/internals/08_web-ui.md`).
+- **Multiply the amounts**: a small button under a recipe's ingredients shows them at ½× to
+  3×, on screen only, by code, not AI, and never saves (`docs/internals/08_web-ui.md`).
 - **Deleting** moves a recipe to **Recently deleted**, where its owner can restore it
   for 30 days. A guest's delete is final.
 - **Import from a link**: YouTube, Facebook (videos and reels), Instagram (reels, and

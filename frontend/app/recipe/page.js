@@ -37,6 +37,7 @@ function RecipeView() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(null); // null | 'favorite' | 'delete'
   const [factor, setFactor] = useState(1);
+  const [multiplyOpen, setMultiplyOpen] = useState(false);
   // A guest's recipes are never sent anywhere, so public or private means nothing to them,
   // and the AI tools need an account. Public or private is changed in the edit form; this
   // page only says which it is.
@@ -194,9 +195,23 @@ function RecipeView() {
       {!content.translated && <p className={styles.notice}>{t.notTranslated}</p>}
 
       <section className={styles.card}>
-        <h2>{t.ingredients}</h2>
-        {content.ingredients.length > 0 && (
+        <h2 className={styles.ingredientsTitle}>
+          {t.ingredients}
+          {factor !== 1 && <span className={styles.factorBadge} dir="ltr">{FACTORS.find((f) => f.value === factor).label}</span>}
+        </h2>
+        {factor !== 1 && <p className={styles.multipliedNote}>{t.multipliedNote}</p>}
+        <ul className={styles.ingredients} lang={contentLang} dir={contentDir}>
+          {content.ingredients.map((item, i) => <li key={i}>{scaleIngredient(item, factor)}</li>)}
+        </ul>
+        {/* Rarely used, so it waits quietly under the list until asked for. */}
+        {content.ingredients.length > 0 && !multiplyOpen && (
+          <button type="button" className={`button secondary ${styles.multiplyOpen}`} onClick={() => setMultiplyOpen(true)}>
+            × {t.multiplyAmounts}
+          </button>
+        )}
+        {multiplyOpen && (
           <div className={styles.multiply} role="group" aria-label={t.multiplyAmounts}>
+            <span className={styles.multiplyLabel}>{t.multiplyAmounts}:</span>
             {FACTORS.map(({ value, label }) => (
               <button
                 key={value}
@@ -210,10 +225,6 @@ function RecipeView() {
             ))}
           </div>
         )}
-        {factor !== 1 && <p className={styles.multipliedNote}>{t.multipliedNote}</p>}
-        <ul className={styles.ingredients} lang={contentLang} dir={contentDir}>
-          {content.ingredients.map((item, i) => <li key={i}>{scaleIngredient(item, factor)}</li>)}
-        </ul>
       </section>
 
       <section className={styles.card}>
