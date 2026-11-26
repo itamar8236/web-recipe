@@ -14,9 +14,19 @@ import RecipeTags from '@/components/RecipeTags';
 import ShareDialog from '@/components/ShareDialog';
 import { errorMessage, pickLanguage, strings } from '@/lib/i18n';
 import { hasForeignScript } from '@/lib/foreignScript';
+import { scaleIngredient } from '@/lib/scale';
 import { recipeShareLink, recipeText, shareLink } from '@/lib/share';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
+
+// The amounts the ingredients can be shown at. Only for viewing, like a substitute: never saved.
+const FACTORS = [
+  { value: 0.5, label: '½×' },
+  { value: 1, label: '1×' },
+  { value: 1.5, label: '1.5×' },
+  { value: 2, label: '2×' },
+  { value: 3, label: '3×' },
+];
 
 function RecipeView() {
   const { lang, setLang, t } = useLanguage();
@@ -28,6 +38,8 @@ function RecipeView() {
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(null); // null | 'favorite' | 'delete'
+  const [factor, setFactor] = useState(1);
+  const [multiplyOpen, setMultiplyOpen] = useState(false);
   // A guest's recipes are never sent anywhere, so public or private means nothing to them,
   // and the AI tools need an account. Public or private is changed in the edit form; this
   // page only says which it is.
@@ -221,10 +233,36 @@ function RecipeView() {
       {!content.translated && <p className={styles.notice}>{t.notTranslated}</p>}
 
       <section className={styles.card}>
-        <h2>{t.ingredients}</h2>
+        <h2 className={styles.ingredientsTitle}>
+          {t.ingredients}
+          {factor !== 1 && <span className={styles.factorBadge} dir="ltr">{FACTORS.find((f) => f.value === factor).label}</span>}
+        </h2>
+        {factor !== 1 && <p className={styles.multipliedNote}>{t.multipliedNote}</p>}
         <ul className={styles.ingredients} lang={contentLang} dir={contentDir}>
-          {content.ingredients.map((item, i) => <li key={i}>{item}</li>)}
+          {content.ingredients.map((item, i) => <li key={i}>{scaleIngredient(item, factor)}</li>)}
         </ul>
+        {/* Rarely used, so it waits quietly under the list until asked for. */}
+        {content.ingredients.length > 0 && !multiplyOpen && (
+          <button type="button" className={`button secondary ${styles.multiplyOpen}`} onClick={() => setMultiplyOpen(true)}>
+            × {t.multiplyAmounts}
+          </button>
+        )}
+        {multiplyOpen && (
+          <div className={styles.multiply} role="group" aria-label={t.multiplyAmounts}>
+            <span className={styles.multiplyLabel}>{t.multiplyAmounts}:</span>
+            {FACTORS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                className={`${styles.factor} ${factor === value ? styles.factorActive : ''}`}
+                aria-pressed={factor === value}
+                onClick={() => setFactor(value)}
+              >
+                <span dir="ltr">{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className={styles.card}>

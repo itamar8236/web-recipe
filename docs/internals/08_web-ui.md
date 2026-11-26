@@ -44,6 +44,12 @@ What each screen shows is in its component; these are the decisions behind them.
   would overwrite text or numbers. "Scan the link again" asks first (it replaces edits) and
   holds the only model choice, "Use the best model", ticked while `models.bestAvailable`.
   Calories and protein carry a note that AI calculated them.
+  "Multiply the amounts" (½×–3×) waits as a small button under the ingredients, since it is
+  rarely used; once a factor is picked, a badge by the heading says the list is multiplied.
+  It works for everyone including guests and is never saved. It is code (`lib/scale.js`),
+  not a model: instant, free and the same every time, and a wrong line is easy to spot.
+  Only lines with an amount change ("salt to taste" stays); the steps keep the recipe's own
+  amounts. An amount only in words it can't rewrite ("מיץ מלימון אחד") gets "(×2)" added.
 - **Edit** writes one language at a time, the app's current one; the other is kept as is.
   The author and the calories and protein are the same in both languages. Public/private and
   the picture only change the form until Save. No AI tools here, so it stays a plain form.
@@ -156,3 +162,13 @@ installable. The service worker caches no pages; it only receives shares. Needs 
   own recipes.
 - The third-language note on a recipe goes by script only, so another language written in
   Latin letters (Spanish words in the English text) doesn't bring it up.
+- Multiplying the amounts is a best effort on free text, so some lines come out wrong:
+  - Only units, eggs and a few common English things counted by the piece (lemon, onion)
+    change form, so "2 sweet red bell pepper" stays singular. A Hebrew noun changes only
+    with nothing or a known adjective after it ("2 בצלים", but "2 בצל סגול").
+  - In a line that has a number, an amount in words in the middle isn't multiplied
+    ("(כקופסה אחת)", "חלמון ביצה אחד").
+  - Every other number in the line is multiplied, also the odd one that isn't an amount
+    ("250ml measuring cup"); percents, temperatures, times and sizes after the first amount
+    (cm, inch) are kept.
+  - A Hebrew number word becomes digits ("שתי כוסות" ×2 → "4 כוסות").
