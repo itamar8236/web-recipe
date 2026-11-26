@@ -28,6 +28,8 @@ All of this is built, except what says *may come later*; the linked sections hav
   added manually or imported (`docs/internals/02_data.md`).
 - **Tags**: Home filters by tag; tags are added and removed on the recipe's own page,
   without opening the edit form.
+- **Multiply the amounts**: a small button under a recipe's ingredients shows them at ½× to
+  3×, on screen only, by code, not AI, and never saves (`docs/internals/08_web-ui.md`).
 - **Deleting** moves a recipe to **Recently deleted**, where its owner can restore it
   for 30 days. A guest's delete is final.
 - **Import from a link**: YouTube, Facebook (videos and reels), Instagram (reels, and
@@ -39,9 +41,12 @@ All of this is built, except what says *may come later*; the linked sections hav
   photo of food with no recipe text gives no recipe, since the model never guesses one. Of
   several photos, the one the model says best shows the dish becomes the recipe's picture.
   The originals are deleted when the import ends (`docs/internals/04_import.md` → Import from photos).
+- **Sharing a recipe**: as the full recipe text, or, for a public one only, as a link that
+  opens Browse with the recipe's name in the search, so it shows up for whoever opens it
+  (`docs/internals/08_web-ui.md` → Sharing a recipe).
 - **Share to the app** (Android, installed app): sharing a post, a page, or 1 to 7 photos
   from the gallery starts the import at once and closes the app (`docs/internals/08_web-ui.md` →
-  Share).
+  Share to the app).
 - **Models**: users don't choose one; an import tries a fixed list of free models. The one
   choice is the **best model**: 5 a day per user (the admin has no 5), on "Scan the link
   again" and first for every photo; when it can't be used, the usual models go on with no

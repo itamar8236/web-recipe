@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { findSharedLink, takeSharedPhotos } from './share';
+import { findSharedLink, recipeShareLink, recipeText, shareLink, takeSharedPhotos } from './share';
 
 describe('findSharedLink', () => {
   it('finds the link that Android puts in the text', () => {
@@ -62,5 +62,77 @@ describe('takeSharedPhotos', () => {
   it('returns no photos when none were shared', async () => {
     vi.stubGlobal('caches', fakeCaches([]));
     expect(await takeSharedPhotos()).toEqual([]);
+  });
+});
+
+describe('recipeShareLink', () => {
+  it('opens Browse with the name in the search', () => {
+    expect(recipeShareLink('https://app.example', 'Pasta & beans')).toBe('https://app.example/browse?q=Pasta%20%26%20beans');
+  });
+
+  it('keeps a Hebrew name readable after decoding', () => {
+    const link = new URL(recipeShareLink('https://app.example', 'עוגת שוקולד'));
+    expect(link.searchParams.get('q')).toBe('עוגת שוקולד');
+  });
+});
+
+describe('shareLink', () => {
+  const item = { title: 'Pasta', text: 'A recipe for you: Pasta', url: 'https://app.example/browse?q=Pasta' };
+  const clipboard = () => ({ writeText: vi.fn().mockResolvedValue() });
+
+  it('opens the share sheet on a phone', async () => {
+    const nav = { share: vi.fn().mockResolvedValue(), clipboard: clipboard() };
+    expect(await shareLink(item, nav, true)).toBe('shared');
+    expect(nav.share).toHaveBeenCalledWith(item);
+    expect(nav.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('does nothing more when the user closes the sheet', async () => {
+    const nav = { share: vi.fn().mockRejectedValue(Object.assign(new Error('x'), { name: 'AbortError' })), clipboard: clipboard() };
+    expect(await shareLink(item, nav, true)).toBe('cancelled');
+    expect(nav.clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('copies the link when sharing is refused', async () => {
+    const nav = { share: vi.fn().mockRejectedValue(Object.assign(new Error('x'), { name: 'NotAllowedError' })), clipboard: clipboard() };
+    expect(await shareLink(item, nav, true)).toBe('copied');
+    expect(nav.clipboard.writeText).toHaveBeenCalledWith(item.url);
+  });
+
+  it('copies the link on a computer, even with a share dialog', async () => {
+    const nav = { share: vi.fn(), clipboard: clipboard() };
+    expect(await shareLink(item, nav, false)).toBe('copied');
+    expect(nav.share).not.toHaveBeenCalled();
+  });
+
+  it('shares the full text when there is no link', async () => {
+    const text = { title: 'Pasta', text: 'Pasta\n\nIngredients:\n• pasta' };
+    const phone = { share: vi.fn().mockResolvedValue(), clipboard: clipboard() };
+    expect(await shareLink(text, phone, true)).toBe('shared');
+    expect(phone.share).toHaveBeenCalledWith(text);
+    const computer = { clipboard: clipboard() };
+    expect(await shareLink(text, computer, false)).toBe('copied');
+    expect(computer.clipboard.writeText).toHaveBeenCalledWith(text.text);
+  });
+
+  it('throws when the link cannot be copied', async () => {
+    await expect(shareLink(item, {}, false)).rejects.toThrow();
+  });
+});
+
+describe('recipeText', () => {
+  const labels = { ingredients: 'Ingredients', instructions: 'Instructions', author: 'By', sourceLink: 'Source' };
+  const content = { name: 'Pasta', ingredients: ['200 g pasta', 'salt'], steps: ['Boil water', 'Cook the pasta'] };
+
+  it('writes the name, ingredients and numbered steps', () => {
+    expect(recipeText(content, labels)).toBe(
+      'Pasta\n\nIngredients:\n• 200 g pasta\n• salt\n\nInstructions:\n1. Boil water\n2. Cook the pasta',
+    );
+  });
+
+  it('ends with the author and the source link when known', () => {
+    expect(recipeText(content, labels, { author: 'Dana', link: 'https://youtu.be/x' })).toMatch(
+      /Cook the pasta\n\nBy: Dana\nSource: https:\/\/youtu\.be\/x$/,
+    );
   });
 });

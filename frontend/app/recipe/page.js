@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import BackLink from '@/components/BackLink';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -11,11 +11,23 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import RecipeAiTools from '@/components/RecipeAiTools';
 import RecipePicture from '@/components/RecipePicture';
 import RecipeTags from '@/components/RecipeTags';
-import { errorMessage, pickLanguage } from '@/lib/i18n';
+import ShareDialog from '@/components/ShareDialog';
+import { errorMessage, pickLanguage, strings } from '@/lib/i18n';
 import { hasForeignScript } from '@/lib/foreignScript';
+import { scaleIngredient } from '@/lib/scale';
+import { recipeShareLink, recipeText, shareLink } from '@/lib/share';
 import { stepIngredients } from '@/lib/stepIngredients';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
+
+// The amounts the ingredients can be shown at. Only for viewing, like a substitute: never saved.
+const FACTORS = [
+  { value: 0.5, label: '½×' },
+  { value: 1, label: '1×' },
+  { value: 1.5, label: '1.5×' },
+  { value: 2, label: '2×' },
+  { value: 3, label: '3×' },
+];
 
 function RecipeView() {
   const { lang, setLang, t } = useLanguage();
@@ -27,6 +39,8 @@ function RecipeView() {
   const [attempt, setAttempt] = useState(0); // bumped by "Try again"
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(null); // null | 'favorite' | 'delete'
+  const [factor, setFactor] = useState(1);
+  const [multiplyOpen, setMultiplyOpen] = useState(false);
   // A guest's recipes are never sent anywhere, so public or private means nothing to them,
   // and the AI tools need an account. Public or private is changed in the edit form; this
   // page only says which it is.
@@ -34,6 +48,11 @@ function RecipeView() {
   const [error, setError] = useState('');
   // Off by default (the owner's call): the chips are a guess, so the user asks for them.
   const [showStepIngredients, setShowStepIngredients] = useState(false);
+  const [choosingShare, setChoosingShare] = useState(false);
+  // null | { copied: true } (the button says so for a moment)
+  // | { failed: { value, multiline } } (copying failed: the link or text to copy by hand)
+  const [shared, setShared] = useState(null);
+  const shareField = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +71,19 @@ function RecipeView() {
       cancelled = true;
     };
   }, [id, attempt]);
+
+  useEffect(() => {
+    if (!shared?.copied) return undefined;
+    const timer = setTimeout(() => setShared(null), 3000);
+    return () => clearTimeout(timer);
+  }, [shared]);
+
+  // The field is under the buttons, often below a phone's screen, so it is brought into view.
+  useEffect(() => {
+    if (!shared?.failed) return;
+    shareField.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    shareField.current.select();
+  }, [shared]);
 
   if (loadError) {
     return (
@@ -106,6 +138,24 @@ function RecipeView() {
     } catch (err) {
       setError(errorMessage(t, err));
       setBusy(null);
+    }
+  }
+
+
+  // 'link': a link to Browse, for someone who uses the app. 'text': the recipe as it is
+  // shown, with headings in the text's own language, for anyone.
+  async function share(kind) {
+    setChoosingShare(false);
+    setShared(null);
+    const item =
+      kind === 'link'
+        ? { title: content.name, text: t.shareText(content.name), url: recipeShareLink(window.location.origin, content.name) }
+        : { title: content.name, text: recipeText(content, strings[contentLang], recipe) };
+    try {
+      const result = await shareLink(item);
+      if (result === 'copied') setShared({ copied: true });
+    } catch {
+      setShared({ failed: { value: item.url ?? item.text, multiline: !item.url } });
     }
   }
 
@@ -188,10 +238,36 @@ function RecipeView() {
       {!content.translated && <p className={styles.notice}>{t.notTranslated}</p>}
 
       <section className={styles.card}>
-        <h2>{t.ingredients}</h2>
+        <h2 className={styles.ingredientsTitle}>
+          {t.ingredients}
+          {factor !== 1 && <span className={styles.factorBadge} dir="ltr">{FACTORS.find((f) => f.value === factor).label}</span>}
+        </h2>
+        {factor !== 1 && <p className={styles.multipliedNote}>{t.multipliedNote}</p>}
         <ul className={styles.ingredients} lang={contentLang} dir={contentDir}>
-          {content.ingredients.map((item, i) => <li key={i}>{item}</li>)}
+          {content.ingredients.map((item, i) => <li key={i}>{scaleIngredient(item, factor)}</li>)}
         </ul>
+        {/* Rarely used, so it waits quietly under the list until asked for. */}
+        {content.ingredients.length > 0 && !multiplyOpen && (
+          <button type="button" className={`button secondary ${styles.multiplyOpen}`} onClick={() => setMultiplyOpen(true)}>
+            × {t.multiplyAmounts}
+          </button>
+        )}
+        {multiplyOpen && (
+          <div className={styles.multiply} role="group" aria-label={t.multiplyAmounts}>
+            <span className={styles.multiplyLabel}>{t.multiplyAmounts}:</span>
+            {FACTORS.map(({ value, label }) => (
+              <button
+                key={value}
+                type="button"
+                className={`${styles.factor} ${factor === value ? styles.factorActive : ''}`}
+                aria-pressed={factor === value}
+                onClick={() => setFactor(value)}
+              >
+                <span dir="ltr">{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className={styles.card}>
@@ -210,7 +286,7 @@ function RecipeView() {
                 {step}
                 {showStepIngredients && ingredientsPerStep[i].length > 0 && (
                   <ul className={styles.stepIngredients} aria-label={t.stepIngredients}>
-                    {ingredientsPerStep[i].map((index) => <li key={index}>{content.ingredients[index]}</li>)}
+                    {ingredientsPerStep[i].map((index) => <li key={index}>{scaleIngredient(content.ingredients[index], factor)}</li>)}
                   </ul>
                 )}
               </div>
@@ -243,10 +319,48 @@ function RecipeView() {
 
       <div className={styles.actions}>
         <Link href={`/recipe/edit?id=${recipe.id}`} className="button">{t.edit}</Link>
+        {loggedIn && (
+          <button type="button" className="button secondary" onClick={() => setChoosingShare(true)}>
+            <span aria-live="polite" className={styles.nowrap}>{shared?.copied ? `${t.linkCopied} ✓` : t.share}</span>
+          </button>
+        )}
         <button type="button" className="button danger" disabled={busy !== null} onClick={() => setConfirmingDelete(true)}>
           {busy === 'delete' ? t.deleting : t.delete}
         </button>
       </div>
+
+      {shared?.failed && (
+        <div className={styles.shareNote} role="alert">
+          <p>{t.errShareCopy}</p>
+          {shared.failed.multiline ? (
+            <textarea
+              ref={shareField}
+              className="field"
+              readOnly
+              rows={8}
+              lang={contentLang}
+              dir={contentDir}
+              value={shared.failed.value}
+              aria-label={t.shareCopyLabel}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          ) : (
+            <input
+              ref={shareField}
+              className="field"
+              readOnly
+              dir="ltr"
+              value={shared.failed.value}
+              aria-label={t.shareCopyLabel}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          )}
+        </div>
+      )}
+
+      {choosingShare && (
+        <ShareDialog linkAllowed={recipe.public} onPick={share} onCancel={() => setChoosingShare(false)} />
+      )}
 
       {confirmingDelete && (
         <ConfirmDialog

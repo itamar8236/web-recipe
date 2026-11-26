@@ -44,10 +44,17 @@ What each screen shows is in its component; these are the decisions behind them.
   would overwrite text or numbers. "Scan the link again" asks first (it replaces edits) and
   holds the only model choice, "Use the best model", ticked while `models.bestAvailable`.
   Calories and protein carry a note that AI calculated them.
-  Under each step, chips repeat the ingredient lines it names, amounts included
-  (`lib/stepIngredients.js`), shown only after the user taps "Show amounts in steps" (off by
-  default and not remembered, the owner's call). It is plain text matching in the browser, not a model, so it
-  works for every recipe and edit with no stored data. It is tuned to **show nothing rather
+  "Multiply the amounts" (½×–3×) waits as a small button under the ingredients, since it is
+  rarely used; once a factor is picked, a badge by the heading says the list is multiplied.
+  It works for everyone including guests and is never saved. It is code (`lib/scale.js`),
+  not a model: instant, free and the same every time, and a wrong line is easy to spot.
+  Only lines with an amount change ("salt to taste" stays); the steps' own text keeps the
+  recipe's amounts. An amount only in words it can't rewrite ("מיץ מלימון אחד") gets "(×2)" added.
+  Under each step, chips repeat the ingredient lines it names, amounts included and
+  multiplied like the list (`lib/stepIngredients.js`), shown only after the user taps "Show
+  amounts in steps" (off by default and not remembered, the owner's call). It is plain text
+  matching in the browser, not a model, so it works for every recipe and edit with no
+  stored data. It is tuned to **show nothing rather
   than a wrong line** (the owner's call): a name another line also contains, a bare
   "water" or "oil", or a food word right beside the match all mean no chip, and a recipe
   with letters other than English or Hebrew gets none.
@@ -65,7 +72,30 @@ What each screen shows is in its component; these are the decisions behind them.
   there is something to restore. A guest has no bin: their delete is final, and the
   confirmation says so.
 
-## Share
+## Sharing a recipe
+
+A **Share** button beside Edit on a logged-in user's recipes. It asks one question, each
+choice saying who it is for: **a link** (for someone who uses the app) or **the full
+recipe** as text (for anyone). A **private** recipe offers only the text (the owner's
+choice: text doesn't need Browse), with a line saying a link needs a public recipe rather
+than a button that can't work.
+
+- The link is `/browse?q=<the name shown>`: Browse opens with that search filled in, and
+  its search keeps loading pages until the recipe shows. There is no new route or endpoint,
+  and no token: a public recipe is already visible to every user through Browse.
+- The text is the version shown (name, ingredients, numbered steps, then the author and
+  source link when known), with its headings in the text's own language, not the app's.
+- On a touch screen it opens the phone's share sheet; on a computer it copies, since a
+  desktop share dialog is rarely where people send things from. The sheet opens straight
+  from the tap on a choice, since browsers allow it only right after a tap. A copy turns the
+  button into "Copied ✓" for a moment, right where the user is looking. When copying fails,
+  the link or text shows in a selected field to copy by hand.
+- The search box starts open but **not focused**, so a phone's keyboard doesn't cover the
+  recipe. Browse searches both languages, so the receiver's language doesn't matter.
+- Logged out, the login screen comes first, then Browse with the search; a guest is told to
+  log in, like any visit to Browse.
+
+## Share to the app
 
 The installed app is in Android's Share menu (`share_target` in `app/manifest.js`). Sharing a
 post, a web page, or 1 to 7 photos opens `/share`, which imports **at once, with no
@@ -138,5 +168,19 @@ installable. The service worker caches no pages; it only receives shares. Needs 
   plurals), and a step that uses part of an ingredient still shows its full amount. A name
   two lines share (butter for the base and for the caramel) shows neither.
 - A HEIC photo the browser can't draw gives the recipe no picture ([Pictures](./07_pictures.md#known-gaps-and-accepted-trade-offs)).
+- A shared recipe's link searches by name, so it also shows other public recipes whose text
+  has every word of that name, and finds nothing once the recipe is renamed, made private or
+  deleted. The sharer opening their own link sees nothing either: Browse never lists one's
+  own recipes.
 - The third-language note on a recipe goes by script only, so another language written in
   Latin letters (Spanish words in the English text) doesn't bring it up.
+- Multiplying the amounts is a best effort on free text, so some lines come out wrong:
+  - Only units, eggs and a few common English things counted by the piece (lemon, onion)
+    change form, so "2 sweet red bell pepper" stays singular. A Hebrew noun changes only
+    with nothing or a known adjective after it ("2 בצלים", but "2 בצל סגול").
+  - In a line that has a number, an amount in words in the middle isn't multiplied
+    ("(כקופסה אחת)", "חלמון ביצה אחד").
+  - Every other number in the line is multiplied, also the odd one that isn't an amount
+    ("250ml measuring cup"); percents, temperatures, times and sizes after the first amount
+    (cm, inch) are kept.
+  - A Hebrew number word becomes digits ("שתי כוסות" ×2 → "4 כוסות").
