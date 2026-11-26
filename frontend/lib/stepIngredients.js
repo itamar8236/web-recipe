@@ -14,6 +14,7 @@ const ENGLISH_NOISE = new Set(`
   oz ounce ounces lb lbs pound pounds pinch pinches dash dashes handful handfuls
   clove cloves can cans jar jars package packages pack packs packet packets bunch bunches
   sprig sprigs slice slices piece pieces stick sticks head heads stalk stalks quart quarts pint pints
+  splash splashes drop drops cube cubes bag bags tub tubs container containers basket baskets sleeve sleeves
   leaf leaves floret florets
   chopped diced minced sliced grated shredded crushed peeled seeded pitted halved quartered cubed
   fresh freshly large small medium finely roughly thinly thickly coarsely
@@ -38,6 +39,7 @@ const HEBREW_NOISE = new Set(`
   יבש יבשה יבשים מיובש מיובשת מיובשים דק דקה דקים גס גסה
   מבושל מבושלת מבושלים שלם שלמה שלמים להגשה לקישוט לציפוי אופציונלי רצוי
   אחד אחת שטוח שטוחה גדוש גדושה בהיר בהירה ממותק ממותקת
+  מיכל מיכלים שקית שקיות מארז מארזים אריזה אריזת סלסילה סלסילת שרוול קמצוץ קובייה קוביית ראש ראשי
 `.split(/\s+/).filter(Boolean));
 
 // The last English word or first Hebrew word ("olive oil", "שמן זית") is what a step often
@@ -46,7 +48,7 @@ const HEBREW_NOISE = new Set(`
 const VAGUE_WORDS = new Set(`
   sauce mixture mix dough batter filling topping glaze base water oil
   powder juice extract paste syrup flakes seeds seed zest peel paper white whites
-  רוטב תערובת בצק בלילה מילוי ציפוי מים מי שמן אבקת אבקה מיץ רכז תמצית נייר שברי שבבי פתיתי
+  רוטב תערובת בצק בלילה מילוי ציפוי קרם מים מי שמן אבקת אבקה מיץ רכז תמצית נייר שברי שבבי פתיתי
   גרידת גרידה קליפת קליפה פרוסות קוביות חתיכות גרגירי גרעיני זרעי פרחי נתחי נתח פילה
 `.split(/\s+/).filter(Boolean));
 

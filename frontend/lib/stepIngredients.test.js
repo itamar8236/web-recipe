@@ -159,6 +159,12 @@ describe('stepIngredients', () => {
     expect(stepIngredients(ingredients, ['מוסיפים פקאנים.', 'שוטפים את האוכמניות.'])).toEqual([[1], [2]]);
   });
 
+  it('reads containers such as מיכל, שקית and tub as amounts, and קרם alone as too vague', () => {
+    const ingredients = ['1 מיכל (250 מ"ל) שמנת להקצפה', '1 שקית (400 גרם) אדממה קפואה', '1 מיכל קרם גבינת עיזים', '1 tub labneh cheese'];
+    const steps = ['מקציפים את השמנת להקצפה.', 'מבשלים את האדממה.', 'מעבירים את הקרם לתבנית.', 'Spread the labneh cheese.'];
+    expect(stepIngredients(ingredients, steps)).toEqual([[0], [1], [], [3]]);
+  });
+
   it('gives no matches when the recipe has letters other than English or Hebrew', () => {
     expect(stepIngredients(['2 eggs', '1 كوب سكر'], ['Add the eggs.'])).toEqual([[]]);
     expect(stepIngredients(['2 eggs'], ['Add the eggs 鸡蛋.'])).toEqual([[]]);
