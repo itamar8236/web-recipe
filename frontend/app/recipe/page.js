@@ -16,6 +16,7 @@ import { errorMessage, pickLanguage, strings } from '@/lib/i18n';
 import { hasForeignScript } from '@/lib/foreignScript';
 import { scaleIngredient } from '@/lib/scale';
 import { recipeShareLink, recipeText, shareLink } from '@/lib/share';
+import { stepIngredients } from '@/lib/stepIngredients';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
 
@@ -45,6 +46,8 @@ function RecipeView() {
   // page only says which it is.
   const loggedIn = useAuth().status === 'user';
   const [error, setError] = useState('');
+  // Off by default (the owner's call): the chips are a guess, so the user asks for them.
+  const [showStepIngredients, setShowStepIngredients] = useState(false);
   const [choosingShare, setChoosingShare] = useState(false);
   // null | { copied: true } (the button says so for a moment)
   // | { failed: { value, multiline } } (copying failed: the link or text to copy by hand)
@@ -122,6 +125,8 @@ function RecipeView() {
   const otherLang = lang === 'en' ? 'he' : 'en';
   const canTranslateFromOther = content.translated && recipe[otherLang].name && !hasForeignScript(recipe[otherLang]);
   const showForeignNotice = loggedIn && hasForeignScript(content) && (canTranslateFromOther || recipe.link);
+  const ingredientsPerStep = stepIngredients(content.ingredients, content.steps);
+  const anyStepIngredients = ingredientsPerStep.some((lines) => lines.length > 0);
 
   async function remove() {
     setConfirmingDelete(false);
@@ -266,9 +271,27 @@ function RecipeView() {
       </section>
 
       <section className={styles.card}>
-        <h2>{t.instructions}</h2>
+        <div className={styles.cardHead}>
+          <h2>{t.instructions}</h2>
+          {anyStepIngredients && (
+            <button type="button" className={`button secondary ${styles.stepToggle}`} onClick={() => setShowStepIngredients(!showStepIngredients)}>
+              {showStepIngredients ? t.hideStepIngredients : t.showStepIngredients}
+            </button>
+          )}
+        </div>
         <ol className={styles.steps} lang={contentLang} dir={contentDir}>
-          {content.steps.map((step, i) => <li key={i}>{step}</li>)}
+          {content.steps.map((step, i) => (
+            <li key={i}>
+              <div className={styles.stepBody}>
+                {step}
+                {showStepIngredients && ingredientsPerStep[i].length > 0 && (
+                  <ul className={styles.stepIngredients} aria-label={t.stepIngredients}>
+                    {ingredientsPerStep[i].map((index) => <li key={index}>{scaleIngredient(content.ingredients[index], factor)}</li>)}
+                  </ul>
+                )}
+              </div>
+            </li>
+          ))}
         </ol>
       </section>
 

@@ -140,6 +140,26 @@
   font-size: 21px;
 }
 
+/* The steps' title with the toggle beside it, wrapping under it on a narrow phone. */
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 10px;
+}
+
+.card .cardHead h2 {
+  margin-bottom: 0;
+}
+
+.stepToggle {
+  min-height: 44px;
+  padding-inline: 14px;
+  font-size: 16px;
+}
+
 .ingredients {
   margin: 0;
   padding-inline-start: 24px;
@@ -240,13 +260,13 @@
   gap: 14px;
 }
 
-.steps li {
+.steps > li {
   counter-increment: step;
   display: flex;
   gap: 12px;
 }
 
-.steps li::before {
+.steps > li::before {
   content: counter(step);
   flex: 0 0 32px;
   height: 32px;
@@ -257,6 +277,30 @@
   font-weight: 700;
   line-height: 32px;
   text-align: center;
+}
+
+/* The ingredient lines a step names, with their amounts, so the list needn't be scrolled back to. */
+.stepBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.stepIngredients {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stepIngredients li {
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .actions {

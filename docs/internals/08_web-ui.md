@@ -48,8 +48,16 @@ What each screen shows is in its component; these are the decisions behind them.
   rarely used; once a factor is picked, a badge by the heading says the list is multiplied.
   It works for everyone including guests and is never saved. It is code (`lib/scale.js`),
   not a model: instant, free and the same every time, and a wrong line is easy to spot.
-  Only lines with an amount change ("salt to taste" stays); the steps keep the recipe's own
-  amounts. An amount only in words it can't rewrite ("מיץ מלימון אחד") gets "(×2)" added.
+  Only lines with an amount change ("salt to taste" stays); the steps' own text keeps the
+  recipe's amounts. An amount only in words it can't rewrite ("מיץ מלימון אחד") gets "(×2)" added.
+  Under each step, chips repeat the ingredient lines it names, amounts included and
+  multiplied like the list (`lib/stepIngredients.js`), shown only after the user taps "Show
+  amounts in steps" (off by default and not remembered, the owner's call). It is plain text
+  matching in the browser, not a model, so it works for every recipe and edit with no
+  stored data. It is tuned to **show nothing rather
+  than a wrong line** (the owner's call): a name another line also contains, a bare
+  "water" or "oil", or a food word right beside the match all mean no chip, and a recipe
+  with letters other than English or Hebrew gets none.
 - **Edit** writes one language at a time, the app's current one; the other is kept as is.
   The author and the calories and protein are the same in both languages. Public/private and
   the picture only change the form until Save. No AI tools here, so it stays a plain form.
@@ -155,6 +163,10 @@ installable. The service worker caches no pages; it only receives shares. Needs 
   uses `\` on Windows, so they land in subfolders the browser never asks for. Navigation still
   works (Next falls back to the page's full data file) and production builds on Linux. Don't
   turn off prefetching or rename files to work around it.
+- A step's ingredient chips miss what the step doesn't name the way the list does ("the
+  dry mix", "scallions" for "green onions", Hebrew forms beyond the joined ו/ה/ב/ל and
+  plurals), and a step that uses part of an ingredient still shows its full amount. A name
+  two lines share (butter for the base and for the caramel) shows neither.
 - A HEIC photo the browser can't draw gives the recipe no picture ([Pictures](./07_pictures.md#known-gaps-and-accepted-trade-offs)).
 - A shared recipe's link searches by name, so it also shows other public recipes whose text
   has every word of that name, and finds nothing once the recipe is renamed, made private or
