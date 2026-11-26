@@ -60,9 +60,11 @@ What each screen shows is in its component; these are the decisions behind them.
 
 ## Sharing a recipe
 
-A **Share** button beside Edit, only on a logged-in user's **public** recipe. It asks one
-question, each choice saying who it is for: **a link** (for someone who uses the app) or
-**the full recipe** as text (for anyone).
+A **Share** button beside Edit on a logged-in user's recipes. It asks one question, each
+choice saying who it is for: **a link** (for someone who uses the app) or **the full
+recipe** as text (for anyone). A **private** recipe offers only the text (the owner's
+choice: text doesn't need Browse), with a line saying a link needs a public recipe rather
+than a button that can't work.
 
 - The link is `/browse?q=<the name shown>`: Browse opens with that search filled in, and
   its search keeps loading pages until the recipe shows. There is no new route or endpoint,

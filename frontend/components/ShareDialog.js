@@ -7,8 +7,9 @@ import styles from './ShareDialog.module.css';
 // What to share: a link (for someone who uses the app) or the whole recipe as text (for
 // anyone). Each choice says who it is for, so nobody has to know what "a link to Browse" means.
 // `onPick` gets 'link' or 'text'; it must share at once, since the browser lets the share
-// sheet open only right after a tap.
-export default function ShareDialog({ onPick, onCancel }) {
+// sheet open only right after a tap. A private recipe (`linkAllowed` false) has no link,
+// since Browse shows only public ones: a line says why, instead of a button that can't work.
+export default function ShareDialog({ linkAllowed, onPick, onCancel }) {
   const { t } = useLanguage();
   const ref = useRef(null);
 
@@ -35,9 +36,10 @@ export default function ShareDialog({ onPick, onCancel }) {
     >
       <h2 id="share-title" className={styles.title}>{t.shareHow}</h2>
       <div className={styles.choices}>
-        {choice('link', t.shareAsLink, t.shareAsLinkHint)}
+        {linkAllowed && choice('link', t.shareAsLink, t.shareAsLinkHint)}
         {choice('text', t.shareAsText, t.shareAsTextHint)}
       </div>
+      {!linkAllowed && <p className={styles.note}>{t.shareLinkNeedsPublic}</p>}
       <button type="button" className={`button secondary ${styles.cancel}`} onClick={onCancel}>
         {t.cancel}
       </button>

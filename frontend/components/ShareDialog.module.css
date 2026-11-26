@@ -54,6 +54,12 @@
   color: var(--ink-soft);
 }
 
+.note {
+  margin: 12px 0 0;
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+
 .cancel {
   width: 100%;
   margin-top: 16px;

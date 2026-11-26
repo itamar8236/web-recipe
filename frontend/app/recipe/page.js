@@ -124,8 +124,6 @@ function RecipeView() {
     }
   }
 
-  // Only a public recipe can be shared: the link opens Browse, which shows only public ones.
-  const canShare = loggedIn && recipe.public;
 
   // 'link': a link to Browse, for someone who uses the app. 'text': the recipe as it is
   // shown, with headings in the text's own language, for anyone.
@@ -260,7 +258,7 @@ function RecipeView() {
 
       <div className={styles.actions}>
         <Link href={`/recipe/edit?id=${recipe.id}`} className="button">{t.edit}</Link>
-        {canShare && (
+        {loggedIn && (
           <button type="button" className="button secondary" onClick={() => setChoosingShare(true)}>
             <span aria-live="polite" className={styles.nowrap}>{shared?.copied ? `${t.linkCopied} ✓` : t.share}</span>
           </button>
@@ -299,7 +297,9 @@ function RecipeView() {
         </div>
       )}
 
-      {choosingShare && <ShareDialog onPick={share} onCancel={() => setChoosingShare(false)} />}
+      {choosingShare && (
+        <ShareDialog linkAllowed={recipe.public} onPick={share} onCancel={() => setChoosingShare(false)} />
+      )}
 
       {confirmingDelete && (
         <ConfirmDialog
