@@ -60,15 +60,20 @@ What each screen shows is in its component; these are the decisions behind them.
 
 ## Sharing a recipe
 
-A **Share** button beside Edit, only on a logged-in user's **public** recipe. The link is
-`/browse?q=<the name shown>`: Browse opens with that search filled in, and its search keeps
-loading pages until the recipe shows. There is no new route or endpoint, and no token: a
-public recipe is already visible to every user through Browse.
+A **Share** button beside Edit, only on a logged-in user's **public** recipe. It asks one
+question, each choice saying who it is for: **a link** (for someone who uses the app) or
+**the full recipe** as text (for anyone).
 
-- On a touch screen it opens the phone's share sheet; on a computer it copies the link,
-  since a desktop share dialog is rarely where people send links from. A copy turns the
+- The link is `/browse?q=<the name shown>`: Browse opens with that search filled in, and
+  its search keeps loading pages until the recipe shows. There is no new route or endpoint,
+  and no token: a public recipe is already visible to every user through Browse.
+- The text is the version shown (name, ingredients, numbered steps, then the author and
+  source link when known), with its headings in the text's own language, not the app's.
+- On a touch screen it opens the phone's share sheet; on a computer it copies, since a
+  desktop share dialog is rarely where people send things from. The sheet opens straight
+  from the tap on a choice, since browsers allow it only right after a tap. A copy turns the
   button into "Copied ✓" for a moment, right where the user is looking. When copying fails,
-  the link shows in a selected field to copy by hand.
+  the link or text shows in a selected field to copy by hand.
 - The search box starts open but **not focused**, so a phone's keyboard doesn't cover the
   recipe. Browse searches both languages, so the receiver's language doesn't matter.
 - Logged out, the login screen comes first, then Browse with the search; a guest is told to

@@ -39,19 +39,34 @@ export function recipeShareLink(origin, name) {
   return `${origin}/browse?q=${encodeURIComponent(name)}`;
 }
 
-// A phone gets its share sheet (WhatsApp, messages...); a computer gets the link copied,
-// since a desktop's share dialog is rarely where people send links from. Returns 'shared',
-// 'cancelled' (the user closed the sheet) or 'copied'; throws when copying failed.
+// A recipe as plain text, for someone who doesn't use the app: the name, the ingredients,
+// the steps, and who it is by and where it came from when known. `labels` are the headings
+// in the language of the text itself, which may not be the app's.
+export function recipeText(content, labels, { author, link } = {}) {
+  const parts = [
+    content.name,
+    [`${labels.ingredients}:`, ...content.ingredients.map((item) => `• ${item}`)].join('\n'),
+    [`${labels.instructions}:`, ...content.steps.map((step, i) => `${i + 1}. ${step}`)].join('\n'),
+  ];
+  const credits = [author && `${labels.author}: ${author}`, link && `${labels.sourceLink}: ${link}`].filter(Boolean);
+  if (credits.length) parts.push(credits.join('\n'));
+  return parts.join('\n\n');
+}
+
+// Shares a link (`url`) or, with no url, the `text` itself. A phone gets its share sheet
+// (WhatsApp, messages...); a computer gets it copied, since a desktop's share dialog is
+// rarely where people send things from. Returns 'shared', 'cancelled' (the user closed the
+// sheet) or 'copied'; throws when copying failed.
 export async function shareLink({ title, text, url }, nav = navigator, touch = matchMedia('(pointer: coarse)').matches) {
   if (touch && nav.share) {
     try {
-      await nav.share({ title, text, url });
+      await nav.share(url ? { title, text, url } : { title, text });
       return 'shared';
     } catch (err) {
       if (err?.name === 'AbortError') return 'cancelled';
       // Some in-app browsers refuse to share: copying still works there.
     }
   }
-  await nav.clipboard.writeText(url);
+  await nav.clipboard.writeText(url ?? text);
   return 'copied';
 }

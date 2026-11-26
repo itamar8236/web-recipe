@@ -39,9 +39,9 @@ All of this is built, except what says *may come later*; the linked sections hav
   photo of food with no recipe text gives no recipe, since the model never guesses one. Of
   several photos, the one the model says best shows the dish becomes the recipe's picture.
   The originals are deleted when the import ends (`docs/internals/04_import.md` → Import from photos).
-- **Sharing a recipe**: only a public one. Its link opens Browse with the recipe's name
-  in the search, so it shows up for whoever opens it (`docs/internals/08_web-ui.md` →
-  Sharing a recipe).
+- **Sharing a recipe**: only a public one, as a link or as the full recipe text. The link
+  opens Browse with the recipe's name in the search, so it shows up for whoever opens it
+  (`docs/internals/08_web-ui.md` → Sharing a recipe).
 - **Share to the app** (Android, installed app): sharing a post, a page, or 1 to 7 photos
   from the gallery starts the import at once and closes the app (`docs/internals/08_web-ui.md` →
   Share to the app).

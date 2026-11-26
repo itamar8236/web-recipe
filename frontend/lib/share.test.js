@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { findSharedLink, recipeShareLink, shareLink, takeSharedPhotos } from './share';
+import { findSharedLink, recipeShareLink, recipeText, shareLink, takeSharedPhotos } from './share';
 
 describe('findSharedLink', () => {
   it('finds the link that Android puts in the text', () => {
@@ -105,7 +105,34 @@ describe('shareLink', () => {
     expect(nav.share).not.toHaveBeenCalled();
   });
 
+  it('shares the full text when there is no link', async () => {
+    const text = { title: 'Pasta', text: 'Pasta\n\nIngredients:\n• pasta' };
+    const phone = { share: vi.fn().mockResolvedValue(), clipboard: clipboard() };
+    expect(await shareLink(text, phone, true)).toBe('shared');
+    expect(phone.share).toHaveBeenCalledWith(text);
+    const computer = { clipboard: clipboard() };
+    expect(await shareLink(text, computer, false)).toBe('copied');
+    expect(computer.clipboard.writeText).toHaveBeenCalledWith(text.text);
+  });
+
   it('throws when the link cannot be copied', async () => {
     await expect(shareLink(item, {}, false)).rejects.toThrow();
+  });
+});
+
+describe('recipeText', () => {
+  const labels = { ingredients: 'Ingredients', instructions: 'Instructions', author: 'By', sourceLink: 'Source' };
+  const content = { name: 'Pasta', ingredients: ['200 g pasta', 'salt'], steps: ['Boil water', 'Cook the pasta'] };
+
+  it('writes the name, ingredients and numbered steps', () => {
+    expect(recipeText(content, labels)).toBe(
+      'Pasta\n\nIngredients:\n• 200 g pasta\n• salt\n\nInstructions:\n1. Boil water\n2. Cook the pasta',
+    );
+  });
+
+  it('ends with the author and the source link when known', () => {
+    expect(recipeText(content, labels, { author: 'Dana', link: 'https://youtu.be/x' })).toMatch(
+      /Cook the pasta\n\nBy: Dana\nSource: https:\/\/youtu\.be\/x$/,
+    );
   });
 });
