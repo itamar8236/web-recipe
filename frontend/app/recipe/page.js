@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import BackLink from '@/components/BackLink';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -11,8 +11,10 @@ import ConfirmDialog from '@/components/ConfirmDialog';
 import RecipeAiTools from '@/components/RecipeAiTools';
 import RecipePicture from '@/components/RecipePicture';
 import RecipeTags from '@/components/RecipeTags';
-import { errorMessage, pickLanguage } from '@/lib/i18n';
+import ShareDialog from '@/components/ShareDialog';
+import { errorMessage, pickLanguage, strings } from '@/lib/i18n';
 import { hasForeignScript } from '@/lib/foreignScript';
+import { recipeShareLink, recipeText, shareLink } from '@/lib/share';
 import * as api from '@/lib/api';
 import styles from './recipe.module.css';
 
@@ -31,6 +33,11 @@ function RecipeView() {
   // page only says which it is.
   const loggedIn = useAuth().status === 'user';
   const [error, setError] = useState('');
+  const [choosingShare, setChoosingShare] = useState(false);
+  // null | { copied: true } (the button says so for a moment)
+  // | { failed: { value, multiline } } (copying failed: the link or text to copy by hand)
+  const [shared, setShared] = useState(null);
+  const shareField = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +56,19 @@ function RecipeView() {
       cancelled = true;
     };
   }, [id, attempt]);
+
+  useEffect(() => {
+    if (!shared?.copied) return undefined;
+    const timer = setTimeout(() => setShared(null), 3000);
+    return () => clearTimeout(timer);
+  }, [shared]);
+
+  // The field is under the buttons, often below a phone's screen, so it is brought into view.
+  useEffect(() => {
+    if (!shared?.failed) return;
+    shareField.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    shareField.current.select();
+  }, [shared]);
 
   if (loadError) {
     return (
@@ -101,6 +121,24 @@ function RecipeView() {
     } catch (err) {
       setError(errorMessage(t, err));
       setBusy(null);
+    }
+  }
+
+
+  // 'link': a link to Browse, for someone who uses the app. 'text': the recipe as it is
+  // shown, with headings in the text's own language, for anyone.
+  async function share(kind) {
+    setChoosingShare(false);
+    setShared(null);
+    const item =
+      kind === 'link'
+        ? { title: content.name, text: t.shareText(content.name), url: recipeShareLink(window.location.origin, content.name) }
+        : { title: content.name, text: recipeText(content, strings[contentLang], recipe) };
+    try {
+      const result = await shareLink(item);
+      if (result === 'copied') setShared({ copied: true });
+    } catch {
+      setShared({ failed: { value: item.url ?? item.text, multiline: !item.url } });
     }
   }
 
@@ -220,10 +258,48 @@ function RecipeView() {
 
       <div className={styles.actions}>
         <Link href={`/recipe/edit?id=${recipe.id}`} className="button">{t.edit}</Link>
+        {loggedIn && (
+          <button type="button" className="button secondary" onClick={() => setChoosingShare(true)}>
+            <span aria-live="polite" className={styles.nowrap}>{shared?.copied ? `${t.linkCopied} ✓` : t.share}</span>
+          </button>
+        )}
         <button type="button" className="button danger" disabled={busy !== null} onClick={() => setConfirmingDelete(true)}>
           {busy === 'delete' ? t.deleting : t.delete}
         </button>
       </div>
+
+      {shared?.failed && (
+        <div className={styles.shareNote} role="alert">
+          <p>{t.errShareCopy}</p>
+          {shared.failed.multiline ? (
+            <textarea
+              ref={shareField}
+              className="field"
+              readOnly
+              rows={8}
+              lang={contentLang}
+              dir={contentDir}
+              value={shared.failed.value}
+              aria-label={t.shareCopyLabel}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          ) : (
+            <input
+              ref={shareField}
+              className="field"
+              readOnly
+              dir="ltr"
+              value={shared.failed.value}
+              aria-label={t.shareCopyLabel}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          )}
+        </div>
+      )}
+
+      {choosingShare && (
+        <ShareDialog linkAllowed={recipe.public} onPick={share} onCancel={() => setChoosingShare(false)} />
+      )}
 
       {confirmingDelete && (
         <ConfirmDialog

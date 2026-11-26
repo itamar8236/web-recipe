@@ -105,6 +105,24 @@
   font-size: 16px;
 }
 
+/* Under the action buttons: the link was copied, or the link to copy by hand. */
+.shareNote {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  font-size: 16px;
+}
+
+.shareNote p {
+  margin: 0 0 8px;
+}
+
+.shareNote :global(.field) {
+  width: 100%;
+}
+
 .noticeText {
   margin: 0 0 10px;
 }
@@ -294,4 +312,9 @@
 .pictureButton {
   padding-inline: 16px;
   font-size: 16px;
+}
+
+/* "Copied ✓" on the Share button stays on one line, so the button doesn't grow. */
+.nowrap {
+  white-space: nowrap;
 }

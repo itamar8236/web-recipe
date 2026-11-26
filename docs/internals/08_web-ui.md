@@ -58,7 +58,30 @@ What each screen shows is in its component; these are the decisions behind them.
   there is something to restore. A guest has no bin: their delete is final, and the
   confirmation says so.
 
-## Share
+## Sharing a recipe
+
+A **Share** button beside Edit on a logged-in user's recipes. It asks one question, each
+choice saying who it is for: **a link** (for someone who uses the app) or **the full
+recipe** as text (for anyone). A **private** recipe offers only the text (the owner's
+choice: text doesn't need Browse), with a line saying a link needs a public recipe rather
+than a button that can't work.
+
+- The link is `/browse?q=<the name shown>`: Browse opens with that search filled in, and
+  its search keeps loading pages until the recipe shows. There is no new route or endpoint,
+  and no token: a public recipe is already visible to every user through Browse.
+- The text is the version shown (name, ingredients, numbered steps, then the author and
+  source link when known), with its headings in the text's own language, not the app's.
+- On a touch screen it opens the phone's share sheet; on a computer it copies, since a
+  desktop share dialog is rarely where people send things from. The sheet opens straight
+  from the tap on a choice, since browsers allow it only right after a tap. A copy turns the
+  button into "Copied ✓" for a moment, right where the user is looking. When copying fails,
+  the link or text shows in a selected field to copy by hand.
+- The search box starts open but **not focused**, so a phone's keyboard doesn't cover the
+  recipe. Browse searches both languages, so the receiver's language doesn't matter.
+- Logged out, the login screen comes first, then Browse with the search; a guest is told to
+  log in, like any visit to Browse.
+
+## Share to the app
 
 The installed app is in Android's Share menu (`share_target` in `app/manifest.js`). Sharing a
 post, a web page, or 1 to 7 photos opens `/share`, which imports **at once, with no
@@ -127,5 +150,9 @@ installable. The service worker caches no pages; it only receives shares. Needs 
   works (Next falls back to the page's full data file) and production builds on Linux. Don't
   turn off prefetching or rename files to work around it.
 - A HEIC photo the browser can't draw gives the recipe no picture ([Pictures](./07_pictures.md#known-gaps-and-accepted-trade-offs)).
+- A shared recipe's link searches by name, so it also shows other public recipes whose text
+  has every word of that name, and finds nothing once the recipe is renamed, made private or
+  deleted. The sharer opening their own link sees nothing either: Browse never lists one's
+  own recipes.
 - The third-language note on a recipe goes by script only, so another language written in
   Latin letters (Spanish words in the English text) doesn't bring it up.

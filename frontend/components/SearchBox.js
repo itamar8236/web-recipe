@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { useLanguage } from '@/components/Language';
 import styles from './SearchBox.module.css';
 
-// A small button until it is needed, so the search takes almost no room on a phone.
+// A small button until it is needed, so the search takes almost no room on a phone. It
+// starts open when it starts with a value (Browse opened from a shared recipe's link), but
+// unfocused then, so a phone's keyboard doesn't cover the recipe the link is for.
 export default function SearchBox({ value, onChange }) {
   const { t } = useLanguage();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(value !== '' ? 'start' : false); // false | 'start' | 'tap'
 
   const icon = (
     <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden="true">
@@ -18,7 +20,7 @@ export default function SearchBox({ value, onChange }) {
 
   if (!open) {
     return (
-      <button type="button" className={`button secondary ${styles.openButton}`} onClick={() => setOpen(true)}>
+      <button type="button" className={`button secondary ${styles.openButton}`} onClick={() => setOpen('tap')}>
         {icon}
         {t.searchButton}
       </button>
@@ -40,7 +42,7 @@ export default function SearchBox({ value, onChange }) {
         aria-label={t.search}
         enterKeyHint="search"
         autoComplete="off"
-        autoFocus
+        autoFocus={open === 'tap'}
       />
       <button
         type="button"
