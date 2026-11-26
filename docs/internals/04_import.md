@@ -106,7 +106,7 @@ and the post's id, not by a fixed path, because a reel page and a watch page dif
 
 **1 to 7 pictures of one written recipe** (cookbook pages, screenshots, a handwritten card,
 and maybe a photo of the dish), from "Choose photos" or the Android Share menu
-([Web UI → Share](./08_web-ui.md#share)); the backend can't tell the two apart. They go
+([Web UI → Share to the app](./08_web-ui.md#share-to-the-app)); the backend can't tell the two apart. They go
 through the same Workflow, are read together in **one** model request, and are saved like a
 link's recipe.
 
